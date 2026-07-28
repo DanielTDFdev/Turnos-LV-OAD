@@ -1,5 +1,24 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.01
+  FECHA   : 2026-07-28
+  CAMBIOS : Consulta de Daniel tras v7.00: un turno con rango horario (horaInicio/horaFin) se
+            guarda como un solo registro y ocupa el tramo completo para slotsTomados() (nadie
+            más puede tomar esas horas), pero visualmente solo aparecía un bloque en la fila de
+            la hora de INICIO — las filas de las horas intermedias quedaban vacías, dando la
+            falsa impresión de que el avión estaba libre (ej: rango 10:00–13:00 → la fila de
+            las 12:00 se veía vacía aunque el sistema ya rechazaba una reserva ahí). Fix: nueva
+            función horasContinuacion(r) calcula las horas intermedias que cubre un rango; en
+            vistas LISTA (renderTodasReservas) y SEMANA (renderVistaSemana) ahora se pinta un
+            cal-block "rango-continua" (rayado, discontinuo, texto "⋯ ocupado") en esas filas,
+            clickeable para abrir el detalle del turno que lo originó. Las filas de horas
+            intermedias ahora también se generan aunque ningún otro turno arranque en esa hora
+            (horasConTurnos / horasSet ampliados). No se tocó slotsTomados() ni la lógica de
+            guardado — cambio puramente visual.
+-->
+
+<!--
+  ARCHIVO : turnos.html
   VERSION : 7.00
   FECHA   : 2026-07-28
   CAMBIOS : Pedido por Daniel: en "+ CARGAR TURNO" (instructor/admin), el campo "Hora fin
@@ -1831,6 +1850,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .cal-block.vencido-sin-confirmar{background:rgba(200,110,40,.16);border:1px dashed rgba(200,110,40,.55);color:#e0a373;text-decoration:line-through;}
 .cal-block.sin-instructor{background:rgba(224,82,156,.18);border:1px dashed rgba(224,82,156,.6);color:var(--pink);}
 .cal-block.aprobado-piloto{background:rgba(77,159,255,.16);border:1px solid rgba(77,159,255,.5);color:var(--blue);}
+.cal-block.rango-continua{background:repeating-linear-gradient(45deg,rgba(140,140,155,.14),rgba(140,140,155,.14) 5px,rgba(140,140,155,.05) 5px,rgba(140,140,155,.05) 10px);border:1px dashed rgba(140,140,155,.5);color:var(--text3);opacity:.9;}
 .cal-block.pil-aprob{box-shadow:inset 3px 0 0 var(--blue);} /* en desuso desde v6.15 (ver changelog); SEMANA ya usa .aprobado-piloto igual que LISTA */
 /* v6.13: ayuda visual — turno PENDIENTE que coincide con la disponibilidad propia del
    instructor logueado. Se suma a cualquier color de estado/avión que ya tenga el bloque. */
@@ -1999,7 +2019,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.00</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.01</div>
   </div>
 
 </div>
@@ -3949,6 +3969,19 @@ function slotsTomados(ds,avion,data){
   return [...taken];
 }
 
+// v7.01: horas INTERMEDIAS que ocupa un turno con rango (horaInicio/horaFin), sin contar la
+// hora de inicio (esa ya tiene su propio cal-block). Se usa en las vistas LISTA y SEMANA para
+// pintar un bloque "continuación" en esas filas — antes quedaban visualmente vacías, lo que
+// hacía parecer disponible un horario que en realidad ya estaba tomado por un turno largo
+// que empezó antes (ej: rango 10:00–13:00 → la fila de las 11:00 y 12:00 se veían libres).
+function horasContinuacion(r){
+  if(!(r.horaInicio&&r.horaFin))return[];
+  const horas=horasParaDia(r.fecha,r.avion||'LV-OAD');
+  const idxIni=horas.indexOf(r.horaInicio), idxFin=horas.indexOf(r.horaFin);
+  if(idxIni<0||idxFin<0||idxIni>=idxFin)return[];
+  return horas.slice(idxIni+1,idxFin);
+}
+
 // Cuota semanal (v6.35, extraída a función standalone en v6.50, fix v6.52, fix v6.53):
 // calcula turnos usados/restantes de la semana calendario (lunes a domingo) que contiene
 // ds, para el email dado (default: usuario logueado). Cuentan: pendiente, aprobado,
@@ -4599,7 +4632,10 @@ async function renderTodasReservas(data){
   if(ocultarCancelados) enRango=enRango.filter(r=>r.estado!=='cancelado');
   const dispCompleta=await cargarDisponibilidadCompleta(fechasRango);
 
-  const horasConTurnos=[...new Set(enRango.map(r=>r.hora))].sort();
+  const horasConTurnos=[...new Set([
+    ...enRango.map(r=>r.hora),
+    ...enRango.filter(r=>r.estado!=='cancelado'&&r.estado!=='vencido').flatMap(horasContinuacion)
+  ])].sort();
   if(!horasConTurnos.length){
     cal.innerHTML='<div class="cal-empty">// SIN RESERVAS EN LOS 17 DÍAS VISIBLES</div>';return;
   }
@@ -4659,6 +4695,13 @@ async function renderTodasReservas(data){
         const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (no consume cupo del alumno)`:'';
         const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — no consume cupo del alumno">📋</span>`:'';
         html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}</div>`;
+      });
+      // v7.01: turnos con rango que arrancaron en una hora anterior y siguen ocupando ESTA
+      // hora (ej: rango 10:00–13:00 → acá se pinta en las filas de 11:00 y 12:00). Antes la
+      // celda quedaba vacía y parecía disponible, aunque slotsTomados() ya la bloqueaba.
+      enRango.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
+        const avLabelC=calAvionFiltro==='todos'?`<span style="font-size:9px;opacity:.7">${r.avion||'LV-OAD'}</span><br>`:'';
+        html+=`<div class="cal-block rango-continua" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">${avLabelC}⋯ ocupado</div>`;
       });
       html+='</td>';
     });
@@ -4738,7 +4781,10 @@ async function renderVistaSemana(){
   await Promise.all(años.map(async y=>{const f=await getFeriados(y);Object.assign(feriadosMap,f);}));
 
   // Horas con turnos en esta semana
-  const horasSet=new Set(enSemana.map(r=>r.hora));
+  const horasSet=new Set([
+    ...enSemana.map(r=>r.hora),
+    ...enSemana.filter(r=>r.estado!=='cancelado'&&r.estado!=='vencido').flatMap(horasContinuacion)
+  ]);
   if(!horasSet.size){grid.innerHTML='<div class="cal-empty">// SIN RESERVAS ESTA SEMANA</div>';return;}
   const horas=[...horasSet].sort();
   const dispCompleta=await cargarDisponibilidadCompleta(fechas);
@@ -4789,6 +4835,13 @@ async function renderVistaSemana(){
         const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — no consume cupo del alumno">📋</span>`:'';
         html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ${r.estado}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">
           ${badge}${cargadoBadge}<span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>${nombre}
+        </div>`;
+      });
+      // v7.01: mismo criterio que renderTodasReservas — pintar continuación de rango en las
+      // horas intermedias que ocupa un turno con horaInicio/horaFin.
+      enSemana.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
+        html+=`<div class="cal-block rango-continua" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">
+          <span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>⋯ ocupado
         </div>`;
       });
       html+='</td>';
