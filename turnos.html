@@ -1,5 +1,21 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.02
+  FECHA   : 2026-07-28
+  CAMBIOS : Pedido por Daniel: el instructor que carga un turno manualmente con
+            "+ CARGAR TURNO" (guardarTurnoManual, campo cargado_por) no tenía forma de
+            borrarlo si se equivocaba — esa opción de borrado definitivo solo existía para el
+            usuario 'admin' (y sin auditoría, por diseño, para limpiar pruebas rápido). Se
+            agrega un botón de borrado definitivo NUEVO y separado, específico para
+            instructores: solo aparece si el turno abierto tiene cargado_por===nombre del
+            instructor logueado (o sea, solo puede borrar los turnos que ÉL MISMO cargó
+            manualmente, no los de otros instructores ni turnos normales pedidos por el
+            alumno/piloto). A diferencia del botón de admin, este SÍ genera un registro en
+            /auditoria (acción 'borrado_turno_manual') antes de eliminar el nodo de /reservas.
+-->
+
+<!--
+  ARCHIVO : turnos.html
   VERSION : 7.01
   FECHA   : 2026-07-28
   CAMBIOS : Consulta de Daniel tras v7.00: un turno con rango horario (horaInicio/horaFin) se
@@ -2019,7 +2035,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.01</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.02</div>
   </div>
 
 </div>
@@ -5510,6 +5526,35 @@ window.abrirModal=function(key){
     };
     zona.appendChild(cap); zona.appendChild(bdel);
     actions.appendChild(zona);
+  }
+  // v7.02: pedido de Daniel — el instructor que carga un turno manualmente con
+  // "+ CARGAR TURNO" (cargado_por seteado a su propio nombre) no tenía forma de borrarlo si
+  // se equivocó; esa opción solo existía para 'admin' (y sin auditoría, a propósito, ver
+  // nota arriba). Acá es un botón DISTINTO: solo aplica a turnos que ESE instructor cargó él
+  // mismo (r.cargado_por===session.nombre) y, a diferencia del de admin, SÍ deja registro en
+  // /auditoria. No se ofrece para turnos que no fueron cargados manualmente (r.cargado_por
+  // vacío) ni para los cargados por otro instructor.
+  if(esInstructorReal()&&r.cargado_por&&session?.nombre&&r.cargado_por===session.nombre){
+    const zona2=document.createElement('div');
+    zona2.style.cssText='width:100%;margin-top:14px;padding-top:12px;border-top:2px dashed var(--red)';
+    const cap2=document.createElement('div');
+    cap2.style.cssText='font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;color:var(--red);text-transform:uppercase;margin-bottom:7px;opacity:.85';
+    cap2.textContent='⚠ Borrado definitivo — turno cargado por vos';
+    const bdel2=document.createElement('button');
+    bdel2.style.cssText='background:var(--red);color:#0a0a0a;border:1px solid var(--red);font-weight:700;width:100%;box-shadow:0 0 14px rgba(248,81,73,.35)';
+    bdel2.textContent='🗑 BORRAR TURNO DEFINITIVAMENTE';
+    bdel2.title='Borra este turno de la base. Disponible porque vos lo cargaste manualmente. Queda registrado en auditoría.';
+    bdel2.onclick=async()=>{
+      if(!confirm('¿BORRAR este turno definitivamente?\n\nVos lo cargaste manualmente. Se elimina de la base y queda registrado en auditoría. No se puede deshacer.'))return;
+      const rv=await fbGet('reservas/'+key);
+      try{ await fbRemove('reservas/'+key); }catch(e){ console.error(e); alert('No se pudo borrar (error de conexión).'); return; }
+      await registrarAuditoria('borrado_turno_manual',session.rol||'instructor','exito',
+        (session.nombre||session.user)+' (instructor) borró definitivamente un turno cargado por él mismo — '+
+        (rv?.avion||r.avion||'LV-OAD')+' — '+(rv?.fecha||r.fecha)+' '+(rv?.hora||r.hora)+' hs — alumno: '+(rv?.nombre||r.nombre));
+      cerrarModal();
+    };
+    zona2.appendChild(cap2); zona2.appendChild(bdel2);
+    actions.appendChild(zona2);
   }
   // Observación post-vuelo: editable por el instructor que aprobó (o admin) en turnos
   // APROBADOS cuya hora ya pasó. Permite anotar qué pasó (ej.: no se voló por meteo).
