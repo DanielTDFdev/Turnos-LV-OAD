@@ -1,5 +1,20 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.00
+  FECHA   : 2026-07-28
+  CAMBIOS : Pedido por Daniel: en "+ CARGAR TURNO" (instructor/admin), el campo "Hora fin
+            (rango)" — que ya existía y funcionaba para LV-ART/LV-MPH — estaba oculto para
+            LV-OAD. Ahora se muestra para cualquier avión, para poder reservar un tramo largo
+            (ej: navegación de instrucción de varias horas) como un solo turno, sin importar
+            el avión. De paso, fix de un bug real encontrado en el chequeo de conflicto de
+            guardarTurnoManual: al cargar un rango solo se validaba que la hora de INICIO
+            estuviera libre (taken.includes(hora)) — una reserva ya existente en una hora
+            intermedia del tramo no se detectaba y permitía duplicar la reserva sobre el mismo
+            avión. Ahora se recorren todas las horas del rango contra slotsTomados().
+-->
+
+<!--
+  ARCHIVO : turnos.html
   VERSION : 6.99
   FECHA   : 2026-07-23
   CAMBIOS : Reportado por Daniel: turnos cargados con "+ CARGAR TURNO" (campo cargado_por,
@@ -1984,7 +1999,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v6.99</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.00</div>
   </div>
 
 </div>
@@ -6389,12 +6404,11 @@ window.cerrarModalCargarTurno=function(){
 };
 document.addEventListener('click',e=>{if(e.target.id==='modal-cargar-turno')cerrarModalCargarTurno();});
 
-// Rango horario (hora fin) visible solo para aviones que no sean LV-OAD — igual criterio
-// que usa el flujo normal de "Pedir Turno" para vuelos largos de piloto.
+// Rango horario (hora fin): disponible para cualquier avión, incluido LV-OAD (v7.00).
+// Antes se ocultaba para LV-OAD; pedido de Daniel: sirve igual para reservar un tramo
+// largo (ej: navegación de instrucción de varias horas) sin importar qué avión sea.
 window.ctActualizarRango=function(){
-  const esOAD=document.getElementById('ct-avion').value==='LV-OAD';
-  document.getElementById('ct-horafin-wrap').style.display=esOAD?'none':'';
-  if(esOAD) document.getElementById('ct-horafin').value='';
+  document.getElementById('ct-horafin-wrap').style.display='';
 };
 
 window.guardarTurnoManual=async function(){
@@ -6410,10 +6424,21 @@ window.guardarTurnoManual=async function(){
   const horaFin=document.getElementById('ct-horafin').value;
   if(!fecha||!hora){showErr('ct-err','Completá fecha y hora.');return;}
   if(horaFin&&horaFin<=hora){showErr('ct-err','La hora de fin tiene que ser posterior a la hora de inicio.');return;}
-  // Chequeo de conflicto (mismo avión, mismo horario, alguna reserva activa ya existente)
+  // Chequeo de conflicto (mismo avión, alguna reserva activa ya existente).
+  // v7.00 fix: cuando se carga un rango (horaFin), antes solo se validaba la hora de INICIO
+  // contra taken — un turno ya existente en una hora intermedia del rango no se detectaba y
+  // permitía duplicar la reserva. Ahora se revisan todas las horas del tramo.
   const snap=await get(ref(db,'reservas'));
   const taken=slotsTomados(fecha,avion,snap.val());
-  if(taken.includes(hora)){showErr('ct-err','Ese avión ya tiene un turno activo a esa fecha/hora. Elegí otro horario.');return;}
+  if(horaFin){
+    const horas=horasParaDia(fecha,avion);
+    const idxIni=horas.indexOf(hora), idxFin=horas.indexOf(horaFin);
+    if(idxIni<0||idxFin<0||idxIni>=idxFin||horas.slice(idxIni,idxFin).some(h=>taken.includes(h))){
+      showErr('ct-err','Ese avión ya tiene un turno activo en algún horario dentro del rango elegido. Elegí otro horario.');return;
+    }
+  } else if(taken.includes(hora)){
+    showErr('ct-err','Ese avión ya tiene un turno activo a esa fecha/hora. Elegí otro horario.');return;
+  }
   const instructorSel=document.getElementById('ct-instructor').value;
   const obs=document.getElementById('ct-obs').value.trim();
   const nuevo={
