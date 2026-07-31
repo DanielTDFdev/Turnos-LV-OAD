@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   PESO Y BALANCE — Aeroclub Río Grande
+  v1.6 ·  Soporte PWA (instalable como app): <link rel="manifest">, meta tags
+          apple-mobile-web-app-* y apple-touch-icon en el <head>, más registro
+          de navigator.serviceWorker.register('/sw.js') al final del script.
+          Requiere subir manifest.json, sw.js e íconos a la raíz del repo
+          (compartido con turnos.html — ver ese changelog para detalle).
   v1.5 ·  Ancho máximo del contenedor (.wrap) sube de 980px a 1280px, mismo
           criterio que turnos.html v6.34, fpl.html v3.23 y portal-alumno.html v1.14.
   v1.4 ·  Se saca el cartel rojo "PESO VACÍO SIN VERIFICAR" (estado-box bad) por
@@ -67,6 +72,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Peso y Balance · Aeroclub Río Grande</title>
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0a0c0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ACRG Turnos">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -154,7 +165,7 @@ h3{font-family:var(--font-mono);font-size:12px;color:var(--amber);letter-spacing
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.5</span>
+      <span class="ver">v1.6</span>
       <a class="back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -413,6 +424,12 @@ function actualizarResultado(key){
 llenarSelector();
 $('selAvion').addEventListener('change',renderCalcArea);
 renderCalcArea();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+  });
+}
 </script>
 </body>
 </html>

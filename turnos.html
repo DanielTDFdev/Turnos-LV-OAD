@@ -1,7 +1,15 @@
 <!--
   ARCHIVO : turnos.html
-  VERSION : 7.02
-  FECHA   : 2026-07-28
+  VERSION : 7.03
+  FECHA   : 2026-07-31
+  CAMBIOS : Soporte PWA (instalable como app). Se agrega <link rel="manifest">,
+            meta tags apple-mobile-web-app-* y apple-touch-icon en el <head>,
+            más registro de navigator.serviceWorker.register('/sw.js') al final
+            del script. Requiere subir manifest.json, sw.js, icon-192.png,
+            icon-512.png e icon-512-maskable.png a la raíz del repo. Los
+            íconos son placeholders recortados del logo horizontal actual
+            (1779x378, no cuadrado) — pendiente definir ícono definitivo.
+            start_url del manifest apunta a /turnos.html. Ver anterior:
   CAMBIOS : Pedido por Daniel: el instructor que carga un turno manualmente con
             "+ CARGAR TURNO" (guardarTurnoManual, campo cargado_por) no tenía forma de
             borrarlo si se equivocaba — esa opción de borrado definitivo solo existía para el
@@ -1640,7 +1648,12 @@
 <title>Reserva de Aeronaves — Aeroclub Río Grande</title>
 
 <link rel="icon" type="image/png" href="logo_aeroclub.png">
-<link rel="apple-touch-icon" href="logo_aeroclub.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0a0c0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ACRG Turnos">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -2035,7 +2048,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.02</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.03</div>
   </div>
 
 </div>
@@ -7834,6 +7847,11 @@ document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{l
 setInterval(chequearVersionNueva,VERSION_POLL_MS);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
 
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+  });
+}
 </script>
 </body>
 </html>
