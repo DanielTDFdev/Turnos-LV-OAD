@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.18 ·  Ícono y manifest propios para la PWA (antes compartía el manifest.json
+           y los íconos de turnos.html). Ahora usa manifest-portal.json e
+           icon-portal-192/512/512-maskable.png, con el logo "Portal Alumnos"
+           que hizo Daniel. apple-mobile-web-app-title pasa a "ACRG Portal".
   v1.17 ·  Soporte PWA (instalable como app): <link rel="manifest">, meta tags
            apple-mobile-web-app-* y apple-touch-icon en el <head>, más registro
            de navigator.serviceWorker.register('/sw.js') al final del script.
@@ -141,12 +145,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portal Alumno · Aeroclub Río Grande</title>
-<link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-portal-192.png">
+<link rel="manifest" href="/manifest-portal.json">
 <meta name="theme-color" content="#0a0c0f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ACRG Turnos">
+<meta name="apple-mobile-web-app-title" content="ACRG Portal">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -303,7 +307,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.17</span>
+      <span class="ver">v1.18</span>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
     </div>

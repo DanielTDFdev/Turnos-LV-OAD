@@ -1,0 +1,31 @@
+{
+  "name": "Aeroclub Río Grande - Peso y Balanceo",
+  "short_name": "ACRG P&B",
+  "description": "Cálculo de peso y balance del Aeroclub Río Grande",
+  "start_url": "/peso-balance.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0c0f",
+  "theme_color": "#0a0c0f",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-pyb-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-pyb-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-pyb-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

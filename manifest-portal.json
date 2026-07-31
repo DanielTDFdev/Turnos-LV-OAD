@@ -1,0 +1,31 @@
+{
+  "name": "Aeroclub Río Grande - Portal Alumnos",
+  "short_name": "ACRG Portal",
+  "description": "Portal del alumno del Aeroclub Río Grande",
+  "start_url": "/portal-alumno.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0c0f",
+  "theme_color": "#0a0c0f",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-portal-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-portal-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-portal-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

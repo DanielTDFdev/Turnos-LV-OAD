@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   PLAN DE VUELO (FPL) — Prototipo standalone
+  v3.27 ·  Ícono y manifest propios para la PWA (antes compartía el manifest.json
+           y los íconos de turnos.html). Ahora usa manifest-fpl.json e
+           icon-fpl-192/512/512-maskable.png, con el logo "Plan de Vuelo" que
+           hizo Daniel. apple-mobile-web-app-title pasa a "ACRG FPL".
   v3.26 ·  Soporte PWA (instalable como app): <link rel="manifest">, meta tags
            apple-mobile-web-app-* y apple-touch-icon en el <head>, más registro
            de navigator.serviceWorker.register('/sw.js') al final del script.
@@ -266,12 +270,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FPL · Plan de Vuelo</title>
-<link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-fpl-192.png">
+<link rel="manifest" href="/manifest-fpl.json">
 <meta name="theme-color" content="#0a0c0f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ACRG Turnos">
+<meta name="apple-mobile-web-app-title" content="ACRG FPL">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -556,7 +560,7 @@
   <header class="bar">
     <span class="dot"></span>
     <h1>Plan de Vuelo <small>/ FPL</small></h1>
-    <span class="ver">v3.26</span>
+    <span class="ver">v3.27</span>
     <a href="turnos.html" title="Volver al turnero (sin cerrar sesión)" style="font-family:var(--mono);font-size:12px;color:var(--cyan);text-decoration:none;border:1px solid var(--line-hot);border-radius:5px;padding:5px 11px;letter-spacing:1px;transition:.15s" onmouseover="this.style.background='var(--cyan)';this.style.color='#04141a'" onmouseout="this.style.background='transparent';this.style.color='var(--cyan)'">← TURNERO</a>
     <div class="clk">
       <div id="clkUTC">--:-- Z</div>
