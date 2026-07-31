@@ -13,7 +13,7 @@
            (compartido con turnos.html — ver ese changelog para detalle).
   v3.25 ·  Pedido de Daniel: el default del casillero 18 para las aeronaves del
            club pasa de "OPR/AEROCLUB RIO GRANDE" a "OPR/AEROCLUB RIO GRANDE
-           PERF/A" (se agrega la indicación de categoría de performance A). Cambio
+           PER/A" (se agrega la indicación de categoría de performance A). Cambio
            en los dos lugares donde se fija ese default: el valor inicial del
            textarea #f18 en el HTML y la función limpiar() (botón de reset del
            formulario). No afecta a aeronaves personales (flotaUser), que siguen
@@ -706,7 +706,7 @@
       <legend>Otra información · 18</legend>
       <div class="body">
         <div class="field"><label>Texto (DOF/ se agrega solo)</label>
-          <textarea id="f18" placeholder="RMK/ ...">OPR/AEROCLUB RIO GRANDE PERF/A</textarea></div>
+          <textarea id="f18" placeholder="RMK/ ...">OPR/AEROCLUB RIO GRANDE PER/A</textarea></div>
       </div>
     </fieldset>
 
@@ -1198,7 +1198,7 @@ function cargarEnForm(key,p){
 function limpiar(){
   editKey=null; $('fpl').reset();
   $('f9n').value='1'; $('f10a').value='S'; $('f10b').value='C';
-  $('f18').value='OPR/AEROCLUB RIO GRANDE PERF/A'; $('f13a').value='SAWE';
+  $('f18').value='OPR/AEROCLUB RIO GRANDE PER/A'; $('f13a').value='SAWE';
   $('f13fecha').value=hoyLocal();
   setChecks('r19','E'); setChecks('s19',''); setChecks('j19','');
   $('f19dn').value=''; $('f19dc').value=''; $('f19dcol').value=''; $('f19dcov').checked=false;
