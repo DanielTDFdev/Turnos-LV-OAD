@@ -1,5 +1,25 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.04
+  FECHA   : 2026-07-31
+  CAMBIOS : Pedido de Daniel: ventana horaria para PEDIR turno — deshabilitado entre
+            las 00:00 y las 07:00 (evitar pedidos de madrugada que caen fuera de la
+            programación del instructor). Aplica a alumnos siempre, y a pilotos solo
+            cuando el tipo de vuelo es 'instruccion' (mismo criterio que ya determina
+            si requiere aprobación de instructor). Piloto en modo 'particular' NO tiene
+            esta restricción. Los turnos manuales de instructores (guardarTurnoManual)
+            no se ven afectados — no pasan por confirmarTurno().
+            Nueva función pedidoHabilitadoAhora() (usa ahoraServidor(), no hora local del
+            dispositivo). Gate real en confirmarTurno() (bloquea el alta si
+            requiereInstructor && !pedidoHabilitadoAhora()); además UI:
+            - alumno: showAlumnoTab('pedir-turno') muestra un cartel ámbar nuevo
+              (#pedir-turno-fuera-horario) en vez del calendario cuando corresponde,
+              con prioridad después del cartel rojo de vencimiento (chk.ok) pero antes
+              de mostrar la card de pedido.
+            - piloto: renderDaysGrid() bloquea la grilla de días con el mismo mensaje
+              cuando el avión es LV-OAD o cuando eligió 'instruccion' en el dropdown,
+              revalidado en cada render (por si la pantalla quedó abierta desde antes
+              de medianoche). Ver anterior:
   VERSION : 7.03
   FECHA   : 2026-07-31
   CAMBIOS : Soporte PWA (instalable como app). Se agrega <link rel="manifest">,
@@ -2048,7 +2068,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.03</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.04</div>
   </div>
 
 </div>
@@ -2165,6 +2185,11 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div style="font-size:15px;margin-bottom:.5rem">NO PODÉS PEDIR TURNO</div>
       <div id="pedir-turno-bloqueado-detalle"></div>
       <div style="margin-top:.75rem;color:var(--text3);font-size:11px">Comunicate con administración para regularizar la situación.</div>
+    </div>
+    <div id="pedir-turno-fuera-horario" style="display:none;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.35);border-radius:var(--radius);padding:1.25rem 1.25rem;font-family:var(--font-mono);font-size:13px;color:var(--amber);letter-spacing:.04em;line-height:1.7;text-align:center">
+      <div style="font-size:32px;margin-bottom:.5rem">🕗</div>
+      <div style="font-size:15px;margin-bottom:.5rem">PEDIDO DE TURNOS FUERA DE HORARIO</div>
+      <div>El pedido de turnos está disponible de 07:00 a 00:00 hs. Volvé a intentarlo a partir de las 7 de la mañana.</div>
     </div>
     <div class="card" id="pedir-turno-card">
       <!-- selector avión: visible solo para pilotos -->
@@ -3342,6 +3367,14 @@ function requiereAnticipacionLarga(){
   return rol!=='piloto'||selectedTipoVuelo==='instruccion';
 }
 function okAnticipacion(ds,h){return requiereAnticipacionLarga()?ok12h(ds,h):ok1h(ds,h);}
+// v7.04: ventana horaria para PEDIR turno — deshabilitado entre las 00:00 y las 07:00
+// (pedido de Daniel: evitar que alguien pida un turno de madrugada cuando el instructor
+// ya armó su programación del día). Aplica al mismo universo que requiere aprobación de
+// instructor (alumnos siempre, pilotos solo en modo 'instruccion'); un piloto en modo
+// 'particular' no tiene esta restricción. Se usa ahoraServidor() (no hora local del
+// dispositivo) para que no se pueda evadir cambiando la hora del celular. No afecta a
+// guardarTurnoManual() — los turnos que carga un instructor manualmente no pasan por acá.
+function pedidoHabilitadoAhora(){return ahoraServidor().getHours()>=7;}
 function esAdminRO(){return session?.user==='administrador';}  // acceso completo pero solo lectura en horarios
 function esAdminROHorarios(){return session?.user==='administrador';}  // solo lectura en checkboxes de horarios (no en toggle avión)
 // Instructor "real": sesión de instructor que NO sea admin ni administrador. Solo estos pueden APROBAR turnos.
@@ -3883,21 +3916,26 @@ window.showAlumnoTab=function(tab){
       fbGet('alumnos/'+session.emailKey).then(a=>{
         renderBannerVencimientoAlumno(a);
         const chk=chequearHabilitacionAlumno(a);
+        const fueraHorario=chk.ok&&!pedidoHabilitadoAhora(); // v7.04
         document.getElementById('pedir-turno-bloqueado').style.display=chk.ok?'none':'block';
-        document.getElementById('pedir-turno-card').style.display=chk.ok?'block':'none';
+        document.getElementById('pedir-turno-fuera-horario').style.display=fueraHorario?'block':'none';
+        document.getElementById('pedir-turno-card').style.display=(chk.ok&&!fueraHorario)?'block':'none';
         if(!chk.ok){
           document.getElementById('pedir-turno-bloqueado-detalle').textContent=
             chk.vencidos.map(v=>v.fecha?`${v.tipo} vencido el ${fmtFechaCorta(v.fecha)}`:`${v.tipo} sin fecha cargada`).join(' — ');
-        }else{
+        }else if(!fueraHorario){
           initAvionSelector();
           renderDaysGrid();
         }
       });
     }else{
       document.getElementById('pedir-turno-bloqueado').style.display='none';
+      document.getElementById('pedir-turno-fuera-horario').style.display='none';
       document.getElementById('pedir-turno-card').style.display='block';
       initAvionSelector();
-      // pilotos esperan que elijan avión primero, no ven días directo
+      // pilotos esperan que elijan avión primero, no ven días directo — el chequeo de
+      // horario para modo 'instrucción' se hace en cambiarTipoVuelo() (v7.04), porque acá
+      // todavía no sabemos qué tipo de vuelo van a elegir.
     }
   }
   if(tab==='perfil'){
@@ -3948,6 +3986,16 @@ async function renderDaysGrid(){
   const rol=session?.rol||'alumno';
   if(rol==='piloto'&&(selectedAvion||'LV-OAD')!=='LV-OAD'&&!selectedTipoVuelo){
     grid.innerHTML='<div class="empty">// Elegí el tipo de vuelo arriba para ver los días disponibles</div>';
+    return;
+  }
+  // v7.04: ventana horaria de pedido (07:00–00:00) — aplica a LV-OAD (siempre instrucción)
+  // y a cualquier piloto que haya elegido 'instruccion' en el dropdown. Piloto en
+  // 'particular' no se ve afectado. Para alumno esto ya se filtra antes en showAlumnoTab
+  // (no llega a renderDaysGrid si está fuera de horario); se repite acá por las dudas de
+  // que la pantalla haya quedado abierta desde antes de las 00:00.
+  const tipoVueloEfectivo=(selectedAvion||'LV-OAD')==='LV-OAD'?'instruccion':(rol==='piloto'?(selectedTipoVuelo||'particular'):'instruccion');
+  if(tipoVueloEfectivo==='instruccion'&&!pedidoHabilitadoAhora()){
+    grid.innerHTML='<div class="empty">// Pedido de turnos de instrucción disponible de 07:00 a 00:00 hs</div>';
     return;
   }
   const days=getDays();
@@ -4216,6 +4264,12 @@ window.confirmarTurno=async function(){
   // haya elegido en el dropdown (selectedTipoVuelo, default 'particular').
   const tipoVuelo=esOAD?'instruccion':(esPiloto?(selectedTipoVuelo||'particular'):'instruccion');
   const requiereInstructor=tipoVuelo==='instruccion';
+  // v7.04: pedido de turno de instrucción (alumno, o piloto en modo instrucción)
+  // deshabilitado de 00:00 a 07:00. Piloto en modo particular no tiene esta traba.
+  if(requiereInstructor&&!pedidoHabilitadoAhora()){
+    showErr('turno-err','⚠ El pedido de turnos está deshabilitado entre las 00:00 y las 07:00 hs. Volvé a intentarlo a partir de las 7 de la mañana.');
+    return;
+  }
   const estado=requiereInstructor?'pendiente':'aprobado';
   // Marca turnos sin instructor con horario cargado ese día — antes solo aplicaba a
   // piloto+LV-OAD, ahora a cualquier piloto en modo instrucción (recalcula fresco: el
