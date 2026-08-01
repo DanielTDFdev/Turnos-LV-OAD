@@ -1,10 +1,10 @@
 # Documentación técnica — Sistema de Turnos (turnos.html)
 
 **Aeroclub Río Grande (SAWE) — Tierra del Fuego, Argentina**
-Versión documentada: **turnos.html v7.02** · **fpl.html v3.24** · **portal-alumno.html v1.16** · **peso-balance.html v1.5** · Fecha: 2026-07-29
+Versión documentada: **turnos.html v7.04** · **fpl.html v3.27** · **portal-alumno.html v1.18** · **peso-balance.html v1.7** · Fecha: 2026-07-31
 
 > Documento de referencia: describe qué hace cada parte del sistema. Mantener actualizado cuando se agreguen funciones.
-> Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una **calculadora de peso y balance** (`peso-balance.html`, §24) y **dos procesos server-side** en GitHub Actions: el recordatorio a instructores (§20) y el vencimiento de pendientes + purga de borradores FPL (§21).
+> Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una **calculadora de peso y balance** (`peso-balance.html`, §24), soporte **PWA** (instalable como app en el celular, §25) y **dos procesos server-side** en GitHub Actions: el recordatorio a instructores (§20) y el vencimiento de pendientes + purga de borradores FPL (§21).
 
 ---
 
@@ -161,6 +161,7 @@ Definidas en la constante `AVIONES`: **LV-OAD** (instrucción, Tomahawk PA-38-11
 
 - **Anticipación mínima:** alumno 12h (`ok12h`), piloto 1h (`ok1h`); se elige por rol en `okAnticipacion()`.
 - **Horizonte máximo:** alumno 7 días, piloto 30 días (`getDays`).
+- **Ventana horaria de pedido (v7.04, pedido de Daniel):** pedir turno de **instrucción** (`tipo_vuelo==='instruccion'` — alumno siempre, piloto solo si eligió "Instrucción" en el dropdown) está deshabilitado entre las **00:00 y las 07:00**. Motivo: caso real donde un alumno pidió un turno a las 3 AM sobre un día que el instructor ya tenía cerrado y programado. Piloto en modo `particular` no tiene esta restricción, y **no afecta** a "+ CARGAR TURNO" (`guardarTurnoManual`, §8), que no pasa por `confirmarTurno()`. Función `pedidoHabilitadoAhora()` (`ahoraServidor().getHours()>=7`) — usa la hora del **servidor**, no la del dispositivo, para que no se pueda evadir atrasando el reloj del celular. Gate real en `confirmarTurno()` (bloquea el alta si `requiereInstructor && !pedidoHabilitadoAhora()`); además hay bloqueo de UI para que ni siquiera se llegue a ver el botón de confirmar: alumno ve un cartel ámbar en vez del calendario (`showAlumnoTab`, div `#pedir-turno-fuera-horario`, con prioridad después del cartel rojo de vencimiento de documentación pero antes de la card de pedido), y piloto ve el mismo mensaje en la grilla de días (`renderDaysGrid()`) cuando el avión es LV-OAD o cuando elige "Instrucción".
 - **Aprobación:** manual por instructor para LV-OAD y para todo alumno; automática solo para piloto en aviones que no son LV-OAD.
 - **Disponibilidad de instructor para reservar LV-OAD:** el **alumno** solo puede elegir slots donde algún instructor (no de vacaciones) declaró disponibilidad ese día. El **piloto** (v5.94) no tiene esa restricción: puede cargar cualquier slot libre de LV-OAD aunque no haya instructor con horario ese día; el turno igual queda `pendiente` de aprobación y se marca `sinInstructor:true` (color rosa en selector y calendario, tooltip "SIN INSTRUCTOR"). El color rosa solo aplica mientras está `pendiente`; al aprobarse vuelve al verde normal.
 - **Cancelación por el usuario:** piloto sin límite; alumno hasta 12h antes (`puedeAlumnoCancelar`, subido desde 2h en v6.98, pedido de Daniel — misma ventana que la anticipación mínima para pedir turno). Solo gatea el botón CANCELAR de la lista de "Mis Turnos"; `cancelarTurnoAlumno()` no revalida el horario del lado servidor (mismo patrón de reglas Firebase abiertas que el resto del archivo — riesgo preexistente, no introducido por este cambio).
@@ -223,7 +224,7 @@ Modo **sombra**: Auth corre en paralelo, la clave plana es la red de seguridad y
 
 ## 8. Ciclo de vida de una reserva
 
-1. **Solicitud** (`confirmarTurno`): el usuario elige avión, día y horario; se valida anticipación y colisión de slot. Queda `pendiente` (o `aprobado` si es piloto en avión que no es LV-OAD).
+1. **Solicitud** (`confirmarTurno`): el usuario elige avión, día y horario; se valida anticipación, colisión de slot y, desde v7.04, la **ventana horaria de pedido** (07:00–00:00, solo instrucción — ver §6). Queda `pendiente` (o `aprobado` si es piloto en avión que no es LV-OAD).
    - **Carga manual por staff (v6.08/6.09/6.10, `abrirModalCargarTurno`/`guardarTurnoManual`):** botón **"+ CARGAR TURNO"** (verde) en la tab Reservas, para turnos coordinados por teléfono/en persona sin que el alumno tenga que loguearse. A diferencia de `confirmarTurno`: NO exige anticipación mínima ni que haya disponibilidad de instructor publicada para ese horario (es carga directa, no reserva contra horarios abiertos); SÍ sigue chequeando colisión de slot (`slotsTomados`). El estado lo decide un dropdown **"Aprobado por"** con instructores reales (excluye admin/administrador y de vacaciones) — primera opción **"Sin aprobación (queda pendiente)"** como default; si se elige un instructor, el turno queda `aprobado` con `instructor`/`aprobado_por` = ese nombre (no necesariamente el admin que está cargando) y dispara `mailAprob`. El registro queda con un campo extra `cargado_por` para distinguirlo de una reserva hecha por el propio alumno. Visible para instructor, admin y administrador (administrador es solo-lectura únicamente en los checkboxes de horarios, no en esto). **FIX v6.09:** el modal quedó anidado en el HTML dentro de `instructor-config` (display:none salvo esa sub-tab activa) — mismo bug de fondo que el modal de motivo de cancelación (v5.97); se rescata a `document.body` al cargar la página. **FIX de paso (v6.10):** `mailAprob()` tenía hardcodeado `session.nombre` como "instructor" del mail — incorrecto si el admin carga un turno a nombre de otro instructor; ahora acepta un instructor explícito como segundo argumento opcional. **v7.00:** el campo "Hora fin (rango)" — que ya existía para LV-ART/LV-MPH — se habilitó también para LV-OAD, permitiendo reservar tramos largos (ej. navegación de instrucción) como un solo turno. Fix de paso: el chequeo de conflicto de `guardarTurnoManual` solo validaba la hora de inicio — ahora recorre todas las horas del rango contra `slotsTomados()`. **v7.01:** un turno con rango horario (`horaInicio`/`horaFin`) solo aparecía en la fila de la hora de inicio, dejando las horas intermedias visualmente vacías (aunque ya estaban bloqueadas para nuevas reservas). Nueva función `horasContinuacion(r)` calcula las horas intermedias del rango; en vistas LISTA y SEMANA se pinta un bloque `rango-continua` (rayado diagonal, borde discontinuo, texto "⋯ ocupado") en esas filas, clickeable para abrir el detalle del turno que lo originó. Cambio puramente visual — no se tocó `slotsTomados()` ni la lógica de guardado.
 2. **Aprobación** (modal de detalle, `abrirModal` → botón APROBAR): solo instructor real. Setea `aprobado_por`/`instructor`, audita y manda mail de confirmación (`mailAprob`). **Cartel ámbar de aviso** (proactivo, v5.78/v5.81, corregido en v5.96): al abrir un pendiente de LV-OAD, el modal muestra un cartel ámbar **antes** de aprobar solo si el instructor que aprueba **no** declaró disponibilidad en ese horario **y además otro instructor (no de vacaciones) sí lo declaró** — es decir, únicamente cuando realmente estaría pisando un turno que otro tenía previsto cubrir. Lee `/disponibilidad/{fecha}` completo y nombra al/los instructor(es) con ese horario. Si nadie más lo tiene (p. ej. un turno de piloto `sinInstructor:true`), no se muestra. Igual puede aprobar. Si el turno tiene `sinInstructor:true` (v5.94), el modal muestra junto al estado un badge rosa **"sin instructor"**.
 3. **Cancelación**: por el usuario (`cancelarTurnoAlumno`, con motivo opcional) o por instructor/admin (modal, motivo obligatorio). Setea `cancelado_por`, `cancelado_rol`, `obs_cancelacion`, audita y manda mail (`mailCancel`). Cualquier instructor real (o admin) puede cancelar cualquier aprobado (v5.86). **v6.01**: como el motivo es opcional para el alumno, cerrar el modal de motivo (botón CANCELAR, Escape o click afuera) ya NO aborta la cancelación — antes sí lo hacía, y el alumno veía el turno seguir activo aunque había confirmado cancelarlo. Al terminar, `alert()` explícito de éxito ("Turno cancelado correctamente") o de error si falla la escritura en Firebase. **v6.02**: el botón "CANCELAR" del modal de motivo era ambiguo para el alumno (sugería volver atrás, pero ya no aborta nada desde v6.01) — ahora el botón y el texto del modal son dinámicos: instructor (motivo obligatorio) ve "CANCELAR" y el aviso de que se manda mail; alumno (motivo opcional) ve "OMITIR MOTIVO" y aclara que el turno se cancela igual. **v6.18**: para el **instructor** (motivo obligatorio), el modal agrega un **select de motivo tabulado** (Meteorología Adversa / Técnica de Aeronave / Reprogramación Turno / Solicitado por Alumno / Aeródromo Cerrado / Otros) — al elegir una categoría fija, el textarea se autocompleta y queda read-only; con "Otros" el textarea se habilita para texto libre como antes. El motivo del alumno sigue siendo textarea libre sin el select. **v6.19**: nuevo campo `cancelado_rol` (ver §3). **v6.20**: se invierte el orden de los pasos previos a cancelar (instructor): antes salía primero el `confirm()` genérico y recién después el modal de motivo, lo cual obligaba a comprometerse a cancelar antes de saber qué motivo poner; ahora sale primero el modal de motivo, y solo si se eligió uno válido aparece el `confirm()` final, que ahora incluye el motivo en el texto ("¿Cancelar el turno de X? Motivo: Y"). El flujo del alumno no cambió (ya tenía este orden, sin `confirm()` previo).
@@ -552,6 +553,9 @@ Registro de eventos (`registrarAuditoria`): login (éxito/fallo/bloqueado), regi
 - **Rango horario en "+ CARGAR TURNO" para todos los aviones + fix conflicto + visualización intermedias (HECHO, 2026-07-28, v7.00/v7.01):** v7.00 habilitó el campo "Hora fin" para LV-OAD (antes solo LV-ART/LV-MPH) y corrigió el chequeo de conflicto que solo validaba la hora de inicio. v7.01 agregó la visualización visual de las horas intermedias de un rango (`horasContinuacion()`), evitando que parecieran libres cuando ya estaban bloqueadas. Ver §8.
 - **Borrado de carga manual por el propio instructor (HECHO, 2026-07-28, v7.02):** el instructor que carga un turno con "+ CARGAR TURNO" ahora puede borrarlo si se equivoca — solo sus propias cargas (`cargado_por === session.nombre`), con registro en `/auditoria` (a diferencia del borrado de admin que es silencioso). Ver §8.
 - **Versión de este documento vs. repo (2026-07-29):** turnos.html **v7.02**, fpl.html **v3.24**, portal-alumno.html **v1.16**, peso-balance.html **v1.5**. Sincronizado a estas versiones.
+- **PWA — instalable como app (HECHO, 2026-07-31, turnos.html v7.03, fpl.html v3.26/v3.27, portal-alumno.html v1.17/v1.18, peso-balance.html v1.6/v1.7):** los 4 archivos son instalables desde el celular (manifest + service worker `sw.js` + íconos), cada uno con su propio manifest/ícono/nombre (no comparten uno genérico). Confirmado instalado y funcionando en iPhone y Android por Daniel. Ver detalle completo en §25.
+- **Ventana horaria para pedir turno (HECHO, 2026-07-31, v7.04):** pedir turno de instrucción (alumno siempre, piloto solo en modo instrucción) deshabilitado de 00:00 a 07:00 — caso real: pedido a las 3 AM sobre un día que el instructor ya tenía cerrado y programado. No afecta a piloto en modo particular ni a "+ CARGAR TURNO". Ver detalle en §6.
+- **Versión de este documento vs. repo (2026-07-31):** turnos.html **v7.04**, fpl.html **v3.27**, portal-alumno.html **v1.18**, peso-balance.html **v1.7**. Sincronizado a estas versiones.
 
 ## 19. Limitaciones conocidas
 
@@ -667,6 +671,9 @@ Página aparte (no es turnos.html) para armar **planes de vuelo OACI** (casillas
 - Botón **"Plan de Vuelo"** (clase `.fpl-link`, pill ámbar) en las tab-bars de alumno e instructor (v5.89/v5.90).
 - Meteorología **METAR/TAF de SAWE** (CheckWX) vive en `fpl.html`, no en turnos.html.
 
+### PWA (v3.26/v3.27)
+Instalable como app propia ("ACRG FPL", ícono dedicado) — ver detalle completo en §25.
+
 ## 23. Portal de Alumno (`portal-alumno.html`)
 
 Página aparte, nueva (construida 2026-06-25/26), con cuatro pestañas: **PERFIL**, **MANUALES**, **CUESTIONARIOS** (renombrado de "QUIZ" en v1.9 — solo el texto del tab, los textos internos del panel no cambiaron) y **FLASHCARDS** (v1.10). Comparte la misma Firebase (`turnos-lv-oad`) vía SDK modular (no REST como `fpl.html`).
@@ -727,6 +734,9 @@ La primera entrega de la feature de timeout (ver arriba) declaraba `const SESSIO
 ### Esquema de Firebase
 Ver §3: `/manuales`, `/quizzes`, `/intentos_quiz`, `/notas_alumno`. También lee (solo lectura desde el portal) `/alumnos` e `/instructores`.
 
+### PWA (v1.17/v1.18)
+Instalable como app propia ("ACRG Portal", ícono dedicado) — ver detalle completo en §25.
+
 ## 24. Calculadora de Peso y Balance (`peso-balance.html`)
 
 Página aparte (construida 2026-06-27), réplica de la planilla Excel del club, con un **ábaco** (gráfico de envolvente + punto de CG) dibujado en SVG a mano, sin librerías. **No usa Firebase para nada** — no guarda ni lee datos, cada uno tipea los pesos a mano cada vez (decisión explícita).
@@ -750,3 +760,37 @@ Cada avión declara su propia lista de **`estaciones`** de carga (filas de pasaj
 
 ### Integración con turnos.html
 Botón **"⚖ Peso y Balance"** (clase `.wb-link`, pill verde) en las `.links-row` de alumno e instructor (turnos.html v6.05) — visible para **cualquier rol** (a diferencia de "Portal Alumnos", que se esconde para piloto), porque la herramienta le aplica a todo el que vuela.
+
+### PWA (v1.6/v1.7)
+Instalable como app propia ("ACRG P&B", ícono dedicado) — ver detalle completo en §25.
+
+## 25. Progressive Web App (PWA) — instalación como app en el celular
+
+Los 4 archivos (`turnos.html`, `fpl.html`, `portal-alumno.html`, `peso-balance.html`) son instalables como app desde el celular (ícono propio, sin barra del navegador), vía el estándar **PWA**. Sigue siendo la misma web de siempre — no hay build, no hay tienda de apps, no cambia el hosting (GitHub+Cloudflare, §2).
+
+### Qué se agregó (turnos.html v7.03, fpl.html v3.26, portal-alumno.html v1.17, peso-balance.html v1.6 — 2026-07-31)
+- **`<head>` de cada HTML:** `<link rel="manifest">`, `<meta name="theme-color" content="#0a0c0f">`, `apple-mobile-web-app-capable`/`apple-mobile-web-app-status-bar-style`/`apple-mobile-web-app-title`, `<link rel="apple-touch-icon">`.
+- **Fin de `<script>` de cada HTML:** registro de `navigator.serviceWorker.register('/sw.js')` dentro de `window.addEventListener('load', ...)`.
+- **`sw.js`** (archivo nuevo, compartido por los 4): service worker mínimo. Estrategia **network-first** para `.html` (siempre trae la última versión desplegada; solo cae a caché si está offline — no compite con la Cache Rule `no-store` de Cloudflare, §2) y **cache-first** para el resto (íconos, manifest). Firebase/EmailJS y cualquier dominio externo pasan directo a la red, sin intervención del service worker (`if (url.origin !== self.location.origin) return`).
+- Debe quedar en la **raíz del repo** (mismo nivel que los HTML) — el `scope:"/"` del manifest y la ruta absoluta `/sw.js` lo requieren.
+
+### Manifest e ícono por app (v7.03→v7.04 turnos, v3.26→v3.27 fpl, v1.17→v1.18 portal-alumno, v1.6→v1.7 peso-balance)
+Cada archivo tiene su **propio** manifest e ícono — no comparten uno genérico — para que al instalarse cada uno quede con su nombre e imagen correctos en el celular:
+
+| Archivo | Manifest | Íconos (192/512/512-maskable) | `start_url` | Nombre al instalar |
+|---|---|---|---|---|
+| `turnos.html` | `manifest.json` | `icon-192.png` / `icon-512.png` / `icon-512-maskable.png` | `/turnos.html` | ACRG Turnos |
+| `fpl.html` | `manifest-fpl.json` | `icon-fpl-192/512/512-maskable.png` | `/fpl.html` | ACRG FPL |
+| `portal-alumno.html` | `manifest-portal.json` | `icon-portal-192/512/512-maskable.png` | `/portal-alumno.html` | ACRG Portal |
+| `peso-balance.html` | `manifest-pyb.json` | `icon-pyb-192/512/512-maskable.png` | `/peso-balance.html` | ACRG P&B |
+
+- Íconos diseñados por Daniel (1254×1254, esquinas redondeadas ya incorporadas en el PNG). La versión `-maskable` de cada uno se procesó aparte: el PNG original exportaba el fondo transparente como **negro sólido** en las 4 esquinas redondeadas — inofensivo para el ícono `any` (iOS/Android lo usan tal cual), pero rompía el propósito `maskable` (Android aplica su propia máscara — círculo, squircle, etc. — sobre el ícono, y las cuñas negras del redondeo original asomaban por fuera). Se generó una variante con las esquinas rellenas del mismo azul de fondo (relleno con umbral de brillo + `GaussianBlur` para que no quede un borde duro), full-bleed hasta el borde del cuadrado, específicamente para `purpose:"maskable"`.
+- `scope` de los 4 manifests es `"/"` (comparten dominio y `sw.js`); lo que cambia entre apps es únicamente `start_url`, `name`/`short_name`, y los íconos.
+- **Pendiente:** ninguno — los 4 quedaron con ícono propio confirmado por Daniel (2026-07-31).
+
+### Instalación (proceso manual del usuario, sin `beforeinstallprompt` propio)
+No hay botón "Instalar" propio dentro de la app. Evaluado y descartado a pedido de Daniel (ver más abajo) — la instalación es 100% manual, iniciada por el usuario desde el navegador:
+
+- **iPhone (Safari):** Safari → ícono Compartir → "Agregar a Inicio" → confirmar nombre → Agregar. **Tiene que arrancar desde Safari**, nunca desde un ícono ya instalado (ese abre en modo standalone, sin ninguna barra de Safari — no hay botón Compartir ahí). iOS no soporta el evento `beforeinstallprompt`: no se puede disparar la instalación por código ni saber con certeza si el usuario la completó.
+- **Android (Chrome):** Chrome muestra automáticamente un banner/botón "Instalar app"; si no aparece solo, es manual vía menú ⋮ → "Instalar aplicación". También debe arrancar desde el ícono de Chrome, no desde una app ya instalada.
+- **Banner de instalación propio (evaluado, no implementado):** Daniel preguntó si la propia página podía ofrecer instalarse. Técnicamente viable en Android (capturar `beforeinstallprompt` y disparar el diálogo nativo con un botón propio) pero **no en iOS** (Apple no expone ese evento — el paso final siempre lo hace el usuario a mano). Se decidió no agregarlo: la base de usuarios es chica y conocida (instructores/alumnos/pilotos del club), así que un instructivo por WhatsApp llega mejor que un banner in-app, y evita mantener lógica de detección de plataforma/dismissal en los 4 archivos para un problema ya resuelto con instrucciones. Se generaron imágenes-instructivo (formato WhatsApp, fuera del repo) para turnos.html en iPhone y Android, con los pasos numerados — no versionadas junto al código, quedan como material de difusión aparte.
