@@ -1,5 +1,28 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.05
+  FECHA   : 2026-08-01
+  CAMBIOS : Pedido de Daniel: un turno 'vencido' con aprobador (parecía que voló) puede en
+            realidad no haber volado (ej. se canceló por meteo) sin que nadie llegara a
+            marcarlo 'cancelado' antes de que pasara la hora del vuelo — quedaba contado como
+            vuelo real en la cuota semanal del alumno y en Consultas→Por Alumno ("VOLÓ").
+            Botón nuevo "CORREGIR A CANCELADO (no se voló)" en el modal de detalle, visible
+            SOLO para estado==='vencido' y solo a instructor real o admin/administrador
+            (mismo criterio que ya permite cancelar cualquier aprobado, v5.86). Reutiliza el
+            flujo existente de cancelación del instructor tal cual: mismo select de motivos
+            tabulados (pedirMotivoCancelacion), mismos campos (cancelado_por, cancelado_rol:
+            'instructor', ts_cancelacion vía serverTimestamp()), y la MISMA acción de
+            auditoría 'cancelacion_turno' (decisión explícita de Daniel: no crear una acción
+            separada, para no fragmentar las estadísticas existentes) — el detalle de
+            auditoría sí aclara "corrección de vencido a cancelado" para trazabilidad. Al
+            quedar cancelado_rol:'instructor', turnosRestantesSemana() y calcAlumnoStats() ya
+            lo excluyen de la cuota y lo recategorizan como "CANCELÓ INSTRUCTOR" sin tocar
+            ninguna de esas dos funciones (mismo criterio que ya existía, ver §6). Como el
+            turno vencido ya pasó, turnoYaPaso(rv) es siempre true, así que — igual que en
+            cualquier cancelación de un turno pasado — NO se dispara mailCancel al alumno
+            (mismo patrón preexistente, no es un caso especial nuevo). No aplica a vencido SIN
+            aprobador (el del cron, nunca confirmado): ese caso ya no cuenta para la cuota, no
+            necesita corrección. Ver anterior:
   VERSION : 7.04
   FECHA   : 2026-07-31
   CAMBIOS : Pedido de Daniel: ventana horaria para PEDIR turno — deshabilitado entre
@@ -2068,7 +2091,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.04</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.05</div>
   </div>
 
 </div>
@@ -5565,6 +5588,28 @@ window.abrirModal=function(key){
         :'Turno de piloto autoaprobado (no requiere confirmación de instructor). Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.')
       :'Venció automáticamente: ningún instructor lo confirmó dentro del plazo antes del vuelo, así que el horario quedó liberado. No hace falta que el horario del vuelo ya haya pasado.';
     actions.appendChild(nota);
+    // v7.05: corrección manual vencido→cancelado (pedido de Daniel). Mismo criterio de
+    // permiso que cancelar cualquier aprobado (v5.86): cualquier instructor real, o admin.
+    const esAdminGlobalVenc=session?.user==='admin'||session?.user==='administrador';
+    if(esInstructorReal()||esAdminGlobalVenc){
+      const bcv=document.createElement('button');bcv.className='danger';bcv.textContent='CORREGIR A CANCELADO (no se voló)';
+      bcv.style.cssText='margin-top:8px';
+      bcv.title='Para cuando el turno quedó "vencido" pero en realidad no se voló (ej. meteo) y nadie llegó a cancelarlo a tiempo.';
+      bcv.onclick=async()=>{
+        const motivo=await pedirMotivoCancelacion(true);if(motivo===null)return;
+        if(!confirm('¿Corregir este turno vencido a CANCELADO?\n\nMotivo: '+motivo+'\n\nEsto lo saca de la cuenta de vuelos reales del alumno (cuota semanal y estadísticas de Consultas).'))return;
+        const rv=await fbGet('reservas/'+key);
+        if(rv){
+          const upd={estado:'cancelado',instructor:session.nombre,cancelado_por:session.nombre,cancelado_rol:'instructor',ts_cancelacion:serverTimestamp()};
+          upd.obs_cancelacion='Cancelado por el instructor (corrección de turno vencido) — '+motivo;
+          await fbUpdate('reservas/'+key,upd);
+          await registrarAuditoria('cancelacion_turno',session.rol||'instructor','exito',session.nombre+' (instructor) — corrección de vencido a cancelado — '+(rv.avion||'LV-OAD')+' — '+rv.fecha+' '+rv.hora+' hs — alumno: '+rv.nombre+' — '+motivo);
+          if(!turnoYaPaso(rv))mailCancel(rv,motivo);
+        }
+        cerrarModal();
+      };
+      actions.appendChild(bcv);
+    }
   }
   // v6.11/v6.12: BORRAR definitivo — SOLO para el usuario literal 'admin' (no
   // instructor, no administrador). A pedido explícito: para limpiar turnos de prueba
