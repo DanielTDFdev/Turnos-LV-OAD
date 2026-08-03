@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.5 · 2026-08-03
+  Pedido de Daniel: totalizador del día en la pestaña Libro. Arriba de la
+  lista de vuelos aparece una tarjeta con 3 números: cantidad de vuelos,
+  horas totales (suma de obs_privada_tiempo_vuelo, redondeado a 1
+  decimal) y aterrizajes totales (suma de obs_privada_aterrizajes) de esa
+  fecha. Se calcula sobre el mismo array `mis` que ya arma cargarLibro()
+  (solo vuelos finalizados y guardados), sin pegarle a Firebase de nuevo.
+  Ver anterior:
   v3.4 · 2026-08-03
   Pedido de Daniel: confirmación antes de INICIAR y FINALIZAR el vuelo,
   solo como precaución ante un toque accidental (confirm() nativo en cada
@@ -356,6 +364,13 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .tag-vencido{color:var(--amber);font-weight:700}
 
 /* ── TAB LIBRO ── */
+.libro-total{
+  display:flex;background:var(--bg3);border:1px solid rgba(0,200,212,.25);border-radius:var(--r);
+  padding:16px 8px;margin-bottom:16px;
+}
+.libro-total .lt-item{flex:1;text-align:center}
+.libro-total .lt-val{font-family:var(--disp);font-size:24px;color:var(--cyan)}
+.libro-total .lt-lbl{font-family:var(--mono);font-size:11px;color:var(--gray);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
 .vuelo-row{
   background:var(--bg2);border:1px solid rgba(0,200,212,.1);border-radius:var(--r);
   padding:16px 18px;margin-bottom:10px;
@@ -571,7 +586,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.5'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -1029,7 +1044,15 @@ async function cargarLibro(){
       return;
     }
 
-    $('libro-contenido').innerHTML=mis.map(r=>{
+    const totalHoras=mis.reduce((acc,r)=>acc+(parseFloat(r.obs_privada_tiempo_vuelo)||0),0);
+    const totalAterr=mis.reduce((acc,r)=>acc+(parseInt(r.obs_privada_aterrizajes)||0),0);
+    const totalizador=`<div class="libro-total">
+      <div class="lt-item"><div class="lt-val">${mis.length}</div><div class="lt-lbl">Vuelo${mis.length===1?'':'s'}</div></div>
+      <div class="lt-item"><div class="lt-val">${Math.round(totalHoras*10)/10}</div><div class="lt-lbl">Horas</div></div>
+      <div class="lt-item"><div class="lt-val">${totalAterr}</div><div class="lt-lbl">Aterrizajes</div></div>
+    </div>`;
+
+    $('libro-contenido').innerHTML=totalizador+mis.map(r=>{
       const despegue=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
       const aterr=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
       const horas=r.obs_privada_tiempo_vuelo||'—';
