@@ -1,5 +1,27 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.06
+  FECHA   : 2026-08-03
+  CAMBIOS : Pedido de Daniel: "+ CARGAR TURNO" (modal manual, instructor/admin) no pedía el
+            tipo de vuelo cuando el avión no era LV-OAD, a diferencia del flujo de autoservicio
+            del piloto (cambiarTipoVuelo, v6.94) — cargaba siempre como si fuera 'instruccion'
+            (por inferencia de tipoVueloDe, ni siquiera escribía el campo explícito). Ahora el
+            modal replica el mismo criterio: nuevo dropdown "Tipo de vuelo" (ct-tipovuelo-wrap),
+            visible SOLO si la persona seleccionada es piloto Y el avión no es LV-OAD (alumno,
+            o LV-OAD, siempre da 'instruccion' forzado — igual que confirmarTurno). Si el
+            piloto elige "Particular", el campo "Aprobado por" se oculta (ct-aprobado-wrap) y
+            el turno se guarda directo estado:'aprobado' SIN escribir aprobado_por/instructor —
+            mismo comportamiento que el autoservicio (v6.94/v6.96: particular de piloto se
+            autoaprueba, nadie "aprobó" nada). Si elige "Instrucción" (o el dropdown ni
+            aparece), sigue el flujo de siempre: "Aprobado por" visible, pendiente si se deja
+            vacío. Nueva función ctActualizarCampos() (reemplaza a ctActualizarRango, que
+            ahora es un caso particular de esta) — se dispara con el onchange de avión Y de
+            alumno (antes el select de alumno no tenía onchange), ya que la visibilidad del
+            tipo de vuelo depende de ambos campos. tipo_vuelo ahora se escribe siempre
+            explícito en el turno cargado manualmente (antes dependía 100% del fallback de
+            tipoVueloDe para inferirlo).
+  ANTERIOR: v7.05
+
   VERSION : 7.05
   FECHA   : 2026-08-01
   CAMBIOS : Pedido de Daniel: un turno 'vencido' con aprobador (parecía que voló) puede en
@@ -2091,7 +2113,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.05</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.06</div>
   </div>
 
 </div>
@@ -2847,12 +2869,12 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <div class="modal-title">◈ Cargar Turno</div>
     <div class="field">
       <label>Alumno / Piloto</label>
-      <select id="ct-alumno"><option value="">— Seleccionar —</option></select>
+      <select id="ct-alumno" onchange="ctActualizarCampos()"><option value="">— Seleccionar —</option></select>
     </div>
     <div class="row">
       <div class="field" style="margin:0;min-width:110px">
         <label>Avión</label>
-        <select id="ct-avion" onchange="ctActualizarRango()">
+        <select id="ct-avion" onchange="ctActualizarCampos()">
           <option value="LV-OAD">LV-OAD</option>
           <option value="LV-ART">LV-ART</option>
           <option value="LV-MPH">LV-MPH</option>
@@ -2862,6 +2884,14 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <label>Fecha</label>
         <input type="date" id="ct-fecha">
       </div>
+    </div>
+    <div class="field" id="ct-tipovuelo-wrap" style="display:none">
+      <label>Tipo de vuelo</label>
+      <select id="ct-tipovuelo" onchange="ctActualizarCampos()">
+        <option value="" selected disabled>Seleccioná...</option>
+        <option value="particular">Particular — se aprueba automático</option>
+        <option value="instruccion">Instrucción — requiere aprobación del instructor</option>
+      </select>
     </div>
     <div class="row">
       <div class="field" style="margin:0;min-width:110px">
@@ -2877,7 +2907,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <label>Observaciones <span style="font-size:10px;color:var(--text3)">(opcional)</span></label>
       <textarea id="ct-obs" rows="2" placeholder="Ej: turno coordinado por teléfono"></textarea>
     </div>
-    <div class="field">
+    <div class="field" id="ct-aprobado-wrap">
       <label>Aprobado por</label>
       <select id="ct-instructor"><option value="">— Sin aprobación (queda pendiente) —</option></select>
     </div>
@@ -6582,7 +6612,8 @@ async function abrirModalCargarTurno(){
   document.getElementById('ct-horafin').value='';
   document.getElementById('ct-obs').value='';
   document.getElementById('ct-avion').value='LV-OAD';
-  ctActualizarRango();
+  document.getElementById('ct-tipovuelo').value='';
+  ctActualizarCampos();
   const selInst=document.getElementById('ct-instructor');
   selInst.innerHTML='<option value="">— Sin aprobación (queda pendiente) —</option>';
   const instData=await fbGet('instructores');
@@ -6617,8 +6648,30 @@ document.addEventListener('click',e=>{if(e.target.id==='modal-cargar-turno')cerr
 // Rango horario (hora fin): disponible para cualquier avión, incluido LV-OAD (v7.00).
 // Antes se ocultaba para LV-OAD; pedido de Daniel: sirve igual para reservar un tramo
 // largo (ej: navegación de instrucción de varias horas) sin importar qué avión sea.
-window.ctActualizarRango=function(){
+//
+// v7.06: unificada con la lógica de tipo_vuelo — mismo criterio que usa el flujo de
+// autoservicio del piloto (cambiarTipoVuelo/seleccionarAvion): el dropdown "Tipo de
+// vuelo" solo aparece si la persona seleccionada es piloto Y el avión no es LV-OAD
+// (alumno, o LV-OAD, siempre da 'instruccion' forzado — no hay nada que elegir). Si
+// queda visible y el piloto elige "Particular", el campo "Aprobado por" se oculta:
+// un vuelo particular de piloto se aprueba automático, igual que en el autoservicio
+// (confirmarTurno no escribe aprobado_por/instructor para ese caso — ver v6.94).
+window.ctActualizarCampos=function(){
   document.getElementById('ct-horafin-wrap').style.display='';
+
+  const avion=document.getElementById('ct-avion').value;
+  const sel=document.getElementById('ct-alumno');
+  const alumno=(sel._datos||{})[sel.value];
+  const esPiloto=!!(alumno&&alumno.rol==='piloto');
+  const wrapTV=document.getElementById('ct-tipovuelo-wrap');
+  const selTV=document.getElementById('ct-tipovuelo');
+
+  const mostrarTV=esPiloto&&avion!=='LV-OAD';
+  wrapTV.style.display=mostrarTV?'':'none';
+  if(!mostrarTV) selTV.value='';
+
+  const esParticular=mostrarTV&&selTV.value==='particular';
+  document.getElementById('ct-aprobado-wrap').style.display=esParticular?'none':'';
 };
 
 window.guardarTurnoManual=async function(){
@@ -6649,7 +6702,15 @@ window.guardarTurnoManual=async function(){
   } else if(taken.includes(hora)){
     showErr('ct-err','Ese avión ya tiene un turno activo a esa fecha/hora. Elegí otro horario.');return;
   }
-  const instructorSel=document.getElementById('ct-instructor').value;
+  const esPiloto=alumno.rol==='piloto';
+  const wrapTVvisible=document.getElementById('ct-tipovuelo-wrap').style.display!=='none';
+  const tipoVueloSel=document.getElementById('ct-tipovuelo').value;
+  if(wrapTVvisible&&!tipoVueloSel){showErr('ct-err','Elegí el tipo de vuelo (Particular o Instrucción).');return;}
+  // Mismo criterio que confirmarTurno() (autoservicio): LV-OAD o alumno → siempre
+  // 'instruccion'. Piloto en otro avión → lo que eligió en el dropdown.
+  const tipoVuelo=(esPiloto&&avion!=='LV-OAD')?tipoVueloSel:'instruccion';
+  const esParticular=tipoVuelo==='particular';
+  const instructorSel=esParticular?'':document.getElementById('ct-instructor').value;
   const obs=document.getElementById('ct-obs').value.trim();
   const nuevo={
     nombre:alumno.nombre||alumno.email||key,
@@ -6657,7 +6718,10 @@ window.guardarTurnoManual=async function(){
     fecha,hora,
     ...(horaFin?{horaInicio:hora,horaFin}:{}),
     avion,obs,
-    estado:instructorSel?'aprobado':'pendiente',
+    tipo_vuelo:tipoVuelo,
+    // Particular de piloto: se aprueba automático, igual que en el autoservicio
+    // (confirmarTurno no escribe aprobado_por/instructor para ese caso — v6.94).
+    estado:(esParticular||instructorSel)?'aprobado':'pendiente',
     rol:alumno.rol||'alumno',
     ts:new Date().toISOString(),
     cargado_por:session.nombre||session.user||''   // distingue de una reserva hecha por el propio alumno
@@ -6666,11 +6730,12 @@ window.guardarTurnoManual=async function(){
   try{
     await fbPush('reservas',nuevo);
     const labelHora=horaFin?hora+' a '+horaFin+' hs':hora+' hs';
+    const estadoTxt=esParticular?' — particular, aprobado automático':(instructorSel?' — aprobado por '+instructorSel:' — pendiente');
     await registrarAuditoria('alta_turno_manual',session.rol||'instructor','exito',
       (session.nombre||session.user)+' cargó turno — '+avion+' — '+fecha+' '+labelHora+
-      ' — alumno: '+nuevo.nombre+(instructorSel?' — aprobado por '+instructorSel:' — pendiente'));
+      ' — alumno: '+nuevo.nombre+estadoTxt);
     if(instructorSel&&nuevo.email) mailAprob(nuevo,instructorSel);
-    showOk('ct-ok','// TURNO CARGADO'+(instructorSel?' Y APROBADO':' (PENDIENTE)'));
+    showOk('ct-ok','// TURNO CARGADO'+(nuevo.estado==='aprobado'?' Y APROBADO':' (PENDIENTE)'));
     // No hace falta refrescar nada a mano: hay un onValue(ref(db,'reservas')) en vivo
     // que ya re-renderiza toda la pantalla apenas el fbPush escribe el nodo nuevo.
     setTimeout(()=>cerrarModalCargarTurno(),1200);
