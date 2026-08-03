@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
+  v1.1 · FIX: clasificar() no reconocía los vuelos realizados. En el sistema,
+         un turno aprobado que llega a su horario pasa a estado 'vencido' con
+         aprobado_por seteado (comportamiento documentado en turnos.html v6.52).
+         La v1.0 trataba vencido+aprobado_por como 'vencido_confirmado' en vez
+         de 'volado' — resultado: 0 vuelos y 0 horas en todos los reportes.
+         Fix: vencido+aprobado_por+tiempo_vuelo → 'volado';
+              vencido+aprobado_por+sin tiempo → 'aprobado_pasado_sin_obs'.
+         También se eliminó la categoría 'vencido_confirmado' que ya no aplica.
   v1.0 · 2026-08-03
   Acceso: solo admin / administrador (lee sessionStorage 'lvoad-session').
   Datos: Firebase RTDB turnos-lv-oad-default-rtdb.
@@ -228,7 +236,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.0</span>
+      <span class="ver">v1.1</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -367,10 +375,8 @@ if (!ok) {
 function clasificar(r) {
   const hoyStr = hoy();
   const esPasado = r.fecha < hoyStr;
-  if (r.cargado_por && r.estado === 'cancelado') return 'cancelado_instructor'; // staff canceló lo que cargó
-  if (r.cargado_por) {
-    // turno cargado por staff — igual lo clasificamos por estado
-  }
+  if (r.cargado_por && r.estado === 'cancelado') return 'cancelado_instructor';
+  // estado 'aprobado' pasado — poco frecuente (barrido lazy del cliente puede no haberlo vencido aún)
   if (r.estado === 'aprobado' && esPasado) {
     return r.obs_privada_tiempo_vuelo ? 'volado' : 'aprobado_pasado_sin_obs';
   }
@@ -379,7 +385,13 @@ function clasificar(r) {
     return r.cancelado_rol === 'instructor' ? 'cancelado_instructor' : 'cancelado_alumno';
   }
   if (r.estado === 'vencido') {
-    return r.aprobado_por ? 'vencido_confirmado' : 'vencido_sin_aprobar';
+    if (r.aprobado_por) {
+      // vencido CON aprobado_por = vuelo que se realizó (el avión salió y el turno venció por hora)
+      // Si el instructor cargó obs con tiempo = 'volado'; si no, quedó sin obs todavía
+      return r.obs_privada_tiempo_vuelo ? 'volado' : 'aprobado_pasado_sin_obs';
+    }
+    // vencido SIN aprobado_por = pendiente que nadie aprobó, se venció automáticamente
+    return 'vencido_sin_aprobar';
   }
   if (r.estado === 'pendiente') return 'pendiente';
   return 'otro';
@@ -462,7 +474,7 @@ async function generarReporte() {
         totAterrizajes += parseInt(r.obs_privada_aterrizajes || 0);
       }
       if (cls === 'cancelado_alumno' || cls === 'cancelado_instructor') totCancelados++;
-      if (cls === 'vencido_confirmado' || cls === 'vencido_sin_aprobar') totVencidos++;
+      if (cls === 'vencido_sin_aprobar') totVencidos++;
       if (cls === 'pendiente') totPendientes++;
       if (cls === 'aprobado_futuro') totAprobFut++;
     });
@@ -489,7 +501,7 @@ async function generarReporte() {
 
     // Estadísticas del avión
     let avVol=0, avHoras=0, avAterr=0, avCanAlumno=0, avCanInst=0,
-        avVenConf=0, avVenSin=0, avPend=0, avFut=0, avSinObs=0;
+        avVenSin=0, avPend=0, avFut=0, avSinObs=0;
 
     rs.forEach(r => {
       const cls = clasificar(r);
@@ -497,7 +509,6 @@ async function generarReporte() {
       if (cls === 'aprobado_pasado_sin_obs') avSinObs++;
       if (cls === 'cancelado_alumno')      avCanAlumno++;
       if (cls === 'cancelado_instructor')  avCanInst++;
-      if (cls === 'vencido_confirmado')    avVenConf++;
       if (cls === 'vencido_sin_aprobar')   avVenSin++;
       if (cls === 'pendiente')             avPend++;
       if (cls === 'aprobado_futuro')       avFut++;
@@ -514,7 +525,6 @@ async function generarReporte() {
         'aprobado_futuro':       '<span class="badge apr">APROBADO</span>',
         'cancelado_alumno':      '<span class="badge can">CANC. ALUMNO</span>',
         'cancelado_instructor':  '<span class="badge can">CANC. INST.</span>',
-        'vencido_confirmado':    '<span class="badge ven">VENCIDO</span>',
         'vencido_sin_aprobar':   '<span class="badge ven">VEN. S/APRO.</span>',
         'pendiente':             '<span class="badge pen">PENDIENTE</span>',
         'otro':                  '<span class="badge" style="color:var(--text3)">OTRO</span>',
@@ -557,7 +567,6 @@ async function generarReporte() {
           <div class="avion-stat c-amber"><span class="n">${avSinObs}</span><span class="l">Realiz. s/obs</span></div>
           <div class="avion-stat c-red"><span class="n">${avCanAlumno}</span><span class="l">Canc. alumno</span></div>
           <div class="avion-stat c-red"><span class="n">${avCanInst}</span><span class="l">Canc. instructor</span></div>
-          <div class="avion-stat c-purple"><span class="n">${avVenConf}</span><span class="l">Vencidos c/apro.</span></div>
           <div class="avion-stat c-gray"><span class="n">${avVenSin}</span><span class="l">Ven. s/aprobar</span></div>
           <div class="avion-stat c-amber"><span class="n">${avPend+avFut}</span><span class="l">Activos/futuros</span></div>
           <div class="avion-stat c-gray"><span class="n">${rs.length}</span><span class="l">Total registros</span></div>
