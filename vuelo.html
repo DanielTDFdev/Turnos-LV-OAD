@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.2 · 2026-08-03
+  Auto-refresh: como corre standalone (PWA, sin botón de recarga), los
+  turnos nuevos/aprobados no se veían hasta cerrar y reabrir la app.
+  Ahora refresca solo: (1) cada 60s vía setInterval, (2) al volver a
+  primer plano (visibilitychange→visible), (3) al restaurar desde bfcache
+  en iOS standalone (pageshow con e.persisted). El refresh SOLO toca la
+  pantalla si vistaActual==='lista' (aún no se eligió turno) o si está en
+  la pestaña Libro (solo lectura) — nunca mientras hay un vuelo elegido,
+  iniciado (tsInicio) o recién terminado sin guardar (tsFin, form de
+  cierre): ese flujo sigue intacto hasta "Cambiar turno" o guardar.
+  Nueva variable vistaActual (seteada en mostrarVista) para saber qué
+  pantalla está activa sin tocar el DOM.
+  Ver anterior:
   v2.1 · 2026-08-03
   Soporte PWA (instalable como app): <link rel="manifest"> propio
   (manifest-vuelo.json), apple-touch-icon e íconos propios (icon-vuelo-192,
@@ -375,6 +388,7 @@ let session = null;
 let turnoActual = null;   // reserva seleccionada (o null)
 let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
+let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
 
 // ── Init ─────────────────────────────────────────────────
@@ -522,6 +536,7 @@ $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
 $('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
 
 function mostrarVista(v){
+  vistaActual=v;
   $('v-loading').style.display=v==='loading'?'block':'none';
   $('v-lista').style.display=v==='lista'?'block':'none';
   $('v-vuelo').style.display=v==='vuelo'?'block':'none';
@@ -760,6 +775,34 @@ $('btn-logout').addEventListener('click',()=>{
   $('app-shell').classList.remove('active');
   $('screen-login').classList.add('active');
   $('l-pass').value='';$('l-err').textContent='';
+});
+
+// ── AUTO-REFRESH ──────────────────────────────────────────
+// La app corre standalone (PWA) sin botón de recarga, así que los turnos
+// nuevos/aprobados no aparecían hasta cerrar y reabrir. Refresca solo:
+//  - si estamos en la lista de turnos del día (vistaActual==='lista'):
+//    ahí sí se puede reemplazar el contenido sin perder nada.
+//  - si estamos en la pestaña Libro (de solo lectura).
+// NUNCA toca la pantalla mientras hay un turno elegido/vuelo en curso o
+// recién finalizado (vistaActual==='vuelo'): un vuelo iniciado (tsInicio)
+// o terminado pero sin guardar (tsFin, form de cierre con aterrizajes/obs
+// cargados a mano) sigue su flujo normal, intacto, hasta que el propio
+// instructor toque "Cambiar turno" o guarde.
+function autoRefrescar(){
+  if(!session) return;
+  if(!$('app-shell').classList.contains('active')) return;
+  if($('tab-vuelo').classList.contains('active')){
+    if(vistaActual==='lista') cargarTabVuelo();
+  } else if($('tab-libro').classList.contains('active')){
+    cargarLibro();
+  }
+}
+setInterval(autoRefrescar,60000); // cada 60s
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible') autoRefrescar();
+});
+window.addEventListener('pageshow',(e)=>{
+  if(e.persisted) autoRefrescar(); // iOS standalone: vuelve del bfcache al reabrir
 });
 
 if('serviceWorker' in navigator){
