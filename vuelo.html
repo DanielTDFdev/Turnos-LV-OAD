@@ -2,6 +2,20 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.3 · 2026-08-03
+  Pedido de Daniel: mismo chequeo de versión que ya tiene turnos.html.
+  Como corre standalone (PWA) y la pestaña puede quedar abierta días sin
+  recargar, era fácil terminar usando una versión vieja del archivo sin
+  darse cuenta. Cada 5 min (VERSION_POLL_MS) y al volver a primer plano
+  (visibilitychange), se vuelve a bajar este mismo HTML sin caché
+  (?_v=timestamp, cache:'no-store') y se compara la constante APP_VERSION
+  ahí adentro contra la que quedó corriendo en esta pestaña — si difieren,
+  aparece un banner fijo ámbar arriba de todo (fuera de screen-login y
+  app-shell, visible siempre) con botón "ACTUALIZAR AHORA" que recarga la
+  página. Nuevo extraerVersionDeHTML() (regex sobre "const APP_VERSION =
+  'X.X'", equivalente al que usa turnos.html sobre .hero-sub pero
+  adaptado a que acá la versión vive en una constante JS, no en un div).
+  Ver anterior:
   v3.2 · 2026-08-03
   Ajuste pedido por Daniel: GRACIA_VENCIDO_MS bajado de 2 horas a 30
   minutos. Criterio de Daniel: si el turno ya inició hace más de media
@@ -370,6 +384,11 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 <body>
 
 <!-- LOGIN -->
+<div id="banner-version-nueva" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--amber);color:#0a0a0a;font-family:var(--mono);font-size:12px;letter-spacing:.05em;padding:10px 16px;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.45)">
+  <span>⚠ Esta pestaña está corriendo una <b>versión vieja</b> de la app — actualizá antes de seguir.</span>
+  <button id="btn-recargar-version" style="font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:8px;cursor:pointer">ACTUALIZAR AHORA</button>
+</div>
+
 <div id="screen-login" class="screen active">
   <div class="login-hero">
     <div class="ico">✈</div>
@@ -545,7 +564,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -1067,6 +1086,38 @@ document.addEventListener('visibilitychange',()=>{
 window.addEventListener('pageshow',(e)=>{
   if(e.persisted) autoRefrescar(); // iOS standalone: vuelve del bfcache al reabrir
 });
+
+// ── CHEQUEO DE VERSIÓN ────────────────────────────────────
+// Mismo mecanismo que turnos.html: la pestaña puede quedar abierta días
+// (PWA sin recarga automática) corriendo una versión vieja del archivo
+// mientras el repo ya tiene una más nueva. Cada VERSION_POLL_MS (y al
+// volver a primer plano) se vuelve a bajar este mismo HTML sin caché y se
+// compara la constante APP_VERSION contra la que quedó corriendo acá — si
+// difieren, se muestra el banner fijo con botón para recargar.
+function extraerVersionDeHTML(html){
+  const m=html.match(/const APP_VERSION\s*=\s*'([\d.]+)'/);
+  return m?('v'+m[1]):null;
+}
+const VERSION_ACTUAL='v'+APP_VERSION;
+const VERSION_POLL_MS=5*60*1000; // 5 minutos
+let _versionDesactualizada=false;
+async function chequearVersionNueva(){
+  if(_versionDesactualizada) return;
+  try{
+    const r=await fetch(location.pathname+'?_v='+Date.now(),{cache:'no-store'});
+    if(!r.ok) return;
+    const html=await r.text();
+    const versionServidor=extraerVersionDeHTML(html);
+    if(versionServidor&&versionServidor!==VERSION_ACTUAL){
+      _versionDesactualizada=true;
+      const b=document.getElementById('banner-version-nueva');
+      if(b)b.style.display='flex';
+    }
+  }catch(e){console.warn('No se pudo chequear si hay una version nueva:',e);}
+}
+document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
+setInterval(chequearVersionNueva,VERSION_POLL_MS);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
