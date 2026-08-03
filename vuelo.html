@@ -2,6 +2,39 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.0 · 2026-08-03
+  Fix pedido por Daniel: el Libro mostraba la hora convertida a local
+  (America/Argentina/Ushuaia, UTC-3) en vez de UTC cruda — como esa zona
+  es exactamente la hora local del club, no se notaba a simple vista, pero
+  no es lo que se necesita para un libro de vuelo (convención aeronáutica:
+  registrar en UTC/Zulu). Ejemplo real: vuelo a las 18:10 hora local
+  (=21:10 UTC) se veía como "18:10" en vez de "21:10".
+  fmtUTC() ahora fuerza timeZone:'UTC' de verdad (antes decía UTC pero
+  convertía a Ushuaia — nombre engañoso, comportamiento incorrecto) y
+  agrega sufijo "Z" a lo mostrado. Se usa solo en el Libro (r.ts_despegue/
+  r.ts_aterrizaje). El timer EN VIVO mientras se vuela sigue en hora local
+  (tiene sentido operativo: mirar el reloj de pared mientras estás
+  volando) — esa función se renombró de fmtUTCFull a fmtLocalFull para
+  que el nombre ya no confunda. Agregado texto aclaratorio en la pestaña
+  Libro: "Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande".
+  No se tocó nada del guardado: ts_despegue/ts_aterrizaje ya se guardaban
+  en UTC crudo (.toISOString()) desde siempre — esto era solo un problema
+  de visualización.
+  Ver anterior:
+  v2.9 · 2026-08-03
+  Tipografía agrandada en toda la app, a pedido de Daniel — la app se usa
+  casi exclusivamente en celular. Foco especial en Libro (el que más se
+  quejaba de chico): vr-hora 14→19px, vr-alumno 16→19px, vr-avion 10→13px,
+  vr-datos 11→14px, más padding en las filas (14/16→16/18). También subido
+  en general: .label 10→12px, .card-title 12→14px, .err 11→13px, inputs
+  16→17px, botones 14→15px, btn-ghost 12→13px, tab-btn 11→13px, top-bar
+  nombre 13→15px / sub 10→12px, login h1 22→24px / p 10→12px, turno-hero
+  (avión 11→13px, hora 12→14px), estado-vuelo (label 11→13px, timestamp
+  28→30px, sub 10→12px), tiempo-calculado t-val 22→24px, turno-item (hora
+  20→22px, alumno 17→19px, avión 10→12px, flecha 18→22px), toast 12→14px,
+  badge-ok 10→12px, hints varios 10→12px. Sin tocar el layout ni la
+  lógica — solo tamaños y algo de padding/gap para que respire.
+  Ver anterior:
   v2.8 · 2026-08-03
   Fix pestaña Pendientes: mostraba turnos vencidos sin volar (heredado del
   filtro de Vuelo, que sí necesita ver vencidos-con-aprobador para poder
@@ -154,16 +187,16 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 }
 .top-bar .inst-info{flex:1}
 .top-bar .inst-info .nombre{
-  font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;
+  font-family:var(--disp);font-size:15px;color:var(--cyan);letter-spacing:.08em;
 }
 .top-bar .inst-info .sub{
-  font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:1px;
+  font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px;
 }
-.ver{font-family:var(--mono);font-size:9px;color:var(--gray2);letter-spacing:.06em}
+.ver{font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em}
 .top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .btn-sm{
   background:transparent;border:1px solid var(--gray2);border-radius:8px;
-  color:var(--gray);font-family:var(--mono);font-size:10px;padding:7px 11px;
+  color:var(--gray);font-family:var(--mono);font-size:12px;padding:8px 12px;
   cursor:pointer;letter-spacing:.06em;white-space:nowrap;
 }
 .btn-sm:active{background:rgba(255,255,255,.06)}
@@ -173,8 +206,8 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
   display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;
 }
 .tab-btn{
-  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:11px;
-  letter-spacing:.1em;color:var(--gray);cursor:pointer;border:none;background:transparent;
+  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:13px;
+  letter-spacing:.08em;color:var(--gray);cursor:pointer;border:none;background:transparent;
   text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
 }
 .tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
@@ -184,23 +217,23 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 .tab-content.active{display:block}
 
 /* ── Elementos comunes ── */
-.label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--gray);text-transform:uppercase;margin-bottom:8px;display:block}
+.label{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--gray);text-transform:uppercase;margin-bottom:8px;display:block}
 .card{background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:18px;margin-bottom:12px}
-.card-title{font-family:var(--disp);font-size:12px;color:var(--cyan);letter-spacing:.1em;margin-bottom:12px;text-transform:uppercase}
-.err{font-family:var(--mono);font-size:11px;color:var(--red);min-height:16px;text-align:center;margin-bottom:8px}
+.card-title{font-family:var(--disp);font-size:14px;color:var(--cyan);letter-spacing:.08em;margin-bottom:12px;text-transform:uppercase}
+.err{font-family:var(--mono);font-size:13px;color:var(--red);min-height:16px;text-align:center;margin-bottom:8px}
 
 input,textarea,select{
   width:100%;background:var(--bg3);border:1px solid rgba(0,200,212,.2);
   border-radius:10px;color:var(--white);font-family:var(--mono);
-  font-size:16px;padding:13px 15px;outline:none;transition:border .2s;
+  font-size:17px;padding:14px 15px;outline:none;transition:border .2s;
 }
 input:focus,textarea:focus,select:focus{border-color:var(--cyan)}
 textarea{resize:none;min-height:80px;line-height:1.5}
 
 .btn{
-  width:100%;padding:17px;border:none;border-radius:12px;
-  font-family:var(--disp);font-size:14px;font-weight:700;
-  letter-spacing:.12em;cursor:pointer;transition:all .12s;text-transform:uppercase;
+  width:100%;padding:18px;border:none;border-radius:12px;
+  font-family:var(--disp);font-size:15px;font-weight:700;
+  letter-spacing:.1em;cursor:pointer;transition:all .12s;text-transform:uppercase;
   margin-bottom:10px;
 }
 .btn:active{transform:scale(.97);opacity:.88}
@@ -208,14 +241,14 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .btn-cyan{background:var(--cyan);color:var(--bg)}
 .btn-red{background:var(--red);color:#fff}
 .btn-green{background:var(--green);color:var(--bg)}
-.btn-ghost{background:transparent;border:1px solid var(--gray2);color:var(--gray);font-size:12px;padding:13px}
+.btn-ghost{background:transparent;border:1px solid var(--gray2);color:var(--gray);font-size:13px;padding:14px}
 
 /* ── LOGIN ── */
 #screen-login{align-items:center;justify-content:center;gap:0}
 .login-hero{text-align:center;margin-bottom:36px}
 .login-hero .ico{font-size:48px;margin-bottom:8px}
-.login-hero h1{font-family:var(--disp);font-size:22px;color:var(--cyan);letter-spacing:.15em}
-.login-hero p{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:4px;letter-spacing:.1em}
+.login-hero h1{font-family:var(--disp);font-size:24px;color:var(--cyan);letter-spacing:.12em}
+.login-hero p{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:4px;letter-spacing:.08em}
 .login-card{width:100%;max-width:380px;background:var(--bg2);border:1px solid rgba(0,200,212,.2);border-radius:16px;padding:28px 22px}
 .field{margin-bottom:16px}
 
@@ -224,24 +257,24 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   background:var(--bg3);border:1px solid rgba(0,200,212,.2);border-radius:var(--r);
   padding:20px;margin-bottom:20px;text-align:center;
 }
-.turno-hero .avion{font-family:var(--mono);font-size:11px;color:var(--amber);letter-spacing:.14em;margin-bottom:6px}
-.turno-hero .alumno{font-family:var(--disp);font-size:24px;color:var(--white);letter-spacing:.05em;margin-bottom:4px}
-.turno-hero .hora-turno{font-family:var(--mono);font-size:12px;color:var(--gray)}
+.turno-hero .avion{font-family:var(--mono);font-size:13px;color:var(--amber);letter-spacing:.12em;margin-bottom:6px}
+.turno-hero .alumno{font-family:var(--disp);font-size:25px;color:var(--white);letter-spacing:.04em;margin-bottom:4px}
+.turno-hero .hora-turno{font-family:var(--mono);font-size:14px;color:var(--gray)}
 
 /* Estado del vuelo */
 .estado-vuelo{
   text-align:center;padding:24px 0;margin-bottom:16px;
 }
 .estado-vuelo .estado-label{
-  font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--gray);
+  font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--gray);
   text-transform:uppercase;margin-bottom:8px;
 }
 .estado-vuelo .ts-display{
-  font-family:var(--disp);font-size:28px;color:var(--white);letter-spacing:.05em;
+  font-family:var(--disp);font-size:30px;color:var(--white);letter-spacing:.04em;
 }
 .estado-vuelo .ts-display.en-vuelo{color:var(--cyan)}
 .estado-vuelo .ts-display.finalizado{color:var(--green)}
-.estado-vuelo .ts-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:6px}
+.estado-vuelo .ts-sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px}
 
 /* Tiempo calculado */
 .tiempo-calculado{
@@ -249,10 +282,10 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   border-radius:10px;padding:14px 16px;margin-bottom:12px;
   display:flex;align-items:center;gap:12px;
 }
-.tiempo-calculado .t-val{font-family:var(--disp);font-size:22px;color:var(--green);flex:1}
+.tiempo-calculado .t-val{font-family:var(--disp);font-size:24px;color:var(--green);flex:1}
 .btn-edit-t{
   background:transparent;border:1px solid var(--gray2);border-radius:8px;
-  color:var(--gray);font-family:var(--mono);font-size:10px;padding:6px 10px;
+  color:var(--gray);font-family:var(--mono);font-size:12px;padding:7px 11px;
   cursor:pointer;white-space:nowrap;
 }
 
@@ -263,37 +296,37 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   display:flex;align-items:center;gap:14px;transition:border-color .15s;
 }
 .turno-item:active,.turno-item:hover{border-color:var(--cyan)}
-.turno-item .hora{font-family:var(--disp);font-size:20px;color:var(--cyan);min-width:58px}
+.turno-item .hora{font-family:var(--disp);font-size:22px;color:var(--cyan);min-width:62px}
 .turno-item .info{flex:1}
-.turno-item .alumno-n{font-family:var(--ui);font-size:17px;font-weight:700}
-.turno-item .avion-n{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
-.turno-item .arr{color:var(--gray);font-size:18px}
+.turno-item .alumno-n{font-family:var(--ui);font-size:19px;font-weight:700}
+.turno-item .avion-n{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px}
+.turno-item .arr{color:var(--gray);font-size:22px}
 .turno-item.actual{border-color:var(--cyan);background:rgba(0,200,212,.06)}
 .tag-actual{color:var(--cyan);font-weight:700}
 
 /* ── TAB LIBRO ── */
 .vuelo-row{
   background:var(--bg2);border:1px solid rgba(0,200,212,.1);border-radius:var(--r);
-  padding:14px 16px;margin-bottom:8px;
+  padding:16px 18px;margin-bottom:10px;
 }
-.vuelo-row .vr-top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
-.vuelo-row .vr-hora{font-family:var(--disp);font-size:14px;color:var(--cyan)}
-.vuelo-row .vr-alumno{font-family:var(--ui);font-size:16px;font-weight:700;flex:1}
-.vuelo-row .vr-avion{font-family:var(--mono);font-size:10px;color:var(--amber)}
+.vuelo-row .vr-top{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.vuelo-row .vr-hora{font-family:var(--disp);font-size:19px;color:var(--cyan)}
+.vuelo-row .vr-alumno{font-family:var(--ui);font-size:19px;font-weight:700;flex:1}
+.vuelo-row .vr-avion{font-family:var(--mono);font-size:13px;color:var(--amber)}
 .vuelo-row .vr-datos{
-  display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--gray);
-  flex-wrap:wrap;
+  display:flex;gap:16px;font-family:var(--mono);font-size:14px;color:var(--gray);
+  flex-wrap:wrap;row-gap:6px;
 }
-.vuelo-row .vr-datos span{display:flex;align-items:center;gap:4px}
+.vuelo-row .vr-datos span{display:flex;align-items:center;gap:5px}
 .vr-val{color:var(--white)}
-.empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:12px;color:var(--gray);line-height:1.9}
+.empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
 
 /* Toast */
 .toast{
   position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
   left:50%;transform:translateX(-50%) translateY(70px);
   background:var(--bg3);border:1px solid rgba(0,200,212,.3);border-radius:10px;
-  padding:11px 20px;font-family:var(--mono);font-size:12px;color:var(--white);
+  padding:12px 20px;font-family:var(--mono);font-size:14px;color:var(--white);
   white-space:nowrap;transition:transform .25s;z-index:999;pointer-events:none;
 }
 .toast.show{transform:translateX(-50%) translateY(0)}
@@ -301,7 +334,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .spinner{width:28px;height:28px;border:3px solid rgba(0,200,212,.15);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;margin:40px auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-.badge-ok{display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:10px;padding:2px 8px;letter-spacing:.06em}
+.badge-ok{display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:12px;padding:3px 9px;letter-spacing:.05em}
 </style>
 </head>
 <body>
@@ -392,7 +425,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
           </div>
           <input id="t-manual" type="number" step="0.1" min="0" max="12"
             placeholder="ej: 1.3 (horas decimales)" style="display:none;margin-top:8px">
-          <div style="font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:6px">
+          <div style="font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px">
             En horas decimales · ej: 1.5 = 1h 30min
           </div>
         </div>
@@ -403,7 +436,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
         </div>
 
         <div class="card">
-          <div class="card-title">Observación <span style="color:var(--gray);font-size:10px;font-family:var(--mono)">(privada · opcional)</span></div>
+          <div class="card-title">Observación <span style="color:var(--gray);font-size:12px;font-family:var(--mono)">(privada · opcional)</span></div>
           <textarea id="c-obs" placeholder="Maniobras practicadas, condiciones, notas..."></textarea>
         </div>
 
@@ -416,7 +449,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
       <div id="v-guardado" style="display:none;text-align:center;padding:20px 0">
         <div style="font-size:40px;margin-bottom:12px">✓</div>
         <div style="font-family:var(--disp);font-size:16px;color:var(--green);letter-spacing:.1em;margin-bottom:8px">GUARDADO</div>
-        <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
+        <div style="font-family:var(--mono);font-size:13px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
         <button class="btn btn-cyan" id="btn-otro-vuelo">Siguiente vuelo</button>
       </div>
 
@@ -433,9 +466,12 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
   <!-- Tab: LIBRO -->
   <div id="tab-libro" class="tab-content">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
       <span class="label" style="margin:0;flex:none">Fecha</span>
       <input id="libro-fecha" type="date" style="flex:1;font-size:14px;padding:10px 12px">
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:16px">
+      Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande
     </div>
     <div id="libro-contenido"><div class="empty-libro">Seleccioná una fecha para ver tu actividad.</div></div>
   </div>
@@ -463,8 +499,8 @@ const $ = id => document.getElementById(id);
 const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
 const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
-const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
-const fmtUTCFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
+const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
 
 function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
@@ -478,7 +514,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '2.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -763,15 +799,15 @@ function actualizarEstado(estado){
     sub.textContent='';
   } else if(estado==='en-vuelo'){
     label.textContent='Despegó a las';
-    ts.textContent=fmtUTCFull(tsInicio);
+    ts.textContent=fmtLocalFull(tsInicio);
     ts.classList.add('en-vuelo');
     sub.textContent='Hora local · esperando aterrizaje...';
   } else if(estado==='finalizado'){
     label.textContent='Aterrizó a las';
-    ts.textContent=fmtUTCFull(tsFin);
+    ts.textContent=fmtLocalFull(tsFin);
     ts.classList.add('finalizado');
     const horas=calcHorasDecimal(tsInicio,tsFin);
-    sub.textContent=`Despegue: ${fmtUTCFull(tsInicio)} · Vuelo: ${horas} hs`;
+    sub.textContent=`Despegue: ${fmtLocalFull(tsInicio)} · Vuelo: ${horas} hs`;
   }
 }
 
@@ -785,7 +821,7 @@ $('btn-start-stop').addEventListener('click',()=>{
     $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
     $('btn-start-stop').className='btn btn-red';
     $('btn-cambiar-turno').style.display='none';
-    toast('Vuelo iniciado · '+fmtUTCFull(tsInicio));
+    toast('Vuelo iniciado · '+fmtLocalFull(tsInicio));
   } else {
     // STOP
     tsFin=new Date().toISOString();
