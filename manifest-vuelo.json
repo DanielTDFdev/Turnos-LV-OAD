@@ -1,6 +1,6 @@
 {
-  "name": "Aeroclub Río Grande - Instructores (Vuelo)",
-  "short_name": "ACRG Vuelo",
+  "name": "Aeroclub Río Grande - Instructores",
+  "short_name": "Instructores",
   "description": "App de registro de vuelo para instructores del Aeroclub Río Grande",
   "start_url": "/vuelo.html",
   "scope": "/",

@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.5 · 2026-08-03
+  Pedido de Daniel: el nombre que se ve al instalar en el celular pasa de
+  "ACRG Vuelo" a "Instructores". apple-mobile-web-app-title cambiado acá
+  (define el nombre en iOS) y short_name en manifest-vuelo.json cambiado
+  a "Instructores" (define el nombre en Android). Ícono también nuevo
+  (aporte de Daniel), mismo procesamiento de esquinas de siempre.
+  Ver anterior:
   v2.4 · 2026-08-03
   Versión de la app siempre visible en pantalla (antes solo estaba en este
   comentario). Nueva constante APP_VERSION en el script, que puebla todos
@@ -53,7 +60,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ACRG Vuelo">
+<meta name="apple-mobile-web-app-title" content="Instructores">
 <meta name="theme-color" content="#050d1a">
 <link rel="apple-touch-icon" href="/icon-vuelo-192.png">
 <link rel="manifest" href="/manifest-vuelo.json">
@@ -412,7 +419,7 @@ let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '2.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.5'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
