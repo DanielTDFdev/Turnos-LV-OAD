@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
+  v1.2 · Segunda sección: reporte de horas por instructor. Selector de instructor
+         (poblado desde /instructores en Firebase), rango de fechas propio,
+         totales globales y detalle por instructor con tabla de vuelos. Solo
+         cuenta vuelos realizados (volado + aprobado_pasado_sin_obs). Ordenado
+         por horas desc. Botón PDF independiente.
   v1.1 · FIX: clasificar() no reconocía los vuelos realizados. En el sistema,
          un turno aprobado que llega a su horario pasa a estado 'vencido' con
          aprobado_por seteado (comportamiento documentado en turnos.html v6.52).
@@ -208,8 +213,8 @@ table.det tbody td.gray{color:var(--text3)}
 @media print{
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body{background:#fff!important;color:#111!important}
-  header.bar,#gate,#spinner,.filtros-card,.btn-pdf,.btn-back,.btn-gen{display:none!important}
-  #reporte{display:block!important}
+  header.bar,#gate,#spinner,#spinner-inst,.filtros-card,.btn-pdf,.btn-pdf-inst,.btn-back,.btn-gen,hr{display:none!important}
+  #reporte,#reporte-inst{display:block!important}
   :root{
     --navy:#fff;--blue:#f0f4f8;--blue2:#e8eff7;
     --text:#111;--text2:#444;--text3:#666;
@@ -219,12 +224,32 @@ table.det tbody td.gray{color:var(--text3)}
   }
   .wrap{padding:0}
   .avion-section{page-break-inside:avoid}
+  .inst-section{page-break-inside:avoid}
   .tabla-wrap{overflow:visible}
   table.det{font-size:10px}
   .reporte-header h2{color:#0066aa!important}
   .print-title{display:block!important}
 }
 .print-title{display:none;font-size:12px;color:#666;margin-bottom:8px;font-family:sans-serif}
+
+/* ── Sección instructor ──────────────────────────────────── */
+.inst-section{margin-bottom:28px}
+.inst-header{
+  display:flex;align-items:center;gap:12px;
+  background:var(--blue2);border:1px solid var(--border2);
+  border-radius:var(--radius) var(--radius) 0 0;
+  padding:12px 18px}
+.inst-header .iname{font-family:var(--font-title);font-size:16px;color:var(--cyan);letter-spacing:1px}
+.inst-header .iavion{font-family:var(--font-mono);font-size:11px;color:var(--text3);margin-top:2px}
+.inst-header .horas-badge{margin-left:auto;background:rgba(0,200,212,.15);border:1px solid var(--cyan);
+  border-radius:4px;padding:4px 12px;font-family:var(--font-mono);font-size:13px;color:var(--cyan);font-weight:700}
+.inst-stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:1px;background:var(--border);
+  border:1px solid var(--border2);border-top:none}
+.inst-stat{background:var(--navy);padding:10px 12px;text-align:center}
+.inst-stat .n{font-family:var(--font-title);font-size:20px;display:block}
+.inst-stat .l{font-family:var(--font-mono);font-size:9px;color:var(--text3);letter-spacing:.07em;text-transform:uppercase;margin-top:3px;display:block}
 </style>
 </head>
 <body>
@@ -236,7 +261,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.1</span>
+      <span class="ver">v1.2</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -297,6 +322,51 @@ table.det tbody td.gray{color:var(--text3)}
 
       <!-- Detalle por avión -->
       <div id="aviones-detalle"></div>
+    </div>
+
+    <!-- ── SEPARADOR ── -->
+    <hr style="border:none;border-top:1px solid var(--border2);margin:40px 0 32px">
+
+    <!-- Filtros reporte instructor -->
+    <div class="filtros-card">
+      <h2>◈ Horas por instructor</h2>
+      <div class="filtros-row">
+        <div class="field-g">
+          <label>Fecha desde</label>
+          <input type="date" id="i-desde">
+        </div>
+        <div class="field-g">
+          <label>Fecha hasta</label>
+          <input type="date" id="i-hasta">
+        </div>
+        <div class="field-g">
+          <label>Instructor</label>
+          <select id="i-inst">
+            <option value="todos">Todos</option>
+          </select>
+        </div>
+        <div class="field-g">
+          <label>&nbsp;</label>
+          <button class="btn-gen" id="btn-generar-inst">▶ GENERAR</button>
+        </div>
+        <div class="field-g">
+          <label>&nbsp;</label>
+          <button class="btn-pdf" id="btn-pdf-inst" style="display:none" onclick="window.print()">⬇ DESCARGAR PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spinner instructor -->
+    <div id="spinner-inst" style="display:none;text-align:center;padding:40px;font-family:var(--font-mono);color:var(--cyan);font-size:13px">⟳ Cargando datos...</div>
+
+    <!-- Reporte instructor -->
+    <div id="reporte-inst" style="display:none">
+      <div class="reporte-header">
+        <h2 id="rep-inst-titulo">HORAS POR INSTRUCTOR</h2>
+        <p id="rep-inst-subtitulo"></p>
+      </div>
+      <div class="stats-globales" id="inst-stats-globales"></div>
+      <div id="inst-detalle"></div>
     </div>
 
   </div><!-- /main-content -->
@@ -602,6 +672,197 @@ async function generarReporte() {
 
   // Scroll al reporte
   document.getElementById('reporte').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── REPORTE INSTRUCTOR ───────────────────────────────────────
+
+// Poblar selector de instructores desde Firebase
+async function cargarInstructores() {
+  try {
+    const snap = await get(ref(db, 'instructores'));
+    const data = snap.val() || {};
+    const sel = document.getElementById('i-inst');
+    // Limpiar opciones anteriores excepto "Todos"
+    while (sel.options.length > 1) sel.remove(1);
+    Object.entries(data).forEach(([key, inst]) => {
+      if (!inst || inst.vacaciones) return; // opcional: incluir de vacaciones igual
+      const opt = document.createElement('option');
+      opt.value = inst.nombre || key;
+      opt.textContent = inst.nombre || key;
+      sel.appendChild(opt);
+    });
+    // Agregar también instructores que aparecen en reservas pero no en /instructores
+    // (carga del historial — se hace al generar)
+  } catch(e) { console.warn('No se pudo cargar instructores:', e); }
+}
+
+if (ok) {
+  cargarInstructores();
+  // Setear fechas default: mes actual
+  const ahora2 = new Date();
+  const primer2 = new Date(ahora2.getFullYear(), ahora2.getMonth(), 1);
+  document.getElementById('i-desde').value = fmtDate(primer2);
+  document.getElementById('i-hasta').value = fmtDate(ahora2);
+  document.getElementById('btn-generar-inst').addEventListener('click', generarReporteInstructor);
+}
+
+async function generarReporteInstructor() {
+  const desde = document.getElementById('i-desde').value;
+  const hasta  = document.getElementById('i-hasta').value;
+  const instFiltro = document.getElementById('i-inst').value;
+
+  if (!desde || !hasta) { alert('Seleccioná ambas fechas.'); return; }
+  if (desde > hasta)    { alert('La fecha "desde" debe ser anterior a "hasta".'); return; }
+
+  document.getElementById('spinner-inst').style.display   = 'block';
+  document.getElementById('reporte-inst').style.display   = 'none';
+  document.getElementById('btn-pdf-inst').style.display   = 'none';
+
+  let reservas = [];
+  try {
+    const snap = await get(ref(db, 'reservas'));
+    reservas = rArr(snap.val());
+  } catch(e) {
+    document.getElementById('spinner-inst').style.display = 'none';
+    alert('Error al leer Firebase: ' + e.message);
+    return;
+  }
+
+  // Filtrar por rango de fechas — solo vuelos realizados (vencido+aprobado_por o aprobado+pasado)
+  const hoyStr = hoy();
+  const volados = reservas.filter(r => {
+    if (!r.fecha) return false;
+    if (r.fecha < desde || r.fecha > hasta) return false;
+    // Solo vuelos realizados: necesita aprobado_por (instructor que aprobó)
+    const cls = clasificar(r);
+    return cls === 'volado' || cls === 'aprobado_pasado_sin_obs';
+  });
+
+  // Determinar nombre del instructor para cada reserva
+  // Fuente: aprobado_por > instructor (fallbacks del sistema)
+  const instDe = r => (r.aprobado_por || r.instructor || '').trim() || '(sin instructor registrado)';
+
+  // Filtrar por instructor si se eligió uno específico
+  const filtrados = instFiltro === 'todos'
+    ? volados
+    : volados.filter(r => instDe(r) === instFiltro);
+
+  // Agrupar por instructor
+  const porInst = {};
+  filtrados.forEach(r => {
+    const inst = instDe(r);
+    if (!porInst[inst]) porInst[inst] = [];
+    porInst[inst].push(r);
+  });
+
+  // Ordenar instructores por horas desc
+  const instOrdenados = Object.entries(porInst).sort((a, b) => {
+    const hA = a[1].reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
+    const hB = b[1].reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
+    return hB - hA;
+  });
+
+  // ── Totales globales ────────────────────────────────────────
+  const totVol   = filtrados.length;
+  const totHoras = filtrados.reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
+  const totAterr = filtrados.reduce((s,r) => s + parseInt(r.obs_privada_aterrizajes||0), 0);
+  const totSinObs = filtrados.filter(r => clasificar(r) === 'aprobado_pasado_sin_obs').length;
+
+  document.getElementById('inst-stats-globales').innerHTML = `
+    <div class="stat-box green"><span class="num">${totVol}</span><span class="lbl">Vuelos supervisados</span></div>
+    <div class="stat-box" style="--cyan:#00c8d4"><span class="num" style="color:var(--cyan)">${fmtHoras(totHoras)}</span><span class="lbl">Horas totales</span></div>
+    <div class="stat-box"><span class="num" style="color:#60a5fa">${totAterr||'—'}</span><span class="lbl">Aterrizajes</span></div>
+    <div class="stat-box amber"><span class="num">${totSinObs}</span><span class="lbl">Sin obs. cargada</span></div>
+    <div class="stat-box"><span class="num" style="color:var(--text2)">${Object.keys(porInst).length}</span><span class="lbl">Instructores</span></div>
+  `;
+
+  // ── Render por instructor ───────────────────────────────────
+  const cont = document.getElementById('inst-detalle');
+  cont.innerHTML = '';
+
+  if (instOrdenados.length === 0) {
+    cont.innerHTML = '<div class="empty-avion" style="border-radius:var(--radius)">Sin vuelos realizados en el período seleccionado.</div>';
+  }
+
+  instOrdenados.forEach(([instNombre, rs]) => {
+    const iHoras  = rs.reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
+    const iAterr  = rs.reduce((s,r) => s + parseInt(r.obs_privada_aterrizajes||0), 0);
+    const iSinObs = rs.filter(r => clasificar(r) === 'aprobado_pasado_sin_obs').length;
+    const iVol    = rs.filter(r => clasificar(r) === 'volado').length;
+
+    // Aviones distintos que voló
+    const aviones = [...new Set(rs.map(r => r.avion||'LV-OAD'))].join(' / ');
+
+    // Ordenar por fecha desc
+    const ordenados = [...rs].sort((a,b) => b.fecha.localeCompare(a.fecha)||(b.hora||'').localeCompare(a.hora||''));
+
+    const filas = ordenados.map(r => {
+      const cls = clasificar(r);
+      const horas = cls==='volado'
+        ? `<span class="green">${fmtHoras(parseHoras(r.obs_privada_tiempo_vuelo))}</span>`
+        : '<span class="muted">—</span>';
+      const aterr = cls==='volado' && r.obs_privada_aterrizajes
+        ? `<span class="green">${r.obs_privada_aterrizajes}</span>`
+        : '<span class="muted">—</span>';
+      const estadoBadge = cls==='volado'
+        ? '<span class="badge vol">VOLADO</span>'
+        : '<span class="badge apr">S/OBS</span>';
+      const alumno = esc((r.nombre||'—').split(' ').slice(0,2).join(' '));
+      const avion  = esc(r.avion||'LV-OAD');
+      const tipo   = (r.tipo_vuelo||'instruccion')==='particular' ? 'Particular' : 'Instrucción';
+      return `<tr>
+        <td class="muted">${fmtDD(r.fecha)}</td>
+        <td class="muted">${r.hora||r.horaInicio||'—'}</td>
+        <td>${esc(alumno)}</td>
+        <td class="muted">${avion}</td>
+        <td class="muted">${tipo}</td>
+        <td>${estadoBadge}</td>
+        <td>${horas}</td>
+        <td>${aterr}</td>
+      </tr>`;
+    }).join('');
+
+    cont.innerHTML += `
+      <div class="inst-section">
+        <div class="inst-header">
+          <div>
+            <div class="iname">${esc(instNombre)}</div>
+            <div class="iavion">Aeronaves: ${aviones}</div>
+          </div>
+          <div class="horas-badge">⏱ ${fmtHoras(iHoras)}</div>
+        </div>
+        <div class="inst-stats">
+          <div class="inst-stat"><span class="n" style="color:var(--green)">${iVol}</span><span class="l">Vuelos c/obs</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--cyan)">${fmtHoras(iHoras)}</span><span class="l">Horas de vuelo</span></div>
+          <div class="inst-stat"><span class="n" style="color:#60a5fa">${iAterr||'—'}</span><span class="l">Aterrizajes</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--amber)">${iSinObs}</span><span class="l">Sin obs.</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--text3)">${rs.length}</span><span class="l">Total vuelos</span></div>
+        </div>
+        <div class="tabla-wrap">
+          <table class="det">
+            <thead><tr>
+              <th>Fecha</th><th>Hora</th><th>Alumno/Piloto</th>
+              <th>Avión</th><th>Tipo</th><th>Estado</th>
+              <th>Hs. vuelo</th><th>Aterr.</th>
+            </tr></thead>
+            <tbody>${filas}</tbody>
+          </table>
+        </div>
+      </div>`;
+  });
+
+  // Títulos
+  const instLabel = instFiltro === 'todos' ? 'Todos los instructores' : instFiltro;
+  document.getElementById('rep-inst-titulo').textContent =
+    `HORAS POR INSTRUCTOR — ${instLabel.toUpperCase()}`;
+  document.getElementById('rep-inst-subtitulo').textContent =
+    `Período: ${fmtDD(desde)} al ${fmtDD(hasta)}  ·  Generado: ${fmtDD(hoyStr)}  ·  Por: ${nombre}`;
+
+  document.getElementById('spinner-inst').style.display  = 'none';
+  document.getElementById('reporte-inst').style.display  = 'block';
+  document.getElementById('btn-pdf-inst').style.display  = 'block';
+
+  document.getElementById('reporte-inst').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 </script>
 </body>
