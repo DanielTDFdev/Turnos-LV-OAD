@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<!--
+==================================================================================
+  REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
+  v1.0 · 2026-08-03
+  Acceso: solo admin / administrador (lee sessionStorage 'lvoad-session').
+  Datos: Firebase RTDB turnos-lv-oad-default-rtdb.
+  Horas de vuelo: obs_privada_tiempo_vuelo (cargado por instructor post-vuelo).
+  Vuelo "volado": aprobado+fecha_pasada+tiempo_vuelo cargado.
+  Exporta a PDF via window.print() con @media print.
+==================================================================================
+-->
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reporte de Actividad — Aeroclub Río Grande</title>
+
+<style>
+/* ── Fuentes ─────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700&display=swap');
+
+/* ── Variables ───────────────────────────────────────────── */
+:root{
+  --navy:   #0B1F3A;
+  --blue:   #1A3A5C;
+  --blue2:  #1e4976;
+  --cyan:   #00c8d4;
+  --amber:  #f0a500;
+  --green:  #22c55e;
+  --red:    #ef4444;
+  --purple: #a855f7;
+  --gray:   #6B7280;
+  --text:   #e2f0ff;
+  --text2:  #90a4b7;
+  --text3:  #5a7a9a;
+  --border: rgba(0,200,212,.18);
+  --border2:rgba(0,200,212,.35);
+  --font-mono:'Share Tech Mono',monospace;
+  --font-ui:'Rajdhani',sans-serif;
+  --font-title:'Orbitron',sans-serif;
+  --radius: 6px;
+}
+
+/* ── Reset / base ────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100vh;background:var(--navy);color:var(--text);font-family:var(--font-ui);font-size:15px;}
+
+/* ── Layout ──────────────────────────────────────────────── */
+.wrap{max-width:1280px;margin:0 auto;padding:18px 20px 80px}
+
+/* ── Header ──────────────────────────────────────────────── */
+header.bar{
+  display:flex;align-items:center;gap:14px;
+  background:var(--blue);border:1px solid var(--border2);
+  border-radius:var(--radius);padding:12px 20px;margin-bottom:24px;
+}
+header.bar .dot{width:11px;height:11px;border-radius:50%;background:var(--cyan);
+  box-shadow:0 0 10px var(--cyan);animation:pulse 2.4s infinite;flex:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+header.bar h1{font-family:var(--font-title);font-size:16px;letter-spacing:2px;
+  color:var(--text);text-transform:uppercase}
+header.bar h1 small{color:var(--amber);letter-spacing:2px;display:block;
+  font-size:10px;font-family:var(--font-mono);margin-top:2px}
+header.bar .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+header.bar .ver{font-family:var(--font-mono);font-size:11px;color:var(--text3);
+  border:1px solid var(--border);border-radius:4px;padding:2px 7px;letter-spacing:1px}
+
+/* ── Gate ────────────────────────────────────────────────── */
+#gate{text-align:center;padding:80px 20px;font-family:var(--font-mono);color:var(--text2)}
+#gate h2{color:var(--red);margin-bottom:12px;font-size:20px}
+
+/* ── Filtros ─────────────────────────────────────────────── */
+.filtros-card{background:var(--blue);border:1px solid var(--border2);border-radius:var(--radius);
+  padding:18px 20px;margin-bottom:24px}
+.filtros-card h2{font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;
+  color:var(--cyan);margin-bottom:14px;text-transform:uppercase}
+.filtros-row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+.field-g{display:flex;flex-direction:column;gap:5px}
+.field-g label{font-family:var(--font-mono);font-size:11px;color:var(--text3);
+  letter-spacing:.08em;text-transform:uppercase}
+.field-g input,.field-g select{
+  background:#0d2640;border:1px solid var(--border2);border-radius:var(--radius);
+  color:var(--text);font-family:var(--font-mono);font-size:12px;
+  padding:7px 10px;outline:none;transition:border .2s}
+.field-g input:focus,.field-g select:focus{border-color:var(--cyan)}
+.btn-gen{
+  background:var(--cyan);color:var(--navy);border:none;border-radius:var(--radius);
+  font-family:var(--font-mono);font-size:12px;font-weight:700;letter-spacing:.08em;
+  padding:8px 22px;cursor:pointer;transition:opacity .2s;text-transform:uppercase}
+.btn-gen:hover{opacity:.85}
+.btn-pdf{
+  background:transparent;color:var(--amber);border:1px solid var(--amber);
+  border-radius:var(--radius);font-family:var(--font-mono);font-size:11px;
+  font-weight:700;letter-spacing:.08em;padding:7px 16px;cursor:pointer;
+  transition:all .2s;text-transform:uppercase}
+.btn-pdf:hover{background:var(--amber);color:var(--navy)}
+.btn-back{
+  background:transparent;color:var(--text2);border:1px solid var(--border);
+  border-radius:var(--radius);font-family:var(--font-mono);font-size:11px;
+  padding:6px 14px;cursor:pointer;text-decoration:none;display:inline-block;
+  transition:all .15s}
+.btn-back:hover{border-color:var(--cyan);color:var(--cyan)}
+
+/* ── Spinner ─────────────────────────────────────────────── */
+#spinner{display:none;text-align:center;padding:40px;font-family:var(--font-mono);
+  color:var(--cyan);font-size:13px}
+
+/* ── Reporte ─────────────────────────────────────────────── */
+#reporte{display:none}
+
+/* ── Resumen ejecutivo ───────────────────────────────────── */
+.reporte-header{margin-bottom:28px}
+.reporte-header h2{font-family:var(--font-title);font-size:20px;color:var(--cyan);
+  letter-spacing:2px;margin-bottom:4px}
+.reporte-header p{font-family:var(--font-mono);font-size:11px;color:var(--text3)}
+
+/* Stats globales */
+.stats-globales{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:12px;margin-bottom:28px}
+.stat-box{background:var(--blue);border:1px solid var(--border2);border-radius:var(--radius);
+  padding:14px 16px;text-align:center}
+.stat-box .num{font-family:var(--font-title);font-size:28px;color:var(--cyan);display:block}
+.stat-box .lbl{font-family:var(--font-mono);font-size:10px;color:var(--text3);
+  letter-spacing:.08em;text-transform:uppercase;margin-top:4px;display:block}
+.stat-box.green .num{color:var(--green)}
+.stat-box.amber .num{color:var(--amber)}
+.stat-box.red   .num{color:var(--red)}
+.stat-box.purple .num{color:var(--purple)}
+
+/* ── Sección por avión ───────────────────────────────────── */
+.avion-section{margin-bottom:36px}
+.avion-header{
+  display:flex;align-items:center;gap:12px;
+  background:var(--blue2);border:1px solid var(--border2);
+  border-radius:var(--radius) var(--radius) 0 0;
+  padding:12px 18px}
+.avion-header .mat{
+  font-family:var(--font-title);font-size:18px;color:var(--cyan);letter-spacing:2px}
+.avion-header .modelo{
+  font-family:var(--font-mono);font-size:11px;color:var(--text3)}
+.avion-header .horas-badge{
+  margin-left:auto;background:rgba(0,200,212,.15);border:1px solid var(--cyan);
+  border-radius:4px;padding:4px 12px;font-family:var(--font-mono);font-size:13px;
+  color:var(--cyan);font-weight:700}
+
+/* Stats del avión */
+.avion-stats{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:1px;background:var(--border);
+  border:1px solid var(--border2);border-top:none}
+.avion-stat{background:var(--navy);padding:12px 14px;text-align:center}
+.avion-stat .n{font-family:var(--font-title);font-size:22px;display:block}
+.avion-stat .l{font-family:var(--font-mono);font-size:9px;color:var(--text3);
+  letter-spacing:.07em;text-transform:uppercase;margin-top:3px;display:block}
+.avion-stat.c-green .n{color:var(--green)}
+.avion-stat.c-amber .n{color:var(--amber)}
+.avion-stat.c-red   .n{color:var(--red)}
+.avion-stat.c-purple .n{color:var(--purple)}
+.avion-stat.c-gray  .n{color:var(--text3)}
+.avion-stat.c-cyan  .n{color:var(--cyan)}
+
+/* Tabla de detalle */
+.tabla-wrap{border:1px solid var(--border2);border-top:none;border-radius:0 0 var(--radius) var(--radius);overflow-x:auto}
+table.det{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:11px}
+table.det thead tr{background:var(--blue2)}
+table.det thead th{
+  padding:8px 10px;text-align:left;color:var(--text3);
+  font-weight:400;letter-spacing:.06em;text-transform:uppercase;
+  border-bottom:1px solid var(--border2);white-space:nowrap}
+table.det tbody tr{border-bottom:1px solid rgba(0,200,212,.07);transition:background .1s}
+table.det tbody tr:hover{background:rgba(0,200,212,.05)}
+table.det tbody td{padding:7px 10px;color:var(--text);vertical-align:middle}
+table.det tbody td.muted{color:var(--text3)}
+table.det tbody td.green{color:var(--green)}
+table.det tbody td.amber{color:var(--amber)}
+table.det tbody td.red{color:var(--red)}
+table.det tbody td.purple{color:var(--purple)}
+table.det tbody td.gray{color:var(--text3)}
+
+/* Badges de estado */
+.badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;
+  font-family:var(--font-mono);letter-spacing:.05em;font-weight:700}
+.badge.vol{background:rgba(34,197,94,.2);color:var(--green);border:1px solid var(--green)}
+.badge.apr{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.4)}
+.badge.can{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.4)}
+.badge.ven{background:rgba(168,85,247,.15);color:var(--purple);border:1px solid rgba(168,85,247,.4)}
+.badge.pen{background:rgba(240,165,0,.15);color:var(--amber);border:1px solid rgba(240,165,0,.4)}
+
+/* Separador de sección */
+.section-div{height:1px;background:var(--border);margin:8px 0}
+
+/* Sin datos */
+.empty-avion{padding:18px;text-align:center;font-family:var(--font-mono);
+  font-size:11px;color:var(--text3);background:var(--navy);
+  border:1px solid var(--border2);border-top:none;
+  border-radius:0 0 var(--radius) var(--radius)}
+
+/* ── @media print ────────────────────────────────────────── */
+@media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  body{background:#fff!important;color:#111!important}
+  header.bar,#gate,#spinner,.filtros-card,.btn-pdf,.btn-back,.btn-gen{display:none!important}
+  #reporte{display:block!important}
+  :root{
+    --navy:#fff;--blue:#f0f4f8;--blue2:#e8eff7;
+    --text:#111;--text2:#444;--text3:#666;
+    --border:rgba(0,0,0,.15);--border2:rgba(0,0,0,.25);
+    --cyan:#0066aa;--amber:#b45309;--green:#166534;
+    --red:#991b1b;--purple:#6b21a8;
+  }
+  .wrap{padding:0}
+  .avion-section{page-break-inside:avoid}
+  .tabla-wrap{overflow:visible}
+  table.det{font-size:10px}
+  .reporte-header h2{color:#0066aa!important}
+  .print-title{display:block!important}
+}
+.print-title{display:none;font-size:12px;color:#666;margin-bottom:8px;font-family:sans-serif}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- Header -->
+  <header class="bar">
+    <div class="dot"></div>
+    <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
+    <div class="sp">
+      <span class="ver">v1.0</span>
+      <a class="btn-back" href="turnos.html">← TURNERO</a>
+    </div>
+  </header>
+
+  <!-- Gate: acceso restringido -->
+  <div id="gate">
+    <div id="gate-msg">Verificando acceso...</div>
+  </div>
+
+  <!-- Contenido principal (visible solo si acceso OK) -->
+  <div id="main-content" style="display:none">
+
+    <!-- Filtros -->
+    <div class="filtros-card">
+      <h2>◈ Parámetros del reporte</h2>
+      <div class="filtros-row">
+        <div class="field-g">
+          <label>Fecha desde</label>
+          <input type="date" id="f-desde">
+        </div>
+        <div class="field-g">
+          <label>Fecha hasta</label>
+          <input type="date" id="f-hasta">
+        </div>
+        <div class="field-g">
+          <label>Aeronave</label>
+          <select id="f-avion">
+            <option value="todos">Todas</option>
+            <option value="LV-OAD">LV-OAD</option>
+            <option value="LV-ART">LV-ART</option>
+            <option value="LV-MPH">LV-MPH</option>
+          </select>
+        </div>
+        <div class="field-g">
+          <label>&nbsp;</label>
+          <button class="btn-gen" id="btn-generar">▶ GENERAR</button>
+        </div>
+        <div class="field-g">
+          <label>&nbsp;</label>
+          <button class="btn-pdf" id="btn-pdf" style="display:none" onclick="window.print()">⬇ DESCARGAR PDF</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spinner -->
+    <div id="spinner">⟳ Cargando datos...</div>
+
+    <!-- Reporte generado -->
+    <div id="reporte">
+      <p class="print-title" id="print-subtitle"></p>
+      <div class="reporte-header">
+        <h2 id="rep-titulo">ACTIVIDAD DE AERONAVES</h2>
+        <p id="rep-subtitulo"></p>
+      </div>
+
+      <!-- Stats globales -->
+      <div class="stats-globales" id="stats-globales"></div>
+
+      <!-- Detalle por avión -->
+      <div id="aviones-detalle"></div>
+    </div>
+
+  </div><!-- /main-content -->
+</div><!-- /wrap -->
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+
+// ── Firebase config ──────────────────────────────────────────
+const app = initializeApp({
+  apiKey:            'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
+  authDomain:        'turnos-lv-oad.firebaseapp.com',
+  databaseURL:       'https://turnos-lv-oad-default-rtdb.firebaseio.com',
+  projectId:         'turnos-lv-oad',
+  messagingSenderId: '855020455192',
+  appId:             '1:855020455192:web:4b6d18f1b2efbb52faca6d',
+});
+const db = getDatabase(app);
+
+// ── Helpers ──────────────────────────────────────────────────
+const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
+const hoy  = () => { const d=new Date(); return fmtDate(d); };
+const fmtDate = d => {
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+};
+const fmtDD = s => s ? s.split('-').reverse().join('/') : '—';
+const esc   = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// Flota (matrícula → modelo)
+const FLOTA = {
+  'LV-OAD': 'Tomahawk PA-38-112',
+  'LV-ART': 'Archer II PA-28-181',
+  'LV-MPH': 'Lance II PA-32RT',
+};
+
+// ── Gate de acceso ───────────────────────────────────────────
+function checkAccess() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem('lvoad-session') || '{}');
+    // Rol autorizado: admin o administrador (esAdminRO también puede)
+    const ok = s && (s.tipo === 'instructor' && (s.user === 'admin' || s.user === 'administrador'))
+                 || (s.tipo === 'administrador')
+                 || (s.user === 'admin' || s.user === 'administrador');
+    // Más robusto: verificar tipo y usuario
+    const esAdmin = s && (
+      s.user === 'admin' || s.user === 'administrador' ||
+      s.tipo === 'administrador'
+    );
+    return { ok: esAdmin, nombre: s.nombre || s.user || '' };
+  } catch { return { ok: false, nombre: '' }; }
+}
+
+const { ok, nombre } = checkAccess();
+const gate = document.getElementById('gate');
+const gateMsg = document.getElementById('gate-msg');
+const mainContent = document.getElementById('main-content');
+
+if (!ok) {
+  gateMsg.innerHTML = '<h2>Acceso restringido</h2><p style="margin-top:8px">Este reporte es exclusivo para administradores.<br>Iniciá sesión como admin o administrador en <a href="turnos.html" style="color:var(--cyan)">turnos.html</a></p>';
+} else {
+  gate.style.display = 'none';
+  mainContent.style.display = 'block';
+  // Setear fechas default: mes actual
+  const ahora = new Date();
+  const primeroDeMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+  document.getElementById('f-desde').value = fmtDate(primeroDeMes);
+  document.getElementById('f-hasta').value = fmtDate(ahora);
+}
+
+// ── Clasificar un turno ──────────────────────────────────────
+// Retorna una de: 'volado' | 'aprobado_futuro' | 'cancelado_alumno' |
+//                'cancelado_instructor' | 'vencido_confirmado' |
+//                'vencido_sin_aprobar' | 'pendiente' | 'cargado_staff'
+function clasificar(r) {
+  const hoyStr = hoy();
+  const esPasado = r.fecha < hoyStr;
+  if (r.cargado_por && r.estado === 'cancelado') return 'cancelado_instructor'; // staff canceló lo que cargó
+  if (r.cargado_por) {
+    // turno cargado por staff — igual lo clasificamos por estado
+  }
+  if (r.estado === 'aprobado' && esPasado) {
+    return r.obs_privada_tiempo_vuelo ? 'volado' : 'aprobado_pasado_sin_obs';
+  }
+  if (r.estado === 'aprobado' && !esPasado) return 'aprobado_futuro';
+  if (r.estado === 'cancelado') {
+    return r.cancelado_rol === 'instructor' ? 'cancelado_instructor' : 'cancelado_alumno';
+  }
+  if (r.estado === 'vencido') {
+    return r.aprobado_por ? 'vencido_confirmado' : 'vencido_sin_aprobar';
+  }
+  if (r.estado === 'pendiente') return 'pendiente';
+  return 'otro';
+}
+
+// ── Parsear horas "H:MM" o "HH:MM" → número decimal ─────────
+function parseHoras(s) {
+  if (!s) return 0;
+  s = String(s).trim();
+  // Formato "1:30" → 1.5, "0:45" → 0.75, "2" → 2
+  const m = s.match(/^(\d+):(\d{2})$/);
+  if (m) return parseInt(m[1]) + parseInt(m[2]) / 60;
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+function fmtHoras(h) {
+  if (!h || h === 0) return '—';
+  const hh = Math.floor(h);
+  const mm = Math.round((h - hh) * 60);
+  return mm > 0 ? `${hh}h ${mm}m` : `${hh}h`;
+}
+
+// ── Generar reporte ──────────────────────────────────────────
+document.getElementById('btn-generar').addEventListener('click', generarReporte);
+
+async function generarReporte() {
+  const desde = document.getElementById('f-desde').value;
+  const hasta  = document.getElementById('f-hasta').value;
+  const avionFiltro = document.getElementById('f-avion').value;
+
+  if (!desde || !hasta) { alert('Seleccioná ambas fechas.'); return; }
+  if (desde > hasta) { alert('La fecha "desde" debe ser anterior a "hasta".'); return; }
+
+  document.getElementById('spinner').style.display = 'block';
+  document.getElementById('reporte').style.display  = 'none';
+  document.getElementById('btn-pdf').style.display  = 'none';
+
+  let reservas = [];
+  try {
+    const snap = await get(ref(db, 'reservas'));
+    reservas = rArr(snap.val());
+  } catch(e) {
+    document.getElementById('spinner').style.display = 'none';
+    alert('Error al leer Firebase: ' + e.message);
+    return;
+  }
+
+  // Filtrar por rango de fechas y avión
+  const filtradas = reservas.filter(r => {
+    if (!r.fecha) return false;
+    if (r.fecha < desde || r.fecha > hasta) return false;
+    if (avionFiltro !== 'todos' && (r.avion || 'LV-OAD') !== avionFiltro) return false;
+    return true;
+  });
+
+  // Aviones a mostrar
+  const aviones = avionFiltro === 'todos'
+    ? Object.keys(FLOTA)
+    : [avionFiltro];
+
+  // Agrupar por avión
+  const porAvion = {};
+  aviones.forEach(av => { porAvion[av] = []; });
+  filtradas.forEach(r => {
+    const av = r.avion || 'LV-OAD';
+    if (porAvion[av]) porAvion[av].push(r);
+  });
+
+  // ── Totales globales ────────────────────────────────────────
+  let totVolados=0, totHoras=0, totAterrizajes=0, totCancelados=0,
+      totVencidos=0, totPendientes=0, totAprobFut=0;
+
+  aviones.forEach(av => {
+    porAvion[av].forEach(r => {
+      const cls = clasificar(r);
+      if (cls === 'volado') {
+        totVolados++;
+        totHoras += parseHoras(r.obs_privada_tiempo_vuelo);
+        totAterrizajes += parseInt(r.obs_privada_aterrizajes || 0);
+      }
+      if (cls === 'cancelado_alumno' || cls === 'cancelado_instructor') totCancelados++;
+      if (cls === 'vencido_confirmado' || cls === 'vencido_sin_aprobar') totVencidos++;
+      if (cls === 'pendiente') totPendientes++;
+      if (cls === 'aprobado_futuro') totAprobFut++;
+    });
+  });
+
+  // ── Render stats globales ───────────────────────────────────
+  document.getElementById('stats-globales').innerHTML = `
+    <div class="stat-box green"><span class="num">${totVolados}</span><span class="lbl">Vuelos realizados</span></div>
+    <div class="stat-box cyan" style="--cyan:#00c8d4"><span class="num" style="color:var(--cyan)">${fmtHoras(totHoras)}</span><span class="lbl">Horas de vuelo</span></div>
+    <div class="stat-box"><span class="num" style="color:#60a5fa">${totAterrizajes||'—'}</span><span class="lbl">Aterrizajes</span></div>
+    <div class="stat-box red"><span class="num">${totCancelados}</span><span class="lbl">Cancelados</span></div>
+    <div class="stat-box purple"><span class="num">${totVencidos}</span><span class="lbl">Vencidos</span></div>
+    <div class="stat-box amber"><span class="num">${totPendientes + totAprobFut}</span><span class="lbl">Activos/futuros</span></div>
+    <div class="stat-box"><span class="num" style="color:var(--text2)">${filtradas.length}</span><span class="lbl">Total registros</span></div>
+  `;
+
+  // ── Render por avión ────────────────────────────────────────
+  const contAv = document.getElementById('aviones-detalle');
+  contAv.innerHTML = '';
+
+  aviones.forEach(av => {
+    const rs = porAvion[av];
+    const modelo = FLOTA[av] || '';
+
+    // Estadísticas del avión
+    let avVol=0, avHoras=0, avAterr=0, avCanAlumno=0, avCanInst=0,
+        avVenConf=0, avVenSin=0, avPend=0, avFut=0, avSinObs=0;
+
+    rs.forEach(r => {
+      const cls = clasificar(r);
+      if (cls === 'volado')               { avVol++; avHoras+=parseHoras(r.obs_privada_tiempo_vuelo); avAterr+=parseInt(r.obs_privada_aterrizajes||0); }
+      if (cls === 'aprobado_pasado_sin_obs') avSinObs++;
+      if (cls === 'cancelado_alumno')      avCanAlumno++;
+      if (cls === 'cancelado_instructor')  avCanInst++;
+      if (cls === 'vencido_confirmado')    avVenConf++;
+      if (cls === 'vencido_sin_aprobar')   avVenSin++;
+      if (cls === 'pendiente')             avPend++;
+      if (cls === 'aprobado_futuro')       avFut++;
+    });
+
+    // Ordenar por fecha desc
+    const ordenados = [...rs].sort((a,b) => b.fecha.localeCompare(a.fecha) || (b.hora||'').localeCompare(a.hora||''));
+
+    const filas = ordenados.map(r => {
+      const cls = clasificar(r);
+      const estado_txt = {
+        'volado':                '<span class="badge vol">VOLADO</span>',
+        'aprobado_pasado_sin_obs':'<span class="badge apr">REALIZ. S/OBS</span>',
+        'aprobado_futuro':       '<span class="badge apr">APROBADO</span>',
+        'cancelado_alumno':      '<span class="badge can">CANC. ALUMNO</span>',
+        'cancelado_instructor':  '<span class="badge can">CANC. INST.</span>',
+        'vencido_confirmado':    '<span class="badge ven">VENCIDO</span>',
+        'vencido_sin_aprobar':   '<span class="badge ven">VEN. S/APRO.</span>',
+        'pendiente':             '<span class="badge pen">PENDIENTE</span>',
+        'otro':                  '<span class="badge" style="color:var(--text3)">OTRO</span>',
+      }[cls] || '';
+
+      const horas = cls === 'volado' ? `<span class="green">${fmtHoras(parseHoras(r.obs_privada_tiempo_vuelo))}</span>` : '<span class="muted">—</span>';
+      const aterr = cls === 'volado' && r.obs_privada_aterrizajes ? `<span class="green">${r.obs_privada_aterrizajes}</span>` : '<span class="muted">—</span>';
+      const instructor = esc(r.instructor || r.aprobado_por || r.cancelado_por || '—');
+      const quien = esc((r.nombre || '—').split(' ').slice(0,2).join(' '));
+      const tipoVuelo = (r.tipo_vuelo || 'instruccion') === 'particular' ? 'Particular' : 'Instrucción';
+      const cargadoPor = r.cargado_por ? `<span style="color:var(--amber);font-size:9px">📋 ${esc(r.cargado_por)}</span>` : '';
+
+      return `<tr>
+        <td class="muted">${fmtDD(r.fecha)}</td>
+        <td class="muted">${r.hora||r.horaInicio||'—'}${r.horaFin?'→'+r.horaFin:''}</td>
+        <td>${esc(quien)}</td>
+        <td class="muted">${tipoVuelo}</td>
+        <td>${estado_txt}</td>
+        <td>${horas}</td>
+        <td>${aterr}</td>
+        <td>${instructor}<br>${cargadoPor}</td>
+      </tr>`;
+    }).join('');
+
+    const hayDatos = rs.length > 0;
+
+    contAv.innerHTML += `
+      <div class="avion-section">
+        <div class="avion-header">
+          <div>
+            <div class="mat">${av}</div>
+            <div class="modelo">${modelo}</div>
+          </div>
+          <div class="horas-badge">⏱ ${fmtHoras(avHoras)} voladas</div>
+        </div>
+        <div class="avion-stats">
+          <div class="avion-stat c-green"><span class="n">${avVol}</span><span class="l">Vuelos realizados</span></div>
+          <div class="avion-stat c-cyan"><span class="n" style="color:var(--cyan)">${fmtHoras(avHoras)}</span><span class="l">Horas de vuelo</span></div>
+          <div class="avion-stat"><span class="n" style="color:#60a5fa">${avAterr||'—'}</span><span class="l">Aterrizajes</span></div>
+          <div class="avion-stat c-amber"><span class="n">${avSinObs}</span><span class="l">Realiz. s/obs</span></div>
+          <div class="avion-stat c-red"><span class="n">${avCanAlumno}</span><span class="l">Canc. alumno</span></div>
+          <div class="avion-stat c-red"><span class="n">${avCanInst}</span><span class="l">Canc. instructor</span></div>
+          <div class="avion-stat c-purple"><span class="n">${avVenConf}</span><span class="l">Vencidos c/apro.</span></div>
+          <div class="avion-stat c-gray"><span class="n">${avVenSin}</span><span class="l">Ven. s/aprobar</span></div>
+          <div class="avion-stat c-amber"><span class="n">${avPend+avFut}</span><span class="l">Activos/futuros</span></div>
+          <div class="avion-stat c-gray"><span class="n">${rs.length}</span><span class="l">Total registros</span></div>
+        </div>
+        ${hayDatos ? `
+        <div class="tabla-wrap">
+          <table class="det">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Hora</th><th>Alumno/Piloto</th>
+                <th>Tipo</th><th>Estado</th>
+                <th>Hs. vuelo</th><th>Aterr.</th><th>Instructor</th>
+              </tr>
+            </thead>
+            <tbody>${filas}</tbody>
+          </table>
+        </div>` : `<div class="empty-avion">Sin movimientos en el período seleccionado</div>`}
+      </div>`;
+  });
+
+  // ── Actualizar títulos ──────────────────────────────────────
+  const avLabel = avionFiltro === 'todos' ? 'Todas las aeronaves' : avionFiltro;
+  document.getElementById('rep-titulo').textContent =
+    `REPORTE DE ACTIVIDAD — ${avLabel.toUpperCase()}`;
+  document.getElementById('rep-subtitulo').textContent =
+    `Período: ${fmtDD(desde)} al ${fmtDD(hasta)}  ·  Generado: ${fmtDD(hoy())}  ·  Por: ${nombre}`;
+  document.getElementById('print-subtitle').textContent =
+    `Aeroclub Río Grande — Reporte de actividad de aeronaves — ${fmtDD(desde)} al ${fmtDD(hasta)}`;
+
+  document.getElementById('spinner').style.display = 'none';
+  document.getElementById('reporte').style.display  = 'block';
+  document.getElementById('btn-pdf').style.display  = 'block';
+
+  // Scroll al reporte
+  document.getElementById('reporte').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+</script>
+</body>
+</html>
