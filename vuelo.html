@@ -461,6 +461,8 @@ async function cargarTabVuelo(){
       // Estado: aprobado, o vencido con aprobado_por (pasó la hora pero fue un vuelo real)
       const estadoOk=r.estado==='aprobado'||(r.estado==='vencido'&&r.aprobado_por);
       if(!estadoOk) return false;
+      // Excluir turnos que ya tienen tiempo de vuelo cargado — ya se voló y registró
+      if(r.obs_privada_tiempo_vuelo) return false;
       // Incluir turnos de hasta 4 horas atrás (cubre el caso de turno vencido por hora)
       const horaT=r.hora||r.horaInicio||'00:00';
       const [hh,mm]=horaT.split(':').map(Number);
