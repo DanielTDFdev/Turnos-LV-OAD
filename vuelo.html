@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.4 · 2026-08-03
+  Pedido de Daniel: confirmación antes de INICIAR y FINALIZAR el vuelo,
+  solo como precaución ante un toque accidental (confirm() nativo en cada
+  rama del handler de btn-start-stop). El timestamp se graba recién
+  después de confirmar, así que refleja el momento real del OK, no el del
+  primer toque.
+  Ver anterior:
   v3.3 · 2026-08-03
   Pedido de Daniel: mismo chequeo de versión que ya tiene turnos.html.
   Como corre standalone (PWA) y la pestaña puede quedar abierta días sin
@@ -564,7 +571,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -882,7 +889,8 @@ function actualizarEstado(estado){
 // START / STOP
 $('btn-start-stop').addEventListener('click',()=>{
   if(!tsInicio){
-    // START — grabar timestamp y persistir
+    // START — confirmar antes de grabar (evita un toque accidental)
+    if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
     persistir();
     actualizarEstado('en-vuelo');
@@ -891,7 +899,8 @@ $('btn-start-stop').addEventListener('click',()=>{
     $('btn-cambiar-turno').style.display='none';
     toast('Vuelo iniciado · '+fmtLocalFull(tsInicio));
   } else {
-    // STOP
+    // STOP — confirmar antes de grabar
+    if(!confirm('¿Finalizar el vuelo ahora?')) return;
     tsFin=new Date().toISOString();
     persistir();
     actualizarEstado('finalizado');
