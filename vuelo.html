@@ -2,6 +2,26 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.6 · 2026-08-03
+  Reescritura de la selección de turno, a pedido de Daniel: un instructor
+  no tiene dos turnos distintos a la misma fecha/hora (si eso pasara sería
+  un fallo de controles de turnos.html, no algo a resolver acá). Antes la
+  app juntaba todos los turnos aprobados del instructor en una ventana de
+  -1h/+4h respecto de ahora y mostraba una LISTA si había 2+, lo cual podía
+  incluir turnos de otro horario del mismo día (ej. uno a las 10 y otro a
+  las 13 apareciendo juntos a las 10:30) — mezclaba "el turno de ahora" con
+  "el próximo turno del día", y "Cambiar turno" no cambiaba nada en el caso
+  normal de un solo turno activo (volvía a auto-entrar al mismo).
+  Ahora: se descarta la ventana horaria, se calcula el turno con MENOR
+  diferencia absoluta respecto a la hora actual entre todos los aprobados/
+  vencidos-con-aprobador del día, y se entra directo a ese — "ahora te toca
+  volar con Juancito", sin elegir nada. Solo se arma lista si hay un empate
+  exacto de horario (anómalo) o si se fuerza con el nuevo parámetro
+  cargarTabVuelo(forzar=true), que ahora usa "Cambiar turno": lo convierte
+  en una pantalla de override real (ver la lista completa / elegir "Sin
+  turno asignado" aunque haya un turno asignado), en vez de un botón que no
+  hacía nada distinto al re-cargar.
+  Ver anterior:
   v2.5 · 2026-08-03
   Pedido de Daniel: el nombre que se ve al instalar en el celular pasa de
   "ACRG Vuelo" a "Instructores". apple-mobile-web-app-title cambiado acá
@@ -419,7 +439,7 @@ let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '2.5'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -498,9 +518,16 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 });
 
 // ── TAB VUELO ─────────────────────────────────────────────
-async function cargarTabVuelo(){
-  // Si hay un vuelo en curso o finalizado, mostrar directamente
-  if(tsInicio||tsFin){
+// Un instructor no tiene dos turnos distintos a la misma fecha/hora (si eso
+// pasara sería un fallo de los controles de turnos.html, no algo a resolver
+// acá). Por eso la app no arma una "lista de turnos posibles": calcula cuál
+// es el turno más cercano a la hora actual y entra directo a ese — la idea
+// es "ahora te toca volar con Juancito", sin que el instructor tenga que
+// elegir nada. Solo se muestra una lista si hay un empate exacto de horario
+// (caso anómalo) o si se fuerza la pantalla de selección con "Cambiar turno".
+async function cargarTabVuelo(forzar=false){
+  // Si hay un vuelo en curso o finalizado, mostrar directamente (salvo que se fuerce el cambio)
+  if(!forzar&&(tsInicio||tsFin)){
     mostrarPantallaVuelo(turnoActual);
     return;
   }
@@ -510,6 +537,7 @@ async function cargarTabVuelo(){
     const snap=await get(ref(db,'reservas'));
     const todas=rArr(snap.val());
     const fecha=hoy();
+    const ahora=new Date();
     const misTurnos=todas.filter(r=>{
       if(r.fecha!==fecha) return false;
       const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
@@ -520,24 +548,23 @@ async function cargarTabVuelo(){
       if(!estadoOk) return false;
       // Excluir turnos que ya tienen tiempo de vuelo cargado — ya se voló y registró
       if(r.obs_privada_tiempo_vuelo) return false;
-      // Incluir turnos de hasta 4 horas atrás (cubre el caso de turno vencido por hora)
+      return true;
+    }).map(r=>{
       const horaT=r.hora||r.horaInicio||'00:00';
       const [hh,mm]=horaT.split(':').map(Number);
-      const ahora=new Date();
       const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
-      const diffHoras=(ahora-turnoTs)/3600000;
-      return diffHoras>=-1&&diffHoras<=4; // 1h antes hasta 4h después
-    }).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+      return {...r,_diffAbs:Math.abs(ahora-turnoTs)};
+    }).sort((a,b)=>a._diffAbs-b._diffAbs);
 
     if(misTurnos.length===0){
       // Sin turnos — mostrar lista vacía con opción manual
       $('v-lista-items').innerHTML='<div class="empty-libro" style="padding:24px 0">Sin turnos aprobados para hoy.</div>';
       mostrarVista('lista');
-    } else if(misTurnos.length===1){
-      // Un solo turno — entrada directa
+    } else if(!forzar&&misTurnos.filter(r=>r._diffAbs===misTurnos[0]._diffAbs).length===1){
+      // Caso normal: un único turno es el más cercano a la hora actual — entrada directa
       mostrarPantallaVuelo(misTurnos[0]);
     } else {
-      // Múltiples turnos — mostrar lista
+      // Forzado ("Cambiar turno") o empate exacto de horario (anómalo, revisar turnos.html) — mostrar para elegir
       $('v-lista-items').innerHTML=misTurnos.map(r=>`
         <div class="turno-item" data-key="${r.key}">
           <div class="hora">${r.hora||r.horaInicio||'—'}</div>
@@ -562,7 +589,7 @@ async function cargarTabVuelo(){
 }
 
 $('btn-sin-turno').addEventListener('click',()=>mostrarPantallaVuelo(null));
-$('btn-cambiar-turno').addEventListener('click',()=>{ turnoActual=null;tsInicio=null;tsFin=null;localStorage.removeItem(LS);cargarTabVuelo(); });
+$('btn-cambiar-turno').addEventListener('click',()=>{ turnoActual=null;tsInicio=null;tsFin=null;localStorage.removeItem(LS);cargarTabVuelo(true); });
 $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
 $('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
 
