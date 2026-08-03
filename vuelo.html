@@ -2,6 +2,34 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.2 · 2026-08-03
+  Ajuste pedido por Daniel: GRACIA_VENCIDO_MS bajado de 2 horas a 30
+  minutos. Criterio de Daniel: si el turno ya inició hace más de media
+  hora y no está activo (nadie tocó START), es un turno que nadie usó —
+  no corresponde seguir ofreciéndolo como "el de ahora". La lógica ya
+  contemplaba pasar al siguiente turno vigente más próximo automáticamente
+  al descartar el vencido (v3.1); acá solo cambia el número.
+  Ver anterior:
+  v3.1 · 2026-08-03
+  Fix reportado por Daniel: a las 19:30 la app ofrecía como "el turno de
+  ahora" uno de las 17:00, ya bien vencido. Causa: (1) el campo estado de
+  la reserva queda en 'aprobado' hasta que ALGUIEN abre turnos.html y
+  dispara vencerTurnosPendientes() del lado del cliente — no hay cron de
+  servidor para esto, así que si nadie tuvo la página abierta el turno
+  sigue figurando "aprobado" aunque ya pasó; (2) cargarTabVuelo() elegía
+  el turno con MENOR diferencia absoluta sin techo — 5 min o 5 horas para
+  atrás, daba igual.
+  Fix: nueva constante GRACIA_VENCIDO_MS (2 horas, ajustable). Para la
+  entrada automática (no forzada) se ignoran candidatos ya pasados por más
+  de ese margen — no se auto-ofrecen como "el de ahora". Si TODOS los
+  candidatos del día están más vencidos que el margen, se muestra "Ningún
+  turno para este momento" + botón "⚠ Ver turnos vencidos sin cerrar"
+  (nuevo btn-ver-vencidos) que fuerza la lista completa sin filtrar — así
+  quedan accesibles a mano, nunca se pierden. En esa lista forzada, los
+  turnos vencidos por más del margen se marcan con "⚠ VENCIDO" en ámbar
+  (nueva clase .turno-item.vencido/.tag-vencido, distinta de .actual/
+  .tag-actual que ya se usaba en cian para "en curso" en Pendientes).
+  Ver anterior:
   v3.0 · 2026-08-03
   Fix pedido por Daniel: el Libro mostraba la hora convertida a local
   (America/Argentina/Ushuaia, UTC-3) en vez de UTC cruda — como esa zona
@@ -303,6 +331,8 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .turno-item .arr{color:var(--gray);font-size:22px}
 .turno-item.actual{border-color:var(--cyan);background:rgba(0,200,212,.06)}
 .tag-actual{color:var(--cyan);font-weight:700}
+.turno-item.vencido{border-color:var(--amber);background:rgba(240,165,0,.06)}
+.tag-vencido{color:var(--amber);font-weight:700}
 
 /* ── TAB LIBRO ── */
 .vuelo-row{
@@ -392,6 +422,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     <div id="v-lista" style="display:none">
       <span class="label">Tus turnos aprobados de hoy</span>
       <div id="v-lista-items"></div>
+      <button class="btn btn-ghost" id="btn-ver-vencidos" style="display:none;border-color:var(--amber);color:var(--amber)">⚠ Ver turnos vencidos sin cerrar</button>
       <button class="btn btn-ghost" id="btn-sin-turno">+ Sin turno asignado</button>
     </div>
 
@@ -514,7 +545,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -630,30 +661,47 @@ async function cargarTabVuelo(forzar=false){
       const horaT=r.hora||r.horaInicio||'00:00';
       const [hh,mm]=horaT.split(':').map(Number);
       const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
-      return {...r,_diffAbs:Math.abs(ahora-turnoTs)};
+      return {...r,_diffAbs:Math.abs(ahora-turnoTs),_pasado:turnoTs<ahora};
     }).sort((a,b)=>a._diffAbs-b._diffAbs);
 
-    if(misTurnos.length===0){
-      // Sin turnos — mostrar lista vacía con opción manual
-      $('v-lista-items').innerHTML='<div class="empty-libro" style="padding:24px 0">Sin turnos aprobados para hoy.</div>';
+    // Techo de "atraso razonable": el campo estado del turno queda en 'aprobado'
+    // hasta que alguien abre turnos.html y dispara vencerTurnosPendientes() del
+    // lado del cliente — no hay cron de servidor para esto. Si nadie tuvo la
+    // página abierta, un turno de hace 5 horas puede seguir figurando "aprobado"
+    // y sería absurdo ofrecerlo como "el de ahora". Por eso, para la entrada
+    // automática (no forzada), se ignoran candidatos ya pasados por más de
+    // GRACIA_VENCIDO_MS — pero siguen existiendo y son accesibles a mano.
+    const GRACIA_VENCIDO_MS=30*60000; // 30 minutos — ajustable
+    const vigentes=forzar?misTurnos:misTurnos.filter(r=>!(r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS));
+    const vencidosViejos=misTurnos.filter(r=>r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS);
+
+    if(vigentes.length===0){
+      // Sin turnos vigentes — mostrar lista vacía con opción manual
+      // (y, si hay turnos viejos sin cerrar, un acceso explícito para no perderlos)
+      $('v-lista-items').innerHTML =
+        misTurnos.length===0
+          ? '<div class="empty-libro" style="padding:24px 0">Sin turnos aprobados para hoy.</div>'
+          : `<div class="empty-libro" style="padding:24px 0">Ningún turno para este momento.<br>Tenés ${vencidosViejos.length} turno${vencidosViejos.length>1?'s':''} vencido${vencidosViejos.length>1?'s':''} sin cerrar de hoy.</div>`;
+      $('btn-ver-vencidos').style.display=vencidosViejos.length?'':'none';
       mostrarVista('lista');
-    } else if(!forzar&&misTurnos.filter(r=>r._diffAbs===misTurnos[0]._diffAbs).length===1){
+    } else if(!forzar&&vigentes.filter(r=>r._diffAbs===vigentes[0]._diffAbs).length===1){
       // Caso normal: un único turno es el más cercano a la hora actual — entrada directa
-      mostrarPantallaVuelo(misTurnos[0]);
+      mostrarPantallaVuelo(vigentes[0]);
     } else {
-      // Forzado ("Cambiar turno") o empate exacto de horario (anómalo, revisar turnos.html) — mostrar para elegir
-      $('v-lista-items').innerHTML=misTurnos.map(r=>`
-        <div class="turno-item" data-key="${r.key}">
+      // Forzado ("Cambiar turno"/"Ver vencidos") o empate exacto de horario (anómalo) — mostrar para elegir
+      $('btn-ver-vencidos').style.display='none';
+      $('v-lista-items').innerHTML=vigentes.map(r=>`
+        <div class="turno-item${r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS?' vencido':''}" data-key="${r.key}">
           <div class="hora">${r.hora||r.horaInicio||'—'}</div>
           <div class="info">
             <div class="alumno-n">${r.nombre||'—'}</div>
-            <div class="avion-n">${r.avion||'LV-OAD'}</div>
+            <div class="avion-n">${r.avion||'LV-OAD'}${r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS?' · <span class="tag-vencido">⚠ VENCIDO</span>':''}</div>
           </div>
           <div class="arr">›</div>
         </div>`).join('');
-      document.querySelectorAll('.turno-item').forEach(el=>{
+      document.querySelectorAll('#v-lista-items .turno-item').forEach(el=>{
         el.addEventListener('click',()=>{
-          const t=misTurnos.find(r=>r.key===el.dataset.key);
+          const t=vigentes.find(r=>r.key===el.dataset.key);
           mostrarPantallaVuelo(t);
         });
       });
@@ -740,6 +788,7 @@ function activarTurno(turno){
 }
 
 $('btn-sin-turno').addEventListener('click',()=>mostrarPantallaVuelo(null));
+$('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
 $('btn-cambiar-turno').addEventListener('click',()=>{ turnoActual=null;tsInicio=null;tsFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
 $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
 $('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
