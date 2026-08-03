@@ -453,11 +453,22 @@ async function cargarTabVuelo(){
     const snap=await get(ref(db,'reservas'));
     const todas=rArr(snap.val());
     const fecha=hoy();
-    const misTurnos=todas.filter(r=>
-      r.fecha===fecha&&r.estado==='aprobado'&&
-      (r.instructor===session.nombre||r.aprobado_por===session.nombre||
-       r.instructor===session.user||r.aprobado_por===session.user)
-    ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+    const misTurnos=todas.filter(r=>{
+      if(r.fecha!==fecha) return false;
+      const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
+                     r.instructor===session.user||r.aprobado_por===session.user;
+      if(!esDeEste) return false;
+      // Estado: aprobado, o vencido con aprobado_por (pasó la hora pero fue un vuelo real)
+      const estadoOk=r.estado==='aprobado'||(r.estado==='vencido'&&r.aprobado_por);
+      if(!estadoOk) return false;
+      // Incluir turnos de hasta 4 horas atrás (cubre el caso de turno vencido por hora)
+      const horaT=r.hora||r.horaInicio||'00:00';
+      const [hh,mm]=horaT.split(':').map(Number);
+      const ahora=new Date();
+      const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
+      const diffHoras=(ahora-turnoTs)/3600000;
+      return diffHoras>=-1&&diffHoras<=4; // 1h antes hasta 4h después
+    }).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
 
     if(misTurnos.length===0){
       // Sin turnos — mostrar lista vacía con opción manual
