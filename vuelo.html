@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.3 · 2026-08-03
+  Fix pestaña Libro: mostraba todos los turnos aprobados/vencidos del
+  instructor para la fecha elegida, incluyendo los que todavía no se
+  volaron o no se guardaron (sin tiempo/aterrizajes cargados). Ahora
+  cargarLibro() exige obs_privada_tiempo_vuelo (mismo criterio que ya usa
+  el resto del sistema para "vuelo finalizado y registrado") — Libro pasa
+  a ser estrictamente el registro de vuelos ya cerrados con GUARDAR.
+  Ver anterior:
   v2.2 · 2026-08-03
   Auto-refresh: como corre standalone (PWA, sin botón de recarga), los
   turnos nuevos/aprobados no se veían hasta cerrar y reabrir la app.
@@ -733,7 +741,8 @@ async function cargarLibro(){
       r.fecha===fecha&&
       (r.instructor===session.nombre||r.aprobado_por===session.nombre||
        r.instructor===session.user||r.aprobado_por===session.user)&&
-      (r.estado==='aprobado'||r.estado==='vencido')
+      (r.estado==='aprobado'||r.estado==='vencido')&&
+      !!r.obs_privada_tiempo_vuelo // solo vuelos finalizados y guardados (tiempo cargado)
     ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
 
     if(!mis.length){
