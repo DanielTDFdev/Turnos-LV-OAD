@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <!--
 ==================================================================================
-  VUELO — App de registro de vuelo en tiempo real
-  Aeroclub Río Grande (SAWE) · v1.0 · 2026-08-03
-  Uso: instructor abre desde celular antes de subir al avión.
-  Flujo: login → seleccionar turno del día → iniciar timer → finalizar → guardar.
-  Persistencia: localStorage guarda el estado del timer en caso de cierre accidental.
-  Datos guardados en Firebase: obs_privada_tiempo_vuelo, obs_privada_aterrizajes,
-  obs_privada, obs_privada_autor, obs_privada_ts (mismo esquema que turnos.html).
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.0 · 2026-08-03
+  Flujo: login → turno del día → START (graba ts_despegue en Firebase) →
+         STOP (graba ts_aterrizaje) → confirmar con aterrizajes y obs →
+         guardar en reserva. Tab "Libro" para ver actividad por fecha.
+  Sin timer visual — solo timestamps UTC de inicio y fin.
 ==================================================================================
 -->
 <html lang="es">
@@ -18,813 +17,725 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#050d1a">
 <title>Vuelo · ACRG</title>
-<link rel="manifest" href="manifest-vuelo.json">
-
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
 
-/* ── Variables ───────────────────────────────────────────── */
 :root{
-  --bg:       #050d1a;
-  --bg2:      #0b1929;
-  --bg3:      #0f2035;
-  --cyan:     #00c8d4;
-  --cyan-dim: rgba(0,200,212,.15);
-  --amber:    #f0a500;
-  --green:    #22c55e;
-  --green-dim:rgba(34,197,94,.15);
-  --red:      #ef4444;
-  --red-dim:  rgba(239,68,68,.15);
-  --white:    #e8f4fd;
-  --gray:     #4a6a8a;
-  --font-mono:'Share Tech Mono',monospace;
-  --font-ui:  'Rajdhani',sans-serif;
-  --font-disp:'Orbitron',sans-serif;
+  --bg:     #050d1a;
+  --bg2:    #0b1929;
+  --bg3:    #0f2035;
+  --cyan:   #00c8d4;
+  --amber:  #f0a500;
+  --green:  #22c55e;
+  --red:    #ef4444;
+  --white:  #e8f4fd;
+  --gray:   #4a6a8a;
+  --gray2:  #2a4a6a;
+  --mono:   'Share Tech Mono',monospace;
+  --ui:     'Rajdhani',sans-serif;
+  --disp:   'Orbitron',sans-serif;
+  --r:      14px;
 }
 
-/* ── Reset ───────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html{height:100%;overscroll-behavior:none}
-body{
-  min-height:100%;background:var(--bg);color:var(--white);
-  font-family:var(--font-ui);overflow-x:hidden;
-  /* evitar zoom accidental en doble-tap */
-  touch-action:manipulation;
-}
+html,body{height:100%;overscroll-behavior:none;touch-action:manipulation}
+body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 
-/* ── Layout base ─────────────────────────────────────────── */
-.screen{
-  display:none;min-height:100dvh;
-  flex-direction:column;align-items:center;justify-content:center;
-  padding:24px 20px;
-}
+/* ── Screens ── */
+.screen{display:none;min-height:100dvh;flex-direction:column;padding:20px}
 .screen.active{display:flex}
 
-/* ── Marca ───────────────────────────────────────────────── */
-.marca{
-  font-family:var(--font-disp);font-size:11px;letter-spacing:.25em;
-  color:var(--gray);text-transform:uppercase;margin-bottom:6px;text-align:center;
-}
-.marca strong{color:var(--cyan)}
+/* ── App shell con tabs ── */
+#app-shell{display:none;flex-direction:column;min-height:100dvh}
+#app-shell.active{display:flex}
 
-/* ── LOGIN ───────────────────────────────────────────────── */
-#screen-login{gap:0}
-.login-logo{
-  font-family:var(--font-disp);font-size:32px;color:var(--cyan);
-  letter-spacing:.15em;text-align:center;margin-bottom:4px;
+.top-bar{
+  display:flex;align-items:center;padding:16px 20px 12px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 16px);
+  background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);
+  gap:12px;flex:none;
 }
-.login-sub{
-  font-family:var(--font-mono);font-size:11px;color:var(--gray);
-  letter-spacing:.12em;text-align:center;margin-bottom:40px;
+.top-bar .inst-info{flex:1}
+.top-bar .inst-info .nombre{
+  font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;
 }
-.login-card{
-  width:100%;max-width:360px;background:var(--bg2);
-  border:1px solid rgba(0,200,212,.2);border-radius:16px;padding:28px 24px;
+.top-bar .inst-info .sub{
+  font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:1px;
 }
-.field{display:flex;flex-direction:column;gap:6px;margin-bottom:18px}
-.field label{
-  font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;
-  color:var(--gray);text-transform:uppercase;
+.btn-sm{
+  background:transparent;border:1px solid var(--gray2);border-radius:8px;
+  color:var(--gray);font-family:var(--mono);font-size:10px;padding:7px 11px;
+  cursor:pointer;letter-spacing:.06em;white-space:nowrap;
 }
-.field input{
-  background:var(--bg3);border:1px solid rgba(0,200,212,.2);
-  border-radius:10px;color:var(--white);font-family:var(--font-mono);
-  font-size:16px;padding:14px 16px;outline:none;transition:border .2s;
-  width:100%;
-}
-.field input:focus{border-color:var(--cyan)}
-.err{
-  font-family:var(--font-mono);font-size:11px;color:var(--red);
-  min-height:16px;margin-bottom:8px;text-align:center;
-}
+.btn-sm:active{background:rgba(255,255,255,.06)}
 
-/* ── Botones grandes (táctiles) ──────────────────────────── */
-.btn{
-  width:100%;padding:18px;border:none;border-radius:12px;
-  font-family:var(--font-disp);font-size:14px;font-weight:700;
-  letter-spacing:.12em;cursor:pointer;transition:all .15s;
-  text-transform:uppercase;
+/* Tab bar */
+.tab-bar{
+  display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;
 }
-.btn-primary{background:var(--cyan);color:var(--bg)}
-.btn-primary:active{opacity:.8;transform:scale(.98)}
-.btn-secondary{
-  background:transparent;color:var(--gray);
-  border:1px solid rgba(255,255,255,.1);margin-top:10px;
-  font-size:12px;padding:14px;
+.tab-btn{
+  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:11px;
+  letter-spacing:.1em;color:var(--gray);cursor:pointer;border:none;background:transparent;
+  text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
 }
-.btn-secondary:active{background:rgba(255,255,255,.05)}
-.btn-danger{background:var(--red);color:#fff}
-.btn-danger:active{opacity:.8;transform:scale(.98)}
-.btn-success{background:var(--green);color:var(--bg)}
-.btn-success:active{opacity:.8;transform:scale(.98)}
+.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
 
-/* ── TURNO SELECTOR ──────────────────────────────────────── */
-#screen-turno{justify-content:flex-start;padding-top:env(safe-area-inset-top,24px)}
-#screen-turno .top-bar{
-  width:100%;display:flex;align-items:center;gap:10px;
-  padding:16px 0 24px;
-}
-#screen-turno .top-bar .saludo{
-  font-family:var(--font-mono);font-size:12px;color:var(--gray);flex:1;
-}
-#screen-turno .top-bar .saludo strong{color:var(--cyan);display:block;font-size:14px}
-.btn-logout{
-  background:transparent;border:1px solid rgba(255,255,255,.1);
-  border-radius:8px;color:var(--gray);font-family:var(--font-mono);
-  font-size:11px;padding:8px 12px;cursor:pointer;white-space:nowrap;
-}
-.btn-logout:active{background:rgba(255,255,255,.05)}
+/* Tab content */
+.tab-content{display:none;flex:1;overflow-y:auto;padding:20px}
+.tab-content.active{display:block}
 
-.section-label{
-  font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;
-  color:var(--cyan);text-transform:uppercase;margin-bottom:12px;
-  width:100%;
-}
+/* ── Elementos comunes ── */
+.label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--gray);text-transform:uppercase;margin-bottom:8px;display:block}
+.card{background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:18px;margin-bottom:12px}
+.card-title{font-family:var(--disp);font-size:12px;color:var(--cyan);letter-spacing:.1em;margin-bottom:12px;text-transform:uppercase}
+.err{font-family:var(--mono);font-size:11px;color:var(--red);min-height:16px;text-align:center;margin-bottom:8px}
 
-.turno-card{
-  width:100%;background:var(--bg2);border:1px solid rgba(0,200,212,.15);
-  border-radius:14px;padding:18px;margin-bottom:10px;cursor:pointer;
-  transition:all .15s;position:relative;
-}
-.turno-card:active,.turno-card:hover{
-  border-color:var(--cyan);background:var(--bg3);
-}
-.turno-card .hora{
-  font-family:var(--font-disp);font-size:22px;color:var(--cyan);
-  letter-spacing:.05em;
-}
-.turno-card .alumno{
-  font-family:var(--font-ui);font-size:18px;font-weight:700;
-  color:var(--white);margin:4px 0 2px;
-}
-.turno-card .avion{
-  font-family:var(--font-mono);font-size:11px;color:var(--gray);
-}
-.turno-card .chevron{
-  position:absolute;right:18px;top:50%;transform:translateY(-50%);
-  color:var(--cyan);font-size:20px;opacity:.5;
-}
-.empty-turnos{
-  width:100%;text-align:center;padding:40px 20px;
-  font-family:var(--font-mono);font-size:12px;color:var(--gray);
-  line-height:1.8;
-}
-
-/* ── VUELO ───────────────────────────────────────────────── */
-#screen-vuelo{gap:0;padding-top:env(safe-area-inset-top,20px)}
-
-.vuelo-avion{
-  font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;
-  color:var(--gray);text-transform:uppercase;margin-bottom:2px;text-align:center;
-}
-.vuelo-alumno{
-  font-family:var(--font-ui);font-size:24px;font-weight:700;
-  color:var(--white);text-align:center;margin-bottom:32px;
-}
-
-/* El timer — protagonista absoluto */
-.timer-wrap{
-  position:relative;display:flex;flex-direction:column;align-items:center;
-  margin-bottom:36px;
-}
-.timer-ring{
-  width:240px;height:240px;border-radius:50%;
-  border:3px solid rgba(0,200,212,.15);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  position:relative;
-  transition:border-color .5s,box-shadow .5s;
-}
-.timer-ring.idle{
-  border-color:rgba(0,200,212,.15);
-}
-.timer-ring.running{
-  border-color:var(--cyan);
-  box-shadow:0 0 40px rgba(0,200,212,.2),0 0 80px rgba(0,200,212,.08);
-  animation:pulse-ring 2s ease-in-out infinite;
-}
-.timer-ring.done{
-  border-color:var(--green);
-  box-shadow:0 0 40px rgba(34,197,94,.25);
-}
-@keyframes pulse-ring{
-  0%,100%{box-shadow:0 0 40px rgba(0,200,212,.2),0 0 80px rgba(0,200,212,.08)}
-  50%{box-shadow:0 0 60px rgba(0,200,212,.35),0 0 100px rgba(0,200,212,.15)}
-}
-.timer-status{
-  font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;
-  text-transform:uppercase;margin-bottom:8px;transition:color .3s;
-}
-.timer-ring.idle .timer-status{color:var(--gray)}
-.timer-ring.running .timer-status{color:var(--cyan)}
-.timer-ring.done .timer-status{color:var(--green)}
-
-.timer-display{
-  font-family:var(--font-disp);font-size:52px;font-weight:900;
-  letter-spacing:.04em;line-height:1;transition:color .3s;
-}
-.timer-ring.idle .timer-display{color:var(--gray)}
-.timer-ring.running .timer-display{color:var(--white)}
-.timer-ring.done .timer-display{color:var(--green)}
-
-.timer-since{
-  font-family:var(--font-mono);font-size:10px;color:var(--gray);
-  margin-top:8px;letter-spacing:.08em;
-}
-
-/* Botón de acción principal — GRANDE */
-.btn-vuelo-main{
-  width:100%;max-width:320px;padding:22px;border:none;border-radius:16px;
-  font-family:var(--font-disp);font-size:16px;font-weight:900;
-  letter-spacing:.14em;cursor:pointer;transition:all .15s;text-transform:uppercase;
-  margin-bottom:16px;
-}
-.btn-vuelo-main.start{
-  background:var(--cyan);color:var(--bg);
-}
-.btn-vuelo-main.start:active{opacity:.85;transform:scale(.97)}
-.btn-vuelo-main.stop{
-  background:var(--red);color:#fff;
-}
-.btn-vuelo-main.stop:active{opacity:.85;transform:scale(.97)}
-
-.btn-vuelo-sec{
-  background:transparent;border:1px solid rgba(255,255,255,.1);
-  border-radius:10px;color:var(--gray);font-family:var(--font-mono);
-  font-size:11px;letter-spacing:.08em;padding:12px 20px;cursor:pointer;
-}
-.btn-vuelo-sec:active{background:rgba(255,255,255,.05)}
-
-/* ── CIERRE ──────────────────────────────────────────────── */
-#screen-cierre{gap:0;justify-content:flex-start;padding-top:env(safe-area-inset-top,24px)}
-
-.cierre-header{width:100%;text-align:center;margin-bottom:28px}
-.cierre-header h2{
-  font-family:var(--font-disp);font-size:18px;color:var(--green);
-  letter-spacing:.1em;margin-bottom:4px;
-}
-.cierre-header p{font-family:var(--font-mono);font-size:11px;color:var(--gray)}
-
-.dato-vuelo{
-  width:100%;background:var(--bg2);border:1px solid rgba(0,200,212,.15);
-  border-radius:12px;padding:16px 18px;margin-bottom:12px;
-}
-.dato-vuelo label{
-  font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;
-  color:var(--gray);text-transform:uppercase;display:block;margin-bottom:8px;
-}
-.dato-vuelo .valor-tiempo{
-  font-family:var(--font-disp);font-size:32px;color:var(--green);
-  letter-spacing:.05em;
-}
-.dato-vuelo input,.dato-vuelo textarea{
+input,textarea,select{
   width:100%;background:var(--bg3);border:1px solid rgba(0,200,212,.2);
-  border-radius:10px;color:var(--white);font-family:var(--font-mono);
-  font-size:16px;padding:12px 14px;outline:none;transition:border .2s;
+  border-radius:10px;color:var(--white);font-family:var(--mono);
+  font-size:16px;padding:13px 15px;outline:none;transition:border .2s;
 }
-.dato-vuelo input:focus,.dato-vuelo textarea:focus{border-color:var(--cyan)}
-.dato-vuelo textarea{resize:none;min-height:90px;line-height:1.5}
-.dato-vuelo .hint{
-  font-family:var(--font-mono);font-size:10px;color:var(--gray);
-  margin-top:6px;line-height:1.5;
+input:focus,textarea:focus,select:focus{border-color:var(--cyan)}
+textarea{resize:none;min-height:80px;line-height:1.5}
+
+.btn{
+  width:100%;padding:17px;border:none;border-radius:12px;
+  font-family:var(--disp);font-size:14px;font-weight:700;
+  letter-spacing:.12em;cursor:pointer;transition:all .12s;text-transform:uppercase;
+  margin-bottom:10px;
+}
+.btn:active{transform:scale(.97);opacity:.88}
+.btn:last-child{margin-bottom:0}
+.btn-cyan{background:var(--cyan);color:var(--bg)}
+.btn-red{background:var(--red);color:#fff}
+.btn-green{background:var(--green);color:var(--bg)}
+.btn-ghost{background:transparent;border:1px solid var(--gray2);color:var(--gray);font-size:12px;padding:13px}
+
+/* ── LOGIN ── */
+#screen-login{align-items:center;justify-content:center;gap:0}
+.login-hero{text-align:center;margin-bottom:36px}
+.login-hero .ico{font-size:48px;margin-bottom:8px}
+.login-hero h1{font-family:var(--disp);font-size:22px;color:var(--cyan);letter-spacing:.15em}
+.login-hero p{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:4px;letter-spacing:.1em}
+.login-card{width:100%;max-width:380px;background:var(--bg2);border:1px solid rgba(0,200,212,.2);border-radius:16px;padding:28px 22px}
+.field{margin-bottom:16px}
+
+/* ── TAB VUELO ── */
+.turno-hero{
+  background:var(--bg3);border:1px solid rgba(0,200,212,.2);border-radius:var(--r);
+  padding:20px;margin-bottom:20px;text-align:center;
+}
+.turno-hero .avion{font-family:var(--mono);font-size:11px;color:var(--amber);letter-spacing:.14em;margin-bottom:6px}
+.turno-hero .alumno{font-family:var(--disp);font-size:24px;color:var(--white);letter-spacing:.05em;margin-bottom:4px}
+.turno-hero .hora-turno{font-family:var(--mono);font-size:12px;color:var(--gray)}
+
+/* Estado del vuelo */
+.estado-vuelo{
+  text-align:center;padding:24px 0;margin-bottom:16px;
+}
+.estado-vuelo .estado-label{
+  font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--gray);
+  text-transform:uppercase;margin-bottom:8px;
+}
+.estado-vuelo .ts-display{
+  font-family:var(--disp);font-size:28px;color:var(--white);letter-spacing:.05em;
+}
+.estado-vuelo .ts-display.en-vuelo{color:var(--cyan)}
+.estado-vuelo .ts-display.finalizado{color:var(--green)}
+.estado-vuelo .ts-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:6px}
+
+/* Tiempo calculado */
+.tiempo-calculado{
+  background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
+  border-radius:10px;padding:14px 16px;margin-bottom:12px;
+  display:flex;align-items:center;gap:12px;
+}
+.tiempo-calculado .t-val{font-family:var(--disp);font-size:22px;color:var(--green);flex:1}
+.btn-edit-t{
+  background:transparent;border:1px solid var(--gray2);border-radius:8px;
+  color:var(--gray);font-family:var(--mono);font-size:10px;padding:6px 10px;
+  cursor:pointer;white-space:nowrap;
 }
 
-.tiempo-edit-row{display:flex;align-items:center;gap:10px;margin-top:4px}
-.tiempo-edit-row .valor-tiempo{flex:1}
-.btn-editar-tiempo{
-  background:transparent;border:1px solid rgba(0,200,212,.3);
-  border-radius:8px;color:var(--cyan);font-family:var(--font-mono);
-  font-size:10px;padding:6px 10px;cursor:pointer;white-space:nowrap;
+/* Lista de turnos (cuando hay más de uno) */
+.turno-item{
+  background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);
+  padding:16px 18px;margin-bottom:10px;cursor:pointer;
+  display:flex;align-items:center;gap:14px;transition:border-color .15s;
 }
+.turno-item:active,.turno-item:hover{border-color:var(--cyan)}
+.turno-item .hora{font-family:var(--disp);font-size:20px;color:var(--cyan);min-width:58px}
+.turno-item .info{flex:1}
+.turno-item .alumno-n{font-family:var(--ui);font-size:17px;font-weight:700}
+.turno-item .avion-n{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
+.turno-item .arr{color:var(--gray);font-size:18px}
 
-.guardando{
-  text-align:center;font-family:var(--font-mono);font-size:12px;
-  color:var(--cyan);padding:12px 0;min-height:20px;
+/* ── TAB LIBRO ── */
+.vuelo-row{
+  background:var(--bg2);border:1px solid rgba(0,200,212,.1);border-radius:var(--r);
+  padding:14px 16px;margin-bottom:8px;
 }
+.vuelo-row .vr-top{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.vuelo-row .vr-hora{font-family:var(--disp);font-size:14px;color:var(--cyan)}
+.vuelo-row .vr-alumno{font-family:var(--ui);font-size:16px;font-weight:700;flex:1}
+.vuelo-row .vr-avion{font-family:var(--mono);font-size:10px;color:var(--amber)}
+.vuelo-row .vr-datos{
+  display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--gray);
+  flex-wrap:wrap;
+}
+.vuelo-row .vr-datos span{display:flex;align-items:center;gap:4px}
+.vr-val{color:var(--white)}
+.empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:12px;color:var(--gray);line-height:1.9}
 
-/* ── Notificación toast ──────────────────────────────────── */
+/* Toast */
 .toast{
-  position:fixed;bottom:env(safe-area-inset-bottom,24px);left:50%;
-  transform:translateX(-50%) translateY(80px);
-  background:var(--bg3);border:1px solid rgba(0,200,212,.3);
-  border-radius:10px;padding:12px 20px;
-  font-family:var(--font-mono);font-size:12px;color:var(--white);
-  white-space:nowrap;transition:transform .3s;z-index:999;
-  pointer-events:none;
+  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+  left:50%;transform:translateX(-50%) translateY(70px);
+  background:var(--bg3);border:1px solid rgba(0,200,212,.3);border-radius:10px;
+  padding:11px 20px;font-family:var(--mono);font-size:12px;color:var(--white);
+  white-space:nowrap;transition:transform .25s;z-index:999;pointer-events:none;
 }
 .toast.show{transform:translateX(-50%) translateY(0)}
 
-/* ── Spinner ─────────────────────────────────────────────── */
-.spinner{
-  width:32px;height:32px;border:3px solid rgba(0,200,212,.2);
-  border-top-color:var(--cyan);border-radius:50%;
-  animation:spin .8s linear infinite;
-}
+.spinner{width:28px;height:28px;border:3px solid rgba(0,200,212,.15);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;margin:40px auto}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+.badge-ok{display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:10px;padding:2px 8px;letter-spacing:.06em}
 </style>
 </head>
 <body>
 
-<!-- ── LOGIN ─────────────────────────────────────────────── -->
+<!-- LOGIN -->
 <div id="screen-login" class="screen active">
-  <div class="login-logo">✈ ACRG</div>
-  <div class="login-sub">Registro de vuelo · Instructores</div>
+  <div class="login-hero">
+    <div class="ico">✈</div>
+    <h1>ACRG VUELO</h1>
+    <p>REGISTRO DE VUELO · INSTRUCTORES</p>
+  </div>
   <div class="login-card">
     <div class="field">
-      <label>Usuario</label>
-      <input type="text" id="login-user" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="tu_usuario">
+      <span class="label">Usuario</span>
+      <input id="l-user" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="tu_usuario">
     </div>
     <div class="field">
-      <label>Contraseña</label>
-      <input type="password" id="login-pass" autocomplete="current-password" placeholder="••••••">
+      <span class="label">Contraseña</span>
+      <input id="l-pass" type="password" placeholder="••••••">
     </div>
-    <div class="err" id="login-err"></div>
-    <button class="btn btn-primary" id="btn-login">INGRESAR</button>
+    <div class="err" id="l-err"></div>
+    <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
   </div>
 </div>
 
-<!-- ── SELECTOR DE TURNO ──────────────────────────────────── -->
-<div id="screen-turno" class="screen">
-  <div class="top-bar" style="width:100%;max-width:480px">
-    <div class="saludo">
-      <span>Instructor</span>
-      <strong id="inst-nombre">—</strong>
+<!-- APP SHELL -->
+<div id="app-shell">
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="inst-info">
+      <div class="nombre" id="sh-nombre">—</div>
+      <div class="sub" id="sh-fecha">—</div>
     </div>
-    <button class="btn-logout" id="btn-logout">⏻ Salir</button>
+    <button class="btn-sm" id="btn-logout">⏻ Salir</button>
   </div>
 
-  <div style="width:100%;max-width:480px;flex:1">
-    <div class="section-label" id="turno-fecha-label">Turnos de hoy</div>
-    <div id="lista-turnos">
-      <div style="display:flex;justify-content:center;padding:40px">
-        <div class="spinner"></div>
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="vuelo">✈ Vuelo</button>
+    <button class="tab-btn" data-tab="libro">📋 Libro</button>
+  </div>
+
+  <!-- Tab: VUELO -->
+  <div id="tab-vuelo" class="tab-content active">
+
+    <!-- Estado A: cargando -->
+    <div id="v-loading"><div class="spinner"></div></div>
+
+    <!-- Estado B: elegir turno (múltiples) -->
+    <div id="v-lista" style="display:none">
+      <span class="label">Tus turnos aprobados de hoy</span>
+      <div id="v-lista-items"></div>
+      <button class="btn btn-ghost" id="btn-sin-turno">+ Sin turno asignado</button>
+    </div>
+
+    <!-- Estado C: vuelo en curso / finalizado -->
+    <div id="v-vuelo" style="display:none">
+
+      <!-- Info del turno -->
+      <div class="turno-hero" id="turno-hero">
+        <div class="avion" id="th-avion">—</div>
+        <div class="alumno" id="th-alumno">—</div>
+        <div class="hora-turno" id="th-hora">—</div>
       </div>
-    </div>
-    <div style="margin-top:16px">
-      <button class="btn btn-secondary" id="btn-turno-manual" style="font-size:11px;padding:14px">
-        + Registrar vuelo sin turno asignado
-      </button>
-    </div>
-  </div>
-</div>
 
-<!-- ── PANTALLA DE VUELO ──────────────────────────────────── -->
-<div id="screen-vuelo" class="screen">
-  <div class="vuelo-avion" id="vuelo-avion">LV-OAD</div>
-  <div class="vuelo-alumno" id="vuelo-alumno">—</div>
-
-  <div class="timer-wrap">
-    <div class="timer-ring idle" id="timer-ring">
-      <div class="timer-status" id="timer-status">EN TIERRA</div>
-      <div class="timer-display" id="timer-display">00:00</div>
-      <div class="timer-since" id="timer-since"></div>
-    </div>
-  </div>
-
-  <button class="btn-vuelo-main start" id="btn-vuelo-main">▶ INICIAR VUELO</button>
-  <button class="btn-vuelo-sec" id="btn-vuelo-volver">← Cambiar turno</button>
-</div>
-
-<!-- ── CIERRE DE VUELO ────────────────────────────────────── -->
-<div id="screen-cierre" class="screen">
-  <div class="cierre-header" style="max-width:480px">
-    <h2>✓ VUELO FINALIZADO</h2>
-    <p id="cierre-alumno-label">—</p>
-  </div>
-
-  <div style="width:100%;max-width:480px;flex:1">
-    <!-- Tiempo registrado -->
-    <div class="dato-vuelo">
-      <label>Tiempo de vuelo registrado</label>
-      <div class="tiempo-edit-row">
-        <div class="valor-tiempo" id="cierre-tiempo-display">—</div>
-        <button class="btn-editar-tiempo" id="btn-editar-tiempo">✎ editar</button>
+      <!-- Estado timestamps -->
+      <div class="estado-vuelo" id="estado-vuelo">
+        <div class="estado-label" id="ev-label">Listo para iniciar</div>
+        <div class="ts-display" id="ev-ts">—</div>
+        <div class="ts-sub" id="ev-sub"></div>
       </div>
-      <input type="number" id="cierre-tiempo-input" step="0.1" min="0" max="12"
-        placeholder="ej: 1.3" style="display:none;margin-top:8px">
-      <div class="hint">En horas decimales. Ej: 1.5 = 1 hora 30 min</div>
+
+      <!-- Botón principal -->
+      <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
+
+      <!-- Formulario cierre (oculto hasta STOP) -->
+      <div id="v-cierre" style="display:none">
+        <div class="card">
+          <div class="card-title">Tiempo de vuelo</div>
+          <div class="tiempo-calculado">
+            <div class="t-val" id="t-calculado">—</div>
+            <button class="btn-edit-t" id="btn-edit-t">✎ editar</button>
+          </div>
+          <input id="t-manual" type="number" step="0.1" min="0" max="12"
+            placeholder="ej: 1.3 (horas decimales)" style="display:none;margin-top:8px">
+          <div style="font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:6px">
+            En horas decimales · ej: 1.5 = 1h 30min
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Aterrizajes</div>
+          <input id="c-aterr" type="number" min="0" max="99" placeholder="Cantidad de aterrizajes">
+        </div>
+
+        <div class="card">
+          <div class="card-title">Observación <span style="color:var(--gray);font-size:10px;font-family:var(--mono)">(privada · opcional)</span></div>
+          <textarea id="c-obs" placeholder="Maniobras practicadas, condiciones, notas..."></textarea>
+        </div>
+
+        <div class="err" id="c-err" style="margin-top:4px"></div>
+        <button class="btn btn-green" id="btn-confirmar">✓ CONFIRMAR Y GUARDAR</button>
+        <button class="btn btn-ghost" id="btn-nuevo-vuelo">Nuevo vuelo</button>
+      </div>
+
+      <!-- Confirmación guardado -->
+      <div id="v-guardado" style="display:none;text-align:center;padding:20px 0">
+        <div style="font-size:40px;margin-bottom:12px">✓</div>
+        <div style="font-family:var(--disp);font-size:16px;color:var(--green);letter-spacing:.1em;margin-bottom:8px">GUARDADO</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
+        <button class="btn btn-cyan" id="btn-otro-vuelo">Siguiente vuelo</button>
+      </div>
+
+      <button class="btn btn-ghost" id="btn-cambiar-turno" style="margin-top:4px">← Cambiar turno</button>
     </div>
 
-    <!-- Aterrizajes -->
-    <div class="dato-vuelo">
-      <label>Cantidad de aterrizajes</label>
-      <input type="number" id="cierre-aterr" min="0" max="99" placeholder="ej: 3">
-    </div>
-
-    <!-- Observación -->
-    <div class="dato-vuelo">
-      <label>Observación del vuelo <span style="color:var(--gray)">(opcional)</span></label>
-      <textarea id="cierre-obs" placeholder="Notas sobre el desempeño del alumno, maniobras practicadas, condiciones del vuelo..."></textarea>
-      <div class="hint">Esta obs. es privada — el alumno no ve el texto, solo que existe una nota.</div>
-    </div>
-
-    <div class="guardando" id="guardando-msg"></div>
-
-    <button class="btn btn-success" id="btn-guardar">GUARDAR Y FINALIZAR</button>
-    <button class="btn btn-secondary" id="btn-cierre-volver" style="margin-top:10px">← Volver al timer</button>
   </div>
-</div>
 
-<!-- Toast -->
+  <!-- Tab: LIBRO -->
+  <div id="tab-libro" class="tab-content">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <span class="label" style="margin:0;flex:none">Fecha</span>
+      <input id="libro-fecha" type="date" style="flex:1;font-size:14px;padding:10px 12px">
+    </div>
+    <div id="libro-contenido"><div class="empty-libro">Seleccioná una fecha para ver tu actividad.</div></div>
+  </div>
+
+</div><!-- /app-shell -->
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { initializeApp }        from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getDatabase, ref, get, update, serverTimestamp }
-                                from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getDatabase, ref, get, update } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
-// ── Firebase ──────────────────────────────────────────────
 const app = initializeApp({
-  apiKey:            'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
-  authDomain:        'turnos-lv-oad.firebaseapp.com',
-  databaseURL:       'https://turnos-lv-oad-default-rtdb.firebaseio.com',
-  projectId:         'turnos-lv-oad',
-  messagingSenderId: '855020455192',
-  appId:             '1:855020455192:web:4b6d18f1b2efbb52faca6d',
+  apiKey:'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
+  authDomain:'turnos-lv-oad.firebaseapp.com',
+  databaseURL:'https://turnos-lv-oad-default-rtdb.firebaseio.com',
+  projectId:'turnos-lv-oad',
+  messagingSenderId:'855020455192',
+  appId:'1:855020455192:web:4b6d18f1b2efbb52faca6d',
 });
 const db = getDatabase(app);
 
 // ── Helpers ───────────────────────────────────────────────
-const $  = id => document.getElementById(id);
-const ek = email => email.replace(/\./g,'_').replace(/@/,'__at__');
-const hoy = () => {
-  const d = new Date();
-  const p = n => String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
-};
+const $ = id => document.getElementById(id);
 const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
+const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
+const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const fmtUTCFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
 
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  $(id).classList.add('active');
-}
-
-function toast(msg, dur=2800) {
-  const t = $('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), dur);
-}
+function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
+function showEl(id,show=true){ $(id).style.display=show?($(id).tagName==='BUTTON'||$(id).classList.contains('btn')?'block':'block'):'none'; }
 
 // ── Estado ────────────────────────────────────────────────
-let session   = null;  // { user, nombre, email }
-let turnoActual = null; // reserva seleccionada (o null para vuelo manual)
-let timerInterval = null;
-let tsInicio  = null;  // Date object — momento de inicio del vuelo
-let tiempoFinal = null; // horas decimales al finalizar
+let session = null;
+let turnoActual = null;   // reserva seleccionada (o null)
+let tsInicio = null;      // ISO string — momento de START
+let tsFin = null;         // ISO string — momento de STOP
+const LS = 'acrg-vuelo-v2';
 
-const LS_KEY = 'acrg-vuelo-estado';
+// ── Init ─────────────────────────────────────────────────
+init();
 
-// ── Restaurar sesión ──────────────────────────────────────
-function restaurarSesion() {
-  // 1. Sesión de turnos.html (misma sessionStorage)
-  try {
-    const s = JSON.parse(sessionStorage.getItem('lvoad-session') || '{}');
-    if (s && s.tipo === 'instructor' && s.nombre) {
-      session = { user: s.user, nombre: s.nombre, email: s.email || '' };
+function init(){
+  // Restaurar sesión de turnos.html
+  try{
+    const s=JSON.parse(sessionStorage.getItem('lvoad-session')||'{}');
+    if(s&&s.tipo==='instructor'&&s.nombre) session={user:s.user,nombre:s.nombre,email:s.email||''};
+  }catch{}
+
+  // Restaurar vuelo en curso desde localStorage
+  try{
+    const est=JSON.parse(localStorage.getItem(LS)||'null');
+    if(est){
+      turnoActual=est.turno||null;
+      tsInicio=est.tsInicio||null;
+      tsFin=est.tsFin||null;
     }
-  } catch {}
+  }catch{}
 
-  // 2. Vuelo en curso (localStorage)
-  try {
-    const estado = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-    if (estado && estado.tsInicio) {
-      tsInicio    = new Date(estado.tsInicio);
-      turnoActual = estado.turno || null;
-      if (session) {
-        mostrarTurno(turnoActual);
-        showScreen('screen-vuelo');
-        iniciarTicker();
-        actualizarRingState('running');
-        return true;
-      }
-    }
-  } catch {}
-  return false;
+  if(session){
+    abrirApp();
+  } else {
+    $('screen-login').classList.add('active');
+  }
 }
 
 // ── LOGIN ─────────────────────────────────────────────────
-$('btn-login').addEventListener('click', hacerLogin);
-$('login-pass').addEventListener('keydown', e => { if(e.key==='Enter') hacerLogin(); });
+$('btn-login').addEventListener('click',login);
+$('l-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
 
-async function hacerLogin() {
-  const user = $('login-user').value.trim().toLowerCase();
-  const pass = $('login-pass').value;
-  $('login-err').textContent = '';
-  if (!user || !pass) { $('login-err').textContent = 'Completá usuario y contraseña.'; return; }
-
-  $('btn-login').textContent = '...';
-  $('btn-login').disabled = true;
-
-  try {
-    // Buscar en /instructores
-    const snapInst = await get(ref(db, 'instructores'));
-    const instructores = snapInst.val() || {};
-    let encontrado = null;
-
-    Object.entries(instructores).forEach(([key, inst]) => {
-      if ((inst.user || key) === user && inst.pass === pass) {
-        encontrado = { user: inst.user || key, nombre: inst.nombre || key, email: inst.email || '' };
-      }
+async function login(){
+  const user=$('l-user').value.trim().toLowerCase();
+  const pass=$('l-pass').value;
+  $('l-err').textContent='';
+  if(!user||!pass){$('l-err').textContent='Completá los campos.';return;}
+  $('btn-login').disabled=true;$('btn-login').textContent='...';
+  try{
+    const snap=await get(ref(db,'instructores'));
+    const inst=snap.val()||{};
+    let found=null;
+    Object.entries(inst).forEach(([k,v])=>{
+      if((v.user||k)===user&&v.pass===pass)
+        found={user:v.user||k,nombre:v.nombre||k,email:v.email||''};
     });
+    if(!found){$('l-err').textContent='Usuario o contraseña incorrectos.';return;}
+    session=found;
+    sessionStorage.setItem('lvoad-session',JSON.stringify({tipo:'instructor',...session}));
+    abrirApp();
+  }catch(e){$('l-err').textContent='Error de conexión.';}
+  finally{$('btn-login').disabled=false;$('btn-login').textContent='INGRESAR';}
+}
 
-    if (!encontrado) {
-      // Intentar como admin/administrador en /alumnos no tiene sentido para instructores
-      $('login-err').textContent = 'Usuario o contraseña incorrectos.';
-      return;
-    }
+// ── APP SHELL ─────────────────────────────────────────────
+function abrirApp(){
+  $('screen-login').classList.remove('active');
+  $('app-shell').classList.add('active');
+  $('sh-nombre').textContent=session.nombre.split(' ')[0];
+  $('sh-fecha').textContent=fmtFecha(hoy());
+  // Libro: fecha default = hoy
+  $('libro-fecha').value=hoy();
+  cargarTabVuelo();
+}
 
-    session = encontrado;
-    sessionStorage.setItem('lvoad-session', JSON.stringify({
-      tipo: 'instructor', user: session.user, nombre: session.nombre, email: session.email,
-    }));
-    mostrarPantallaTurnos();
-  } catch(e) {
-    $('login-err').textContent = 'Error de conexión. Intentá de nuevo.';
-    console.error(e);
-  } finally {
-    $('btn-login').textContent = 'INGRESAR';
-    $('btn-login').disabled = false;
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-'+btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab==='libro') cargarLibro();
+  });
+});
+
+// ── TAB VUELO ─────────────────────────────────────────────
+async function cargarTabVuelo(){
+  // Si hay un vuelo en curso o finalizado, mostrar directamente
+  if(tsInicio||tsFin){
+    mostrarPantallaVuelo(turnoActual);
+    return;
   }
-}
 
-// ── PANTALLA TURNOS ───────────────────────────────────────
-async function mostrarPantallaTurnos() {
-  $('inst-nombre').textContent = session.nombre.split(' ')[0];
-  showScreen('screen-turno');
-  await cargarTurnos();
-}
+  mostrarVista('loading');
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const fecha=hoy();
+    const misTurnos=todas.filter(r=>
+      r.fecha===fecha&&r.estado==='aprobado'&&
+      (r.instructor===session.nombre||r.aprobado_por===session.nombre||
+       r.instructor===session.user||r.aprobado_por===session.user)
+    ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
 
-async function cargarTurnos() {
-  $('lista-turnos').innerHTML = '<div style="display:flex;justify-content:center;padding:40px"><div class="spinner"></div></div>';
-
-  try {
-    const snap = await get(ref(db, 'reservas'));
-    const todas = rArr(snap.val());
-    const fecha = hoy();
-    $('turno-fecha-label').textContent = `Turnos aprobados hoy — ${fecha.split('-').reverse().join('/')}`;
-
-    // Turnos aprobados de hoy donde el instructor logueado es el asignado
-    const misTurnos = todas.filter(r =>
-      r.fecha === fecha &&
-      r.estado === 'aprobado' &&
-      (r.instructor === session.nombre || r.aprobado_por === session.nombre ||
-       r.instructor === session.user  || r.aprobado_por === session.user)
-    ).sort((a,b) => (a.hora||'').localeCompare(b.hora||''));
-
-    if (!misTurnos.length) {
-      $('lista-turnos').innerHTML = `
-        <div class="empty-turnos">
-          Sin turnos aprobados para hoy.<br>
-          <span style="color:var(--cyan)">Si hay un turno coordinado en persona,<br>usá el botón de abajo.</span>
-        </div>`;
-      return;
-    }
-
-    $('lista-turnos').innerHTML = misTurnos.map(r => `
-      <div class="turno-card" data-key="${r.key}">
-        <div class="hora">${r.hora || r.horaInicio || '—'}</div>
-        <div class="alumno">${r.nombre || '—'}</div>
-        <div class="avion">${r.avion || 'LV-OAD'} · ${(r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción'}</div>
-        <div class="chevron">›</div>
-      </div>`).join('');
-
-    // Eventos de click en cada card
-    document.querySelectorAll('.turno-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const key = card.dataset.key;
-        const turno = misTurnos.find(r => r.key === key);
-        seleccionarTurno(turno);
+    if(misTurnos.length===0){
+      // Sin turnos — mostrar lista vacía con opción manual
+      $('v-lista-items').innerHTML='<div class="empty-libro" style="padding:24px 0">Sin turnos aprobados para hoy.</div>';
+      mostrarVista('lista');
+    } else if(misTurnos.length===1){
+      // Un solo turno — entrada directa
+      mostrarPantallaVuelo(misTurnos[0]);
+    } else {
+      // Múltiples turnos — mostrar lista
+      $('v-lista-items').innerHTML=misTurnos.map(r=>`
+        <div class="turno-item" data-key="${r.key}">
+          <div class="hora">${r.hora||r.horaInicio||'—'}</div>
+          <div class="info">
+            <div class="alumno-n">${r.nombre||'—'}</div>
+            <div class="avion-n">${r.avion||'LV-OAD'}</div>
+          </div>
+          <div class="arr">›</div>
+        </div>`).join('');
+      document.querySelectorAll('.turno-item').forEach(el=>{
+        el.addEventListener('click',()=>{
+          const t=misTurnos.find(r=>r.key===el.dataset.key);
+          mostrarPantallaVuelo(t);
+        });
       });
-    });
-  } catch(e) {
-    $('lista-turnos').innerHTML = `<div class="empty-turnos">Error al cargar turnos.<br>${e.message}</div>`;
-  }
-}
-
-// Turno manual (sin reserva)
-$('btn-turno-manual').addEventListener('click', () => seleccionarTurno(null));
-
-function seleccionarTurno(turno) {
-  turnoActual = turno;
-  mostrarTurno(turno);
-  showScreen('screen-vuelo');
-}
-
-// ── PANTALLA VUELO ────────────────────────────────────────
-function mostrarTurno(turno) {
-  if (turno) {
-    $('vuelo-avion').textContent = `${turno.avion || 'LV-OAD'} · ${turno.hora || ''}`;
-    $('vuelo-alumno').textContent = turno.nombre || '—';
-  } else {
-    $('vuelo-avion').textContent = 'Vuelo manual';
-    $('vuelo-alumno').textContent = session?.nombre || 'Instructor';
-  }
-}
-
-function actualizarRingState(state) { // 'idle' | 'running' | 'done'
-  const ring = $('timer-ring');
-  ring.className = `timer-ring ${state}`;
-  const statusMap = { idle:'EN TIERRA', running:'EN VUELO', done:'ATERRIZÓ' };
-  $('timer-status').textContent = statusMap[state] || '';
-}
-
-function formatTimer(ms) {
-  const totalSeg = Math.floor(ms / 1000);
-  const h  = Math.floor(totalSeg / 3600);
-  const m  = Math.floor((totalSeg % 3600) / 60);
-  const s  = totalSeg % 60;
-  const p  = n => String(n).padStart(2,'0');
-  return h > 0 ? `${p(h)}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
-}
-
-function msAHorasDecimal(ms) {
-  return Math.round((ms / 3600000) * 10) / 10; // redondea a 1 decimal
-}
-
-function iniciarTicker() {
-  if (timerInterval) clearInterval(timerInterval);
-  timerInterval = setInterval(() => {
-    if (!tsInicio) return;
-    const elapsed = Date.now() - tsInicio.getTime();
-    $('timer-display').textContent = formatTimer(elapsed);
-    // Mostrar hora de inicio
-    const h = tsInicio.getHours(), m = String(tsInicio.getMinutes()).padStart(2,'0');
-    $('timer-since').textContent = `Despegó a las ${h}:${m}`;
-  }, 1000);
-}
-
-// Botón principal: INICIAR / FINALIZAR
-$('btn-vuelo-main').addEventListener('click', () => {
-  const btn = $('btn-vuelo-main');
-  if (!tsInicio) {
-    // INICIAR
-    tsInicio = new Date();
-    // Persistir en localStorage
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      tsInicio: tsInicio.toISOString(),
-      turno: turnoActual,
-    }));
-    btn.textContent = '⏹ FINALIZAR VUELO';
-    btn.className = 'btn-vuelo-main stop';
-    $('btn-vuelo-volver').style.display = 'none';
-    actualizarRingState('running');
-    iniciarTicker();
-    toast('Vuelo iniciado ✓');
-  } else {
-    // FINALIZAR
-    clearInterval(timerInterval);
-    const elapsed = Date.now() - tsInicio.getTime();
-    tiempoFinal = msAHorasDecimal(elapsed);
-    actualizarRingState('done');
-    $('timer-display').textContent = formatTimer(elapsed);
-    // Ir a pantalla de cierre
-    setTimeout(() => mostrarCierre(), 400);
-  }
-});
-
-$('btn-vuelo-volver').addEventListener('click', () => {
-  showScreen('screen-turno');
-});
-
-// ── PANTALLA CIERRE ───────────────────────────────────────
-function mostrarCierre() {
-  $('cierre-alumno-label').textContent = turnoActual
-    ? `${turnoActual.nombre || '—'} · ${turnoActual.avion || 'LV-OAD'}`
-    : `Vuelo manual · ${session?.nombre}`;
-  $('cierre-tiempo-display').textContent = `${tiempoFinal} hs`;
-  $('cierre-tiempo-input').value = tiempoFinal;
-  $('cierre-aterr').value = '';
-  $('cierre-obs').value = '';
-  $('guardando-msg').textContent = '';
-  $('cierre-tiempo-input').style.display = 'none';
-  showScreen('screen-cierre');
-}
-
-// Editar tiempo manualmente
-$('btn-editar-tiempo').addEventListener('click', () => {
-  const inp = $('cierre-tiempo-input');
-  if (inp.style.display === 'none') {
-    inp.style.display = 'block';
-    inp.focus();
-    $('btn-editar-tiempo').textContent = '✓ ok';
-  } else {
-    const val = parseFloat(inp.value);
-    if (!isNaN(val) && val >= 0) {
-      tiempoFinal = Math.round(val * 10) / 10;
-      $('cierre-tiempo-display').textContent = `${tiempoFinal} hs`;
+      mostrarVista('lista');
     }
-    inp.style.display = 'none';
-    $('btn-editar-tiempo').textContent = '✎ editar';
+  }catch(e){
+    $('v-lista-items').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
+    mostrarVista('lista');
+  }
+}
+
+$('btn-sin-turno').addEventListener('click',()=>mostrarPantallaVuelo(null));
+$('btn-cambiar-turno').addEventListener('click',()=>{ turnoActual=null;tsInicio=null;tsFin=null;localStorage.removeItem(LS);cargarTabVuelo(); });
+$('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
+$('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
+
+function mostrarVista(v){
+  $('v-loading').style.display=v==='loading'?'block':'none';
+  $('v-lista').style.display=v==='lista'?'block':'none';
+  $('v-vuelo').style.display=v==='vuelo'?'block':'none';
+}
+
+function mostrarPantallaVuelo(turno){
+  turnoActual=turno;
+  mostrarVista('vuelo');
+
+  // Hero del turno
+  if(turno){
+    $('th-avion').textContent=turno.avion||'LV-OAD';
+    $('th-alumno').textContent=turno.nombre||'—';
+    $('th-hora').textContent=`Turno: ${turno.hora||turno.horaInicio||'—'} hs`;
+  } else {
+    $('th-avion').textContent='Vuelo manual';
+    $('th-alumno').textContent=session.nombre;
+    $('th-hora').textContent='Sin reserva asignada';
+  }
+
+  // Mostrar estado según lo que hay en memoria
+  if(tsFin){
+    // Ya finalizó — mostrar formulario de cierre
+    actualizarEstado('finalizado');
+    mostrarCierre();
+  } else if(tsInicio){
+    // En vuelo
+    actualizarEstado('en-vuelo');
+    $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
+    $('btn-start-stop').className='btn btn-red';
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='none';
+    $('btn-cambiar-turno').style.display='none';
+  } else {
+    // Sin iniciar
+    actualizarEstado('idle');
+    $('btn-start-stop').textContent='▶ INICIAR VUELO';
+    $('btn-start-stop').className='btn btn-cyan';
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='none';
+    $('btn-cambiar-turno').style.display='';
+  }
+}
+
+function actualizarEstado(estado){
+  const label=$('ev-label'), ts=$('ev-ts'), sub=$('ev-sub');
+  ts.className='ts-display';
+  if(estado==='idle'){
+    label.textContent='Listo para iniciar';
+    ts.textContent='—';
+    sub.textContent='';
+  } else if(estado==='en-vuelo'){
+    label.textContent='Despegó a las';
+    ts.textContent=fmtUTCFull(tsInicio);
+    ts.classList.add('en-vuelo');
+    sub.textContent='Hora local · esperando aterrizaje...';
+  } else if(estado==='finalizado'){
+    label.textContent='Aterrizó a las';
+    ts.textContent=fmtUTCFull(tsFin);
+    ts.classList.add('finalizado');
+    const horas=calcHorasDecimal(tsInicio,tsFin);
+    sub.textContent=`Despegue: ${fmtUTCFull(tsInicio)} · Vuelo: ${horas} hs`;
+  }
+}
+
+// START / STOP
+$('btn-start-stop').addEventListener('click',()=>{
+  if(!tsInicio){
+    // START — grabar timestamp y persistir
+    tsInicio=new Date().toISOString();
+    persistir();
+    actualizarEstado('en-vuelo');
+    $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
+    $('btn-start-stop').className='btn btn-red';
+    $('btn-cambiar-turno').style.display='none';
+    toast('Vuelo iniciado · '+fmtUTCFull(tsInicio));
+  } else {
+    // STOP
+    tsFin=new Date().toISOString();
+    persistir();
+    actualizarEstado('finalizado');
+    $('btn-start-stop').style.display='none';
+    mostrarCierre();
   }
 });
 
-$('btn-cierre-volver').addEventListener('click', () => {
-  // Retomar timer
-  actualizarRingState('running');
-  tsInicio = tsInicio; // mantener el inicio original
-  iniciarTicker();
-  $('btn-vuelo-main').textContent = '⏹ FINALIZAR VUELO';
-  $('btn-vuelo-main').className = 'btn-vuelo-main stop';
-  showScreen('screen-vuelo');
+function mostrarCierre(){
+  const horas=calcHorasDecimal(tsInicio,tsFin);
+  $('t-calculado').textContent=`${horas} hs`;
+  $('t-manual').style.display='none';
+  $('btn-edit-t').textContent='✎ editar';
+  $('c-err').textContent='';
+  $('v-cierre').style.display='block';
+  $('v-guardado').style.display='none';
+  $('btn-start-stop').style.display='none';
+}
+
+// Editar tiempo
+$('btn-edit-t').addEventListener('click',()=>{
+  const inp=$('t-manual');
+  if(inp.style.display==='none'){
+    inp.value=calcHorasDecimal(tsInicio,tsFin);
+    inp.style.display='block';
+    inp.focus();
+    $('btn-edit-t').textContent='✓ ok';
+  } else {
+    const v=parseFloat(inp.value);
+    if(!isNaN(v)&&v>0) $('t-calculado').textContent=`${Math.round(v*10)/10} hs`;
+    inp.style.display='none';
+    $('btn-edit-t').textContent='✎ editar';
+  }
 });
 
-// ── GUARDAR ───────────────────────────────────────────────
-$('btn-guardar').addEventListener('click', guardarVuelo);
+// CONFIRMAR Y GUARDAR
+$('btn-confirmar').addEventListener('click',guardar);
 
-async function guardarVuelo() {
-  const tiempo   = parseFloat($('cierre-tiempo-input').style.display !== 'none'
-    ? $('cierre-tiempo-input').value || tiempoFinal
-    : tiempoFinal);
-  const aterr    = parseInt($('cierre-aterr').value || '0');
-  const obs      = $('cierre-obs').value.trim();
+async function guardar(){
+  const tManual=$('t-manual').style.display!=='none';
+  let horas=tManual
+    ? (parseFloat($('t-manual').value)||calcHorasDecimal(tsInicio,tsFin))
+    : parseFloat($('t-calculado').textContent);
+  horas=Math.round(horas*10)/10;
+  const aterr=parseInt($('c-aterr').value||'0')||0;
+  const obs=$('c-obs').value.trim();
+  $('c-err').textContent='';
 
-  if (isNaN(tiempo) || tiempo <= 0) {
-    toast('⚠ El tiempo de vuelo no puede ser 0.'); return;
-  }
+  if(!horas||horas<=0){$('c-err').textContent='El tiempo de vuelo no puede ser 0.';return;}
 
-  $('btn-guardar').disabled = true;
-  $('guardando-msg').textContent = '⟳ Guardando...';
+  $('btn-confirmar').disabled=true;
+  $('btn-confirmar').textContent='Guardando...';
 
-  const update_data = {
-    obs_privada_tiempo_vuelo: tiempo,
-    obs_privada_aterrizajes:  aterr || null,
-    obs_privada:              obs || null,
+  const datos={
+    obs_privada_tiempo_vuelo: horas,
+    obs_privada_aterrizajes:  aterr||null,
+    obs_privada:              obs||null,
     obs_privada_autor:        session.nombre,
     obs_privada_ts:           new Date().toISOString(),
-    // Timestamps de inicio y fin del vuelo (dato adicional de esta app)
-    ts_despegue:              tsInicio?.toISOString() || null,
-    ts_aterrizaje:            new Date().toISOString(),
+    ts_despegue:              tsInicio,
+    ts_aterrizaje:            tsFin,
   };
-
   // Limpiar nulls
-  Object.keys(update_data).forEach(k => { if(update_data[k]===null) delete update_data[k]; });
+  Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
 
-  try {
-    if (turnoActual?.key) {
-      // Guardar en la reserva existente
-      await update(ref(db, `reservas/${turnoActual.key}`), update_data);
+  try{
+    if(turnoActual?.key){
+      await update(ref(db,`reservas/${turnoActual.key}`),datos);
     } else {
-      // Vuelo manual: no hay reserva — solo mostramos un toast informativo
-      // En el futuro se podría guardar en un nodo /vuelos_manuales
-      toast('Vuelo manual: datos no guardados en Firebase (sin reserva asociada)', 4000);
-      finalizarFlujo();
-      return;
+      // Vuelo manual: solo local (no hay reserva)
+      // Podría guardarse en /vuelos_manuales en el futuro
     }
-
-    // Limpiar localStorage
-    localStorage.removeItem(LS_KEY);
-    $('guardando-msg').textContent = '';
+    localStorage.removeItem(LS);
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='block';
+    $('btn-cambiar-turno').style.display='';
+    $('guardado-detalle').textContent=
+      `${turnoActual?.nombre||'Vuelo manual'} · ${horas} hs · ${aterr} aterrizajes`;
     toast('✓ Guardado correctamente');
-    setTimeout(finalizarFlujo, 1500);
-  } catch(e) {
-    $('guardando-msg').textContent = '⚠ Error al guardar: ' + e.message;
-    $('btn-guardar').disabled = false;
+  }catch(e){
+    $('c-err').textContent='Error al guardar: '+e.message;
     console.error(e);
+  }finally{
+    $('btn-confirmar').disabled=false;
+    $('btn-confirmar').textContent='✓ CONFIRMAR Y GUARDAR';
   }
 }
 
-function finalizarFlujo() {
-  // Reset de estado
-  tsInicio = null;
-  tiempoFinal = null;
-  turnoActual = null;
-  if (timerInterval) clearInterval(timerInterval);
-  $('timer-display').textContent = '00:00';
-  $('timer-since').textContent = '';
-  $('btn-vuelo-main').textContent = '▶ INICIAR VUELO';
-  $('btn-vuelo-main').className = 'btn-vuelo-main start';
-  $('btn-vuelo-volver').style.display = '';
-  actualizarRingState('idle');
-  localStorage.removeItem(LS_KEY);
-  mostrarPantallaTurnos();
+function resetVuelo(){
+  tsInicio=null;tsFin=null;turnoActual=null;
+  localStorage.removeItem(LS);
+  $('btn-start-stop').style.display='';
+  $('btn-start-stop').textContent='▶ INICIAR VUELO';
+  $('btn-start-stop').className='btn btn-cyan';
+  $('v-cierre').style.display='none';
+  $('v-guardado').style.display='none';
+  $('btn-cambiar-turno').style.display='';
+  actualizarEstado('idle');
+}
+
+function persistir(){
+  localStorage.setItem(LS,JSON.stringify({turno:turnoActual,tsInicio,tsFin}));
+}
+
+// ── TAB LIBRO ─────────────────────────────────────────────
+$('libro-fecha').addEventListener('change',cargarLibro);
+
+async function cargarLibro(){
+  const fecha=$('libro-fecha').value;
+  if(!fecha) return;
+  $('libro-contenido').innerHTML='<div class="spinner"></div>';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const mis=todas.filter(r=>
+      r.fecha===fecha&&
+      (r.instructor===session.nombre||r.aprobado_por===session.nombre||
+       r.instructor===session.user||r.aprobado_por===session.user)&&
+      (r.estado==='aprobado'||r.estado==='vencido')
+    ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+
+    if(!mis.length){
+      $('libro-contenido').innerHTML=`<div class="empty-libro">Sin vuelos registrados el ${fmtFecha(fecha)}.</div>`;
+      return;
+    }
+
+    $('libro-contenido').innerHTML=mis.map(r=>{
+      const despegue=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
+      const aterr=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
+      const horas=r.obs_privada_tiempo_vuelo||'—';
+      const aterrizajes=r.obs_privada_aterrizajes||'—';
+      const tieneObs=!!r.obs_privada;
+      return `<div class="vuelo-row">
+        <div class="vr-top">
+          <div class="vr-hora">${r.hora||r.horaInicio||'—'}</div>
+          <div class="vr-alumno">${r.nombre||'—'}</div>
+          <div class="vr-avion">${r.avion||'LV-OAD'}</div>
+        </div>
+        <div class="vr-datos">
+          <span>▶ <span class="vr-val">${despegue}</span></span>
+          <span>⏹ <span class="vr-val">${aterr}</span></span>
+          <span>⏱ <span class="vr-val">${horas} hs</span></span>
+          <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
+          ${tieneObs?'<span class="badge-ok">obs ✓</span>':''}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    $('libro-contenido').innerHTML=`<div class="empty-libro">Error: ${e.message}</div>`;
+  }
 }
 
 // ── LOGOUT ────────────────────────────────────────────────
-$('btn-logout').addEventListener('click', () => {
-  if (tsInicio) {
-    if (!confirm('Hay un vuelo en curso. ¿Salir igual?')) return;
-  }
-  session = null;
-  tsInicio = null;
-  turnoActual = null;
-  if (timerInterval) clearInterval(timerInterval);
-  sessionStorage.removeItem('lvoad-session');
-  localStorage.removeItem(LS_KEY);
-  $('login-user').value = '';
-  $('login-pass').value = '';
-  $('login-err').textContent = '';
-  showScreen('screen-login');
+$('btn-logout').addEventListener('click',()=>{
+  if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
+  session=null;sessionStorage.removeItem('lvoad-session');
+  if(!tsInicio) localStorage.removeItem(LS);
+  $('app-shell').classList.remove('active');
+  $('screen-login').classList.add('active');
+  $('l-pass').value='';$('l-err').textContent='';
 });
-
-// ── INIT ──────────────────────────────────────────────────
-const restaurado = restaurarSesion();
-if (!restaurado) {
-  if (session) {
-    mostrarPantallaTurnos();
-  } else {
-    showScreen('screen-login');
-  }
-}
 </script>
 </body>
 </html>
