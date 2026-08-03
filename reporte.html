@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
+  v1.4 · Exportación a Excel (.xlsx) en ambas secciones. Botón verde "⬇ EXCEL"
+         al lado del PDF. Genera dos hojas: "Detalle" (todos los registros
+         filtrados) y "Resumen por aeronave"/"Resumen por instructor" (totales).
+         Nombre de archivo incluye aeronave/instructor y período. Usa SheetJS.
   v1.3 · Horas individuales (por vuelo en las tablas) se muestran tal cual están
          en Firebase (ej: 1.1, 0.8, 1.7 hs) en vez de convertirlas a formato
          horas+minutos. Los totales acumulados siguen mostrando la suma decimal
@@ -32,6 +36,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reporte de Actividad — Aeroclub Río Grande</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <style>
 /* ── Fuentes ─────────────────────────────────────────────── */
@@ -112,6 +117,12 @@ header.bar .ver{font-family:var(--font-mono);font-size:11px;color:var(--text3);
   font-weight:700;letter-spacing:.08em;padding:7px 16px;cursor:pointer;
   transition:all .2s;text-transform:uppercase}
 .btn-pdf:hover{background:var(--amber);color:var(--navy)}
+.btn-xls{
+  background:transparent;color:#22c55e;border:1px solid #22c55e;
+  border-radius:var(--radius);font-family:var(--font-mono);font-size:11px;
+  font-weight:700;letter-spacing:.08em;padding:7px 16px;cursor:pointer;
+  transition:all .2s;text-transform:uppercase}
+.btn-xls:hover{background:#22c55e;color:var(--navy)}
 .btn-back{
   background:transparent;color:var(--text2);border:1px solid var(--border);
   border-radius:var(--radius);font-family:var(--font-mono);font-size:11px;
@@ -265,7 +276,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.3</span>
+      <span class="ver">v1.4</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -305,7 +316,8 @@ table.det tbody td.gray{color:var(--text3)}
         </div>
         <div class="field-g">
           <label>&nbsp;</label>
-          <button class="btn-pdf" id="btn-pdf" style="display:none" onclick="window.print()">⬇ DESCARGAR PDF</button>
+          <button class="btn-pdf" id="btn-pdf" style="display:none" onclick="window.print()">⬇ PDF</button>
+          <button class="btn-xls" id="btn-xls" style="display:none" onclick="exportarExcelAeronaves()">⬇ EXCEL</button>
         </div>
       </div>
     </div>
@@ -355,7 +367,8 @@ table.det tbody td.gray{color:var(--text3)}
         </div>
         <div class="field-g">
           <label>&nbsp;</label>
-          <button class="btn-pdf" id="btn-pdf-inst" style="display:none" onclick="window.print()">⬇ DESCARGAR PDF</button>
+          <button class="btn-pdf" id="btn-pdf-inst" style="display:none" onclick="window.print()">⬇ PDF</button>
+          <button class="btn-xls" id="btn-xls-inst" style="display:none" onclick="exportarExcelInstructor()">⬇ EXCEL</button>
         </div>
       </div>
     </div>
@@ -379,6 +392,12 @@ table.det tbody td.gray{color:var(--text3)}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+
+// ── Estado para exportación Excel ────────────────────────────
+let _datosAeronaves = []; // filas del reporte de aeronaves
+let _datosInstructor = []; // filas del reporte de instructor
+let _paramsAeronaves = {}; // parámetros usados al generar
+let _paramsInstructor = {};
 
 // ── Firebase config ──────────────────────────────────────────
 const app = initializeApp({
@@ -676,9 +695,37 @@ async function generarReporte() {
   document.getElementById('print-subtitle').textContent =
     `Aeroclub Río Grande — Reporte de actividad de aeronaves — ${fmtDD(desde)} al ${fmtDD(hasta)}`;
 
+  // Guardar datos procesados para exportación Excel
+  _paramsAeronaves = { desde, hasta, avion: avionFiltro };
+  _datosAeronaves = filtradas.map(r => {
+    const cls = clasificar(r);
+    const estadoLabel = {
+      'volado':'Volado','aprobado_pasado_sin_obs':'Realizado s/obs',
+      'aprobado_futuro':'Aprobado','cancelado_alumno':'Cancelado por alumno',
+      'cancelado_instructor':'Cancelado por instructor',
+      'vencido_sin_aprobar':'Vencido s/aprobar','pendiente':'Pendiente','otro':'Otro',
+    }[cls] || cls;
+    return {
+      'Fecha': fmtDD(r.fecha),
+      'Hora inicio': r.hora || r.horaInicio || '',
+      'Hora fin': r.horaFin || '',
+      'Avión': r.avion || 'LV-OAD',
+      'Alumno/Piloto': r.nombre || '',
+      'Tipo de vuelo': (r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción',
+      'Estado': estadoLabel,
+      'Horas de vuelo': (cls==='volado'||cls==='aprobado_pasado_sin_obs') ? (r.obs_privada_tiempo_vuelo||'') : '',
+      'Aterrizajes': cls==='volado' ? (r.obs_privada_aterrizajes||'') : '',
+      'Instructor': r.instructor || r.aprobado_por || '',
+      'Cancelado por': r.cancelado_por || '',
+      'Motivo cancelación': r.obs_cancelacion || '',
+      'Cargado por (staff)': r.cargado_por || '',
+    };
+  });
+
   document.getElementById('spinner').style.display = 'none';
   document.getElementById('reporte').style.display  = 'block';
   document.getElementById('btn-pdf').style.display  = 'block';
+  document.getElementById('btn-xls').style.display  = 'block';
 
   // Scroll al reporte
   document.getElementById('reporte').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -868,12 +915,115 @@ async function generarReporteInstructor() {
   document.getElementById('rep-inst-subtitulo').textContent =
     `Período: ${fmtDD(desde)} al ${fmtDD(hasta)}  ·  Generado: ${fmtDD(hoyStr)}  ·  Por: ${nombre}`;
 
+  // Guardar datos procesados para exportación Excel
+  _paramsInstructor = { desde, hasta, inst: instFiltro };
+  _datosInstructor = filtrados.map(r => {
+    const cls = clasificar(r);
+    return {
+      'Fecha': fmtDD(r.fecha),
+      'Hora': r.hora || r.horaInicio || '',
+      'Alumno/Piloto': r.nombre || '',
+      'Avión': r.avion || 'LV-OAD',
+      'Tipo de vuelo': (r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción',
+      'Estado': cls==='volado'?'Volado':'Realizado s/obs',
+      'Horas de vuelo': r.obs_privada_tiempo_vuelo || '',
+      'Aterrizajes': r.obs_privada_aterrizajes || '',
+      'Instructor': instDe(r),
+    };
+  });
+
   document.getElementById('spinner-inst').style.display  = 'none';
   document.getElementById('reporte-inst').style.display  = 'block';
   document.getElementById('btn-pdf-inst').style.display  = 'block';
+  document.getElementById('btn-xls-inst').style.display  = 'block';
 
   document.getElementById('reporte-inst').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// ── EXPORTACIÓN EXCEL ─────────────────────────────────────────
+
+window.exportarExcelAeronaves = function() {
+  if (!_datosAeronaves.length) return;
+  const { desde, hasta, avion } = _paramsAeronaves;
+  const wb = XLSX.utils.book_new();
+
+  // Hoja principal: detalle de todos los vuelos
+  const ws = XLSX.utils.json_to_sheet(_datosAeronaves);
+  // Ancho de columnas estimado
+  ws['!cols'] = [
+    {wch:12},{wch:8},{wch:8},{wch:10},{wch:28},{wch:14},{wch:22},
+    {wch:14},{wch:10},{wch:22},{wch:22},{wch:35},{wch:18}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalle');
+
+  // Hoja resumen: totales por avión
+  const resumenRows = [];
+  const aviones = avion === 'todos' ? ['LV-OAD','LV-ART','LV-MPH'] : [avion];
+  aviones.forEach(av => {
+    const rs = _datosAeronaves.filter(r => r['Avión'] === av);
+    const volados = rs.filter(r => r['Estado'] === 'Volado');
+    const horas = volados.reduce((s,r) => s + parseFloat(r['Horas de vuelo']||0), 0);
+    const aterr = volados.reduce((s,r) => s + parseInt(r['Aterrizajes']||0), 0);
+    resumenRows.push({
+      'Aeronave': av,
+      'Vuelos realizados': volados.length,
+      'Horas de vuelo': horas ? Math.round(horas*100)/100 : '',
+      'Aterrizajes': aterr || '',
+      'Realiz. s/obs': rs.filter(r=>r['Estado']==='Realizado s/obs').length,
+      'Cancelados alumno': rs.filter(r=>r['Estado']==='Cancelado por alumno').length,
+      'Cancelados instructor': rs.filter(r=>r['Estado']==='Cancelado por instructor').length,
+      'Vencidos s/aprobar': rs.filter(r=>r['Estado']==='Vencido s/aprobar').length,
+      'Activos/futuros': rs.filter(r=>['Aprobado','Pendiente'].includes(r['Estado'])).length,
+      'Total registros': rs.length,
+    });
+  });
+  const wsRes = XLSX.utils.json_to_sheet(resumenRows);
+  wsRes['!cols'] = [{wch:12},{wch:18},{wch:14},{wch:12},{wch:14},{wch:18},{wch:20},{wch:18},{wch:16},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen por aeronave');
+
+  const avLabel = avion === 'todos' ? 'Todas' : avion;
+  XLSX.writeFile(wb, `Actividad_Aeronaves_${avLabel}_${desde}_${hasta}.xlsx`);
+};
+
+window.exportarExcelInstructor = function() {
+  if (!_datosInstructor.length) return;
+  const { desde, hasta, inst } = _paramsInstructor;
+  const wb = XLSX.utils.book_new();
+
+  // Hoja detalle
+  const ws = XLSX.utils.json_to_sheet(_datosInstructor);
+  ws['!cols'] = [{wch:12},{wch:8},{wch:28},{wch:10},{wch:14},{wch:14},{wch:14},{wch:10},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalle');
+
+  // Hoja resumen: totales por instructor
+  const porInst = {};
+  _datosInstructor.forEach(r => {
+    const i = r['Instructor'] || '(sin registrar)';
+    if (!porInst[i]) porInst[i] = [];
+    porInst[i].push(r);
+  });
+  const resumenRows = Object.entries(porInst)
+    .map(([instNombre, rs]) => {
+      const horas = rs.reduce((s,r) => s + parseFloat(r['Horas de vuelo']||0), 0);
+      const aterr = rs.reduce((s,r) => s + parseInt(r['Aterrizajes']||0), 0);
+      return {
+        'Instructor': instNombre,
+        'Vuelos c/obs': rs.filter(r=>r['Estado']==='Volado').length,
+        'Horas de vuelo': horas ? Math.round(horas*100)/100 : '',
+        'Aterrizajes': aterr || '',
+        'Sin obs': rs.filter(r=>r['Estado']==='Realizado s/obs').length,
+        'Total vuelos': rs.length,
+      };
+    })
+    .sort((a,b) => (b['Horas de vuelo']||0) - (a['Horas de vuelo']||0));
+
+  const wsRes = XLSX.utils.json_to_sheet(resumenRows);
+  wsRes['!cols'] = [{wch:24},{wch:14},{wch:14},{wch:12},{wch:10},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen por instructor');
+
+  const instLabel = inst === 'todos' ? 'Todos' : inst.replace(/ /g,'_');
+  XLSX.writeFile(wb, `Horas_Instructor_${instLabel}_${desde}_${hasta}.xlsx`);
+};
 </script>
 </body>
 </html>
