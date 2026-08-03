@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
+  v1.3 · Horas individuales (por vuelo en las tablas) se muestran tal cual están
+         en Firebase (ej: 1.1, 0.8, 1.7 hs) en vez de convertirlas a formato
+         horas+minutos. Los totales acumulados siguen mostrando la suma decimal
+         con hasta 2 cifras (ej: 12.40 hs).
   v1.2 · Segunda sección: reporte de horas por instructor. Selector de instructor
          (poblado desde /instructores en Firebase), rango de fechas propio,
          totales globales y detalle por instructor con tabla de vuelos. Solo
@@ -261,7 +265,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.2</span>
+      <span class="ver">v1.3</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -478,11 +482,17 @@ function parseHoras(s) {
   return isNaN(n) ? 0 : n;
 }
 
+function rawHoras(s) {
+  // Muestra el valor tal cual viene de Firebase (ej: "1.1", "0.8")
+  if (!s && s !== 0) return '—';
+  return String(s).trim() + ' hs';
+}
+
 function fmtHoras(h) {
+  // Para totales acumulados (suma de decimales): muestra con hasta 2 decimales
   if (!h || h === 0) return '—';
-  const hh = Math.floor(h);
-  const mm = Math.round((h - hh) * 60);
-  return mm > 0 ? `${hh}h ${mm}m` : `${hh}h`;
+  const r = Math.round(h * 100) / 100;
+  return r % 1 === 0 ? r + ' hs' : r.toFixed(2) + ' hs';
 }
 
 // ── Generar reporte ──────────────────────────────────────────
@@ -600,7 +610,7 @@ async function generarReporte() {
         'otro':                  '<span class="badge" style="color:var(--text3)">OTRO</span>',
       }[cls] || '';
 
-      const horas = cls === 'volado' ? `<span class="green">${fmtHoras(parseHoras(r.obs_privada_tiempo_vuelo))}</span>` : '<span class="muted">—</span>';
+      const horas = cls === 'volado' ? `<span class="green">${rawHoras(r.obs_privada_tiempo_vuelo)}</span>` : '<span class="muted">—</span>';
       const aterr = cls === 'volado' && r.obs_privada_aterrizajes ? `<span class="green">${r.obs_privada_aterrizajes}</span>` : '<span class="muted">—</span>';
       const instructor = esc(r.instructor || r.aprobado_por || r.cancelado_por || '—');
       const quien = esc((r.nombre || '—').split(' ').slice(0,2).join(' '));
@@ -799,7 +809,7 @@ async function generarReporteInstructor() {
     const filas = ordenados.map(r => {
       const cls = clasificar(r);
       const horas = cls==='volado'
-        ? `<span class="green">${fmtHoras(parseHoras(r.obs_privada_tiempo_vuelo))}</span>`
+        ? `<span class="green">${rawHoras(r.obs_privada_tiempo_vuelo)}</span>`
         : '<span class="muted">—</span>';
       const aterr = cls==='volado' && r.obs_privada_aterrizajes
         ? `<span class="green">${r.obs_privada_aterrizajes}</span>`
