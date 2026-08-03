@@ -2,6 +2,27 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.7 · 2026-08-03
+  Nueva pestaña "⏳ Pendientes", a pedido de Daniel — 3 pestañas ahora:
+  Vuelo | Pendientes | Libro.
+  - Vuelo: sin cambios de fondo — sigue mostrando el turno más cercano a
+    la hora actual y entrando directo (lógica de v2.6).
+  - Pendientes: lista TODOS los turnos aprobados/vencidos-con-aprobador
+    del día del instructor que todavía no tienen tiempo de vuelo cargado
+    (mismo filtro que Vuelo, sin el recorte al "más cercano"). Tocar un
+    ítem lo "activa" como turno actual y salta a la pestaña Vuelo — sirve
+    para adelantar un turno posterior si el de la hora no se presentó.
+    El turno actualmente en curso/con cierre sin guardar se marca con
+    "● EN CURSO" en la lista.
+  - Libro: sin cambios (vuelos ya finalizados y guardados, desde v2.3).
+  Nueva función activarTurno(turno): si hay un vuelo en curso sin guardar
+  (tsInicio sin tsFin) o un cierre sin guardar (tsFin sin haber tocado
+  CONFIRMAR), pide confirmación antes de descartarlo y activar el nuevo
+  turno — nueva variable guardadoExitoso distingue "ya guardado, listo
+  para saltar sin aviso" de "hay datos sin guardar, avisar". Nueva función
+  cambiarATab(nombre) centraliza el cambio de pestaña (la usan tanto el
+  click de las tabs como activarTurno).
+  Ver anterior:
   v2.6 · 2026-08-03
   Reescritura de la selección de turno, a pedido de Daniel: un instructor
   no tiene dos turnos distintos a la misma fecha/hora (si eso pasara sería
@@ -239,6 +260,8 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .turno-item .alumno-n{font-family:var(--ui);font-size:17px;font-weight:700}
 .turno-item .avion-n{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
 .turno-item .arr{color:var(--gray);font-size:18px}
+.turno-item.actual{border-color:var(--cyan);background:rgba(0,200,212,.06)}
+.tag-actual{color:var(--cyan);font-weight:700}
 
 /* ── TAB LIBRO ── */
 .vuelo-row{
@@ -314,6 +337,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   <!-- Tab bar -->
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="vuelo">✈ Vuelo</button>
+    <button class="tab-btn" data-tab="pendientes">⏳ Pendientes</button>
     <button class="tab-btn" data-tab="libro">📋 Libro</button>
   </div>
 
@@ -393,6 +417,12 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
   </div>
 
+  <!-- Tab: PENDIENTES -->
+  <div id="tab-pendientes" class="tab-content">
+    <span class="label">Turnos del día pendientes de volar</span>
+    <div id="p-items"><div class="spinner"></div></div>
+  </div>
+
   <!-- Tab: LIBRO -->
   <div id="tab-libro" class="tab-content">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
@@ -437,9 +467,10 @@ let session = null;
 let turnoActual = null;   // reserva seleccionada (o null)
 let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
+let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '2.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -507,13 +538,15 @@ function abrirApp(){
 }
 
 // Tabs
+function cambiarATab(nombre){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===nombre));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('active',c.id==='tab-'+nombre));
+}
 document.querySelectorAll('.tab-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
-    btn.classList.add('active');
-    $('tab-'+btn.dataset.tab).classList.add('active');
+    cambiarATab(btn.dataset.tab);
     if(btn.dataset.tab==='libro') cargarLibro();
+    else if(btn.dataset.tab==='pendientes') cargarPendientes();
   });
 });
 
@@ -588,8 +621,78 @@ async function cargarTabVuelo(forzar=false){
   }
 }
 
+// ── TAB PENDIENTES ────────────────────────────────────────
+// Lista completa de turnos del día del instructor que todavía no se
+// volaron/registraron (los mismos criterios que usa Vuelo, sin el filtro
+// de "el más cercano"). Sirve para adelantar un turno posterior si el de
+// ahora no se presentó, tocando el ítem correspondiente.
+async function cargarPendientes(){
+  $('p-items').innerHTML='<div class="spinner"></div>';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const fecha=hoy();
+    const pend=todas.filter(r=>{
+      if(r.fecha!==fecha) return false;
+      const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
+                     r.instructor===session.user||r.aprobado_por===session.user;
+      if(!esDeEste) return false;
+      const estadoOk=r.estado==='aprobado'||(r.estado==='vencido'&&r.aprobado_por);
+      if(!estadoOk) return false;
+      if(r.obs_privada_tiempo_vuelo) return false; // ya volado y guardado
+      return true;
+    }).sort((a,b)=>(a.hora||a.horaInicio||'').localeCompare(b.hora||b.horaInicio||''));
+
+    if(!pend.length){
+      $('p-items').innerHTML='<div class="empty-libro">Sin turnos pendientes para hoy.</div>';
+      return;
+    }
+
+    $('p-items').innerHTML=pend.map(r=>{
+      const esActual=!!(turnoActual&&r.key===turnoActual.key&&(tsInicio||tsFin));
+      return `<div class="turno-item${esActual?' actual':''}" data-key="${r.key}">
+        <div class="hora">${r.hora||r.horaInicio||'—'}</div>
+        <div class="info">
+          <div class="alumno-n">${r.nombre||'—'}</div>
+          <div class="avion-n">${r.avion||'LV-OAD'}${esActual?' · <span class="tag-actual">● EN CURSO</span>':''}</div>
+        </div>
+        <div class="arr">›</div>
+      </div>`;
+    }).join('');
+
+    document.querySelectorAll('#p-items .turno-item').forEach(el=>{
+      el.addEventListener('click',()=>{
+        const t=pend.find(r=>r.key===el.dataset.key);
+        if(t) activarTurno(t);
+      });
+    });
+  }catch(e){
+    $('p-items').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
+  }
+}
+
+// Activa desde Pendientes un turno como el actual en Vuelo, adelantándolo
+// aunque no sea el más cercano en horario (turno anterior no se presentó).
+function activarTurno(turno){
+  // Si ya es el turno activo, solo llevar a la pantalla de vuelo sin tocar nada
+  if(turnoActual&&turno.key===turnoActual.key&&(tsInicio||tsFin)){
+    cambiarATab('vuelo');
+    return;
+  }
+  // Evitar perder un vuelo en curso o un cierre sin guardar por accidente
+  if(tsInicio&&!tsFin){
+    if(!confirm('Hay un vuelo en curso sin guardar. ¿Descartarlo y activar este turno?')) return;
+  } else if(tsFin&&!guardadoExitoso){
+    if(!confirm('Hay un cierre de vuelo sin guardar. ¿Descartarlo y activar este turno?')) return;
+  }
+  turnoActual=turno;tsInicio=null;tsFin=null;guardadoExitoso=false;
+  localStorage.removeItem(LS);
+  mostrarPantallaVuelo(turno);
+  cambiarATab('vuelo');
+}
+
 $('btn-sin-turno').addEventListener('click',()=>mostrarPantallaVuelo(null));
-$('btn-cambiar-turno').addEventListener('click',()=>{ turnoActual=null;tsInicio=null;tsFin=null;localStorage.removeItem(LS);cargarTabVuelo(true); });
+$('btn-cambiar-turno').addEventListener('click',()=>{ turnoActual=null;tsInicio=null;tsFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
 $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
 $('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
 
@@ -746,6 +849,7 @@ async function guardar(){
       // Podría guardarse en /vuelos_manuales en el futuro
     }
     localStorage.removeItem(LS);
+    guardadoExitoso=true;
     $('v-cierre').style.display='none';
     $('v-guardado').style.display='block';
     $('btn-cambiar-turno').style.display='';
@@ -762,7 +866,7 @@ async function guardar(){
 }
 
 function resetVuelo(){
-  tsInicio=null;tsFin=null;turnoActual=null;
+  tsInicio=null;tsFin=null;turnoActual=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   $('btn-start-stop').style.display='';
   $('btn-start-stop').textContent='▶ INICIAR VUELO';
@@ -841,17 +945,20 @@ $('btn-logout').addEventListener('click',()=>{
 // nuevos/aprobados no aparecían hasta cerrar y reabrir. Refresca solo:
 //  - si estamos en la lista de turnos del día (vistaActual==='lista'):
 //    ahí sí se puede reemplazar el contenido sin perder nada.
-//  - si estamos en la pestaña Libro (de solo lectura).
+//  - si estamos en la pestaña Pendientes o Libro (ambas de solo lectura/
+//    selección, no hay datos en edición que perder).
 // NUNCA toca la pantalla mientras hay un turno elegido/vuelo en curso o
 // recién finalizado (vistaActual==='vuelo'): un vuelo iniciado (tsInicio)
 // o terminado pero sin guardar (tsFin, form de cierre con aterrizajes/obs
 // cargados a mano) sigue su flujo normal, intacto, hasta que el propio
-// instructor toque "Cambiar turno" o guarde.
+// instructor toque "Cambiar turno", elija otro turno en Pendientes, o guarde.
 function autoRefrescar(){
   if(!session) return;
   if(!$('app-shell').classList.contains('active')) return;
   if($('tab-vuelo').classList.contains('active')){
     if(vistaActual==='lista') cargarTabVuelo();
+  } else if($('tab-pendientes').classList.contains('active')){
+    cargarPendientes();
   } else if($('tab-libro').classList.contains('active')){
     cargarLibro();
   }
