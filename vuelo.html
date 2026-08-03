@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.4 · 2026-08-03
+  Versión de la app siempre visible en pantalla (antes solo estaba en este
+  comentario). Nueva constante APP_VERSION en el script, que puebla todos
+  los elementos .ver: uno en el top-bar (visible en todo momento dentro
+  de la app, ambas pestañas) y uno en la pantalla de login. A partir de
+  ahora hay DOS lugares para actualizar en cada bump: este comentario y
+  la constante APP_VERSION.
+  Ver anterior:
   v2.3 · 2026-08-03
   Fix pestaña Libro: mostraba todos los turnos aprobados/vencidos del
   instructor para la fecha elegida, incluyendo los que todavía no se
@@ -95,6 +103,8 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 .top-bar .inst-info .sub{
   font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:1px;
 }
+.ver{font-family:var(--mono);font-size:9px;color:var(--gray2);letter-spacing:.06em}
+.top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .btn-sm{
   background:transparent;border:1px solid var(--gray2);border-radius:8px;
   color:var(--gray);font-family:var(--mono);font-size:10px;padding:7px 11px;
@@ -244,6 +254,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     <div class="ico">✈</div>
     <h1>ACRG VUELO</h1>
     <p>REGISTRO DE VUELO · INSTRUCTORES</p>
+    <div class="ver" id="login-ver" style="margin-top:6px">—</div>
   </div>
   <div class="login-card">
     <div class="field">
@@ -267,7 +278,10 @@ textarea{resize:none;min-height:80px;line-height:1.5}
       <div class="nombre" id="sh-nombre">—</div>
       <div class="sub" id="sh-fecha">—</div>
     </div>
-    <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+    <div class="top-actions">
+      <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+      <div class="ver" id="app-ver">—</div>
+    </div>
   </div>
 
   <!-- Tab bar -->
@@ -398,6 +412,8 @@ let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
+const APP_VERSION = '2.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
 init();
