@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.1 · 2026-08-03
+  Soporte PWA (instalable como app): <link rel="manifest"> propio
+  (manifest-vuelo.json), apple-touch-icon e íconos propios (icon-vuelo-192,
+  icon-vuelo-512, icon-vuelo-512-maskable), apple-mobile-web-app-title
+  "ACRG Vuelo", registro de navigator.serviceWorker.register('/sw.js') al
+  final del script (mismo sw.js compartido de la raíz del repo, ya usado por
+  turnos/fpl/portal-alumno/peso-balance). Requiere subir manifest-vuelo.json
+  y los 3 íconos a la raíz del repo.
+  Ver anterior:
   v2.0 · 2026-08-03
   Flujo: login → turno del día → START (graba ts_despegue en Firebase) →
          STOP (graba ts_aterrizaje) → confirmar con aterrizajes y obs →
@@ -15,7 +24,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ACRG Vuelo">
 <meta name="theme-color" content="#050d1a">
+<link rel="apple-touch-icon" href="/icon-vuelo-192.png">
+<link rel="manifest" href="/manifest-vuelo.json">
 <title>Vuelo · ACRG</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
@@ -749,6 +761,12 @@ $('btn-logout').addEventListener('click',()=>{
   $('screen-login').classList.add('active');
   $('l-pass').value='';$('l-err').textContent='';
 });
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+  });
+}
 </script>
 </body>
 </html>
