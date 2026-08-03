@@ -1,7 +1,10 @@
 # Documentación técnica — Sistema de Turnos (turnos.html)
 
 **Aeroclub Río Grande (SAWE) — Tierra del Fuego, Argentina**
-Versión documentada: **turnos.html v7.04** · **fpl.html v3.27** · **portal-alumno.html v1.18** · **peso-balance.html v1.7** · Fecha: 2026-07-31
+Versión documentada: **turnos.html v7.04** · **fpl.html v3.27** · **portal-alumno.html v1.18** · **peso-balance.html v1.7** · **reporte.html v1.4** · **vuelo.html v2.0** · Fecha: 2026-08-03
+
+> Documento de referencia: describe qué hace cada parte del sistema. Mantener actualizado cuando se agreguen funciones.
+> Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una calculadora de peso y balance (`peso-balance.html`, §24), un **reporte de actividad** (`reporte.html`, §25) y una **app de registro de vuelo** (`vuelo.html`, §26). Los **procesos server-side** en GitHub Actions se describen en §20 y §21.
 
 > Documento de referencia: describe qué hace cada parte del sistema. Mantener actualizado cuando se agreguen funciones.
 > Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una **calculadora de peso y balance** (`peso-balance.html`, §24), soporte **PWA** (instalable como app en el celular, §25) y **dos procesos server-side** en GitHub Actions: el recordatorio a instructores (§20) y el vencimiento de pendientes + purga de borradores FPL (§21).
@@ -473,6 +476,9 @@ Registro de eventos (`registrarAuditoria`): login (éxito/fallo/bloqueado), regi
 
 ## 18. Estado actual y trabajo pendiente
 
+- **Reporte de actividad `reporte.html` (HECHO, 2026-08-03, v1.4):** archivo independiente con dos secciones: (1) actividad de aeronaves por período/matrícula con clasificación de estados, horas de vuelo y exportación a Excel/PDF; (2) horas por instructor con selector de fecha y exportación. Acceso solo admin/administrador. Ver §25.
+- **App de registro de vuelo `vuelo.html` (HECHO, 2026-08-03, v2.0):** app mobile-first para instructores. Muestra los turnos aprobados del día (con entrada directa si hay uno solo), graba timestamps UTC de despegue y aterrizaje en Firebase, calcula el tiempo de vuelo, permite cargar aterrizajes y observación. Tab "Libro" para consultar actividad por fecha. Persistencia en `localStorage` contra cierres accidentales. Ver §26.
+
 - **Seguridad / Auth:** Fases 1 y 2 hechas (modo sombra). Se dejó **decantar la migración** (los usuarios migran al entrar). Próximo paso de desarrollo: Fase 3 (flujos de contraseña a Auth), que destraba endurecer reglas (Fase 5) y sacar el texto plano (Fase 6). Las 3 cuentas de instructor que tenían clave <6 (`fherlein`, `scarrizo`, `sdelarminat`) **ya fueron reseteadas a 6+** (2026-06-17); no quedan claves cortas pendientes.
 - **Caché que frenaba la migración (resuelto 2026-06-17):** varios usuarios entraban pero no aparecían en Auth porque su navegador servía una **copia vieja cacheada** del `turnos.html` (sin el código de migración) — no era un bug de la app (se verificó el código). Se resolvió con la Cache Rule `no-store` (ver §2): ahora cada navegador carga el HTML fresco, corre el código actual y se dispara la migración perezosa. Los ya pegados a una copia vieja se destraban con una recarga forzada o cuando su caché vence. La decantación continúa con esto resuelto.
 - **Recordatorio automático a instructores (HECHO, 2026-06-19):** proceso server-side (GitHub Actions cron). Avisa al instructor por mail ~12 h antes del turno. Ver §20.
@@ -794,3 +800,68 @@ No hay botón "Instalar" propio dentro de la app. Evaluado y descartado a pedido
 - **iPhone (Safari):** Safari → ícono Compartir → "Agregar a Inicio" → confirmar nombre → Agregar. **Tiene que arrancar desde Safari**, nunca desde un ícono ya instalado (ese abre en modo standalone, sin ninguna barra de Safari — no hay botón Compartir ahí). iOS no soporta el evento `beforeinstallprompt`: no se puede disparar la instalación por código ni saber con certeza si el usuario la completó.
 - **Android (Chrome):** Chrome muestra automáticamente un banner/botón "Instalar app"; si no aparece solo, es manual vía menú ⋮ → "Instalar aplicación". También debe arrancar desde el ícono de Chrome, no desde una app ya instalada.
 - **Banner de instalación propio (evaluado, no implementado):** Daniel preguntó si la propia página podía ofrecer instalarse. Técnicamente viable en Android (capturar `beforeinstallprompt` y disparar el diálogo nativo con un botón propio) pero **no en iOS** (Apple no expone ese evento — el paso final siempre lo hace el usuario a mano). Se decidió no agregarlo: la base de usuarios es chica y conocida (instructores/alumnos/pilotos del club), así que un instructivo por WhatsApp llega mejor que un banner in-app, y evita mantener lógica de detección de plataforma/dismissal en los 4 archivos para un problema ya resuelto con instrucciones. Se generaron imágenes-instructivo (formato WhatsApp, fuera del repo) para turnos.html en iPhone y Android, con los pasos numerados — no versionadas junto al código, quedan como material de difusión aparte.
+
+## 25. Reporte de Actividad (`reporte.html`)
+
+Archivo independiente, mismo dominio que el resto del sistema (`aeroclubriogrande.com.ar/reporte.html`). Acceso restringido a **admin y administrador** — verifica la sesión de `sessionStorage 'lvoad-session'` al cargar; si el rol no es admin/administrador, muestra pantalla de acceso restringido.
+
+### Sección 1 — Actividad de aeronaves
+Filtros: fecha desde/hasta + selector de aeronave (Todas / LV-OAD / LV-ART / LV-MPH).
+
+Genera dos niveles:
+- **Resumen global** (cards): vuelos realizados, horas totales, aterrizajes, cancelados, vencidos sin aprobar, activos/futuros, total de registros.
+- **Detalle por aeronave**: header con matrícula y horas totales, grid de estadísticas (vuelos realizados, horas, aterrizajes, realizados sin obs., cancelados por alumno, cancelados por instructor, vencidos sin aprobar, activos/futuros, total), tabla de detalle con fecha/hora/alumno/tipo/estado/horas/aterrizajes/instructor.
+
+**Clasificación de estados** — la función `clasificar(r)` distingue:
+- `volado`: `vencido` con `aprobado_por` + `obs_privada_tiempo_vuelo` cargado (vuelo real registrado por el instructor).
+- `aprobado_pasado_sin_obs`: `vencido` con `aprobado_por` pero sin tiempo de vuelo cargado todavía.
+- `aprobado_futuro`: `aprobado` con fecha futura.
+- `cancelado_alumno` / `cancelado_instructor`: discriminados por `cancelado_rol`.
+- `vencido_sin_aprobar`: `vencido` sin `aprobado_por` (pendiente que nadie aprobó).
+
+**Nota crítica (v1.1):** los turnos que se realizaron tienen `estado:'vencido'` con `aprobado_por` seteado — NO `estado:'aprobado'`. La v1.0 los clasificaba como "vencidos" y contaba 0 vuelos. El fix fue reconocer `vencido+aprobado_por` como vuelo realizado.
+
+**Horas:** las individuales (por fila) se muestran tal cual están en Firebase (decimal, ej: `1.1 hs`). Los totales son suma decimal redondeada a 2 cifras.
+
+### Sección 2 — Horas por instructor
+Filtros independientes: fecha desde/hasta + selector de instructor (poblado desde `/instructores` en Firebase). Solo cuenta vuelos realizados (`volado` + `aprobado_pasado_sin_obs`). Ordenado por horas descendente. Cada instructor tiene su bloque con totales y tabla de vuelos.
+
+### Exportación
+Botón **⬇ EXCEL** (verde) y **⬇ PDF** (ámbar) en cada sección. Excel usa SheetJS (CDN) y genera dos hojas: "Detalle" + "Resumen por aeronave" o "Resumen por instructor". PDF usa `window.print()` con `@media print` que convierte la paleta oscura a blanco para impresión. Nombre de archivo incluye filtros y período.
+
+---
+
+## 26. App de Registro de Vuelo (`vuelo.html`)
+
+Archivo independiente. Diseñada para uso en celular del instructor, **mobile-first extremo**: fuentes grandes, botones táctiles, sin zoom.
+
+### Acceso
+Login con las mismas credenciales de instructor (lee `/instructores` en Firebase). Si ya hay sesión activa de `turnos.html` en `sessionStorage 'lvoad-session'`, entra directo sin pedir credenciales.
+
+### Tab ✈ Vuelo — flujo completo
+
+1. **Selección de turno:** carga los turnos del instructor logueado para hoy (fecha local). Filtra: `estado==='aprobado'` OR (`estado==='vencido'` AND `aprobado_por` seteado), dentro de una ventana de -1h a +4h respecto al horario del turno (cubre el caso de turno vencido por hora cuando el instructor ya está en el avión). Si hay un solo turno → entrada directa. Si hay varios → lista para elegir. Si no hay ninguno → opción "vuelo manual".
+
+2. **Pantalla de vuelo:** muestra avión, alumno y horario del turno seleccionado.
+   - **▶ INICIAR VUELO** → graba `ts_despegue` (ISO UTC) en `localStorage` inmediatamente. Si el navegador cierra la pestaña, al reabrir la app restaura el estado y sabe que hay un vuelo iniciado.
+   - **⏹ FINALIZAR VUELO** → graba `ts_aterrizaje` (ISO UTC). No hay timer visual — solo se muestran las horas locales de despegue y aterrizaje.
+
+3. **Formulario de cierre:** muestra el tiempo calculado automáticamente de la diferencia entre `ts_aterrizaje` y `ts_despegue` (editable si hay error), campo de aterrizajes y observación privada.
+
+4. **✓ CONFIRMAR Y GUARDAR** → escribe en Firebase en el nodo `reservas/{key}`:
+   - `obs_privada_tiempo_vuelo` (horas decimal)
+   - `obs_privada_aterrizajes`
+   - `obs_privada`, `obs_privada_autor`, `obs_privada_ts`
+   - `ts_despegue`, `ts_aterrizaje` (campos nuevos, timestamps exactos del vuelo)
+
+**Vuelo manual** (sin reserva asociada): flujo idéntico pero no escribe en Firebase (no hay nodo al cual adjuntarlo).
+
+### Tab 📋 Libro
+Selector de fecha (default: hoy). Muestra todos los vuelos del instructor en esa fecha (estado `aprobado` o `vencido`): hora del turno, alumno, avión, hora de despegue local, hora de aterrizaje local, tiempo de vuelo, aterrizajes, y si tiene observación cargada. Pensado para copiar al libro de vuelo personal.
+
+### Persistencia offline
+`localStorage` key `acrg-vuelo-v2` guarda `{turno, tsInicio, tsFin}`. Si la pestaña se cierra accidentalmente durante un vuelo iniciado, al reabrir la app restaura el estado correctamente.
+
+### Campos nuevos en `/reservas`
+- `ts_despegue` (ISO UTC): timestamp exacto del momento en que el instructor tocó "Iniciar vuelo".
+- `ts_aterrizaje` (ISO UTC): timestamp exacto del momento en que tocó "Finalizar vuelo".
