@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v2.8 · 2026-08-03
+  Fix pestaña Pendientes: mostraba turnos vencidos sin volar (heredado del
+  filtro de Vuelo, que sí necesita ver vencidos-con-aprobador para poder
+  cerrar un vuelo que ya pasó de hora). Pendientes es para adelantar turnos
+  FUTUROS, no para rescatar vencidos — ahora exige estado==='aprobado'
+  (nada de vencido) y hora del turno >= hora actual (evaluada en el
+  momento, no depende de que el cron ya haya marcado el estado).
+  Ver anterior:
   v2.7 · 2026-08-03
   Nueva pestaña "⏳ Pendientes", a pedido de Daniel — 3 pestañas ahora:
   Vuelo | Pendientes | Libro.
@@ -470,7 +478,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '2.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -632,15 +640,19 @@ async function cargarPendientes(){
     const snap=await get(ref(db,'reservas'));
     const todas=rArr(snap.val());
     const fecha=hoy();
+    const ahora=new Date();
     const pend=todas.filter(r=>{
       if(r.fecha!==fecha) return false;
       const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
                      r.instructor===session.user||r.aprobado_por===session.user;
       if(!esDeEste) return false;
-      const estadoOk=r.estado==='aprobado'||(r.estado==='vencido'&&r.aprobado_por);
-      if(!estadoOk) return false;
+      if(r.estado!=='aprobado') return false; // solo aprobados — nada vencido
       if(r.obs_privada_tiempo_vuelo) return false; // ya volado y guardado
-      return true;
+      // Por venir: la hora del turno todavía no llegó
+      const horaT=r.hora||r.horaInicio||'00:00';
+      const [hh,mm]=horaT.split(':').map(Number);
+      const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
+      return turnoTs>=ahora;
     }).sort((a,b)=>(a.hora||a.horaInicio||'').localeCompare(b.hora||b.horaInicio||''));
 
     if(!pend.length){
