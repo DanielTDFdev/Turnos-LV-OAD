@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.0 · 2026-08-04
+  Screen Wake Lock API: al tocar INICIAR VUELO la app le pide al sistema
+  operativo que mantenga la pantalla encendida durante todo el vuelo. Esto
+  resuelve el problema de que el tracking GPS se interrumpía cuando el celular
+  se bloqueaba (iOS suspende el JS en background). Soportado en iOS 16.4+ y
+  Chrome Android. En browsers que no lo soportan falla silenciosamente — la
+  app sigue funcionando, solo sin el wake lock. Si el usuario sale de la app
+  y vuelve (visibilitychange), el wake lock se re-adquiere automáticamente si
+  hay un vuelo en curso. Se libera al tocar STOP, al guardar, y al hacer logout.
+  Ver anterior:
   v3.9 · 2026-08-04
   FIX: mapa abría con zoom excesivo ("map data not yet available") cuando los
   puntos GPS estaban muy juntos (vuelo corto o prueba estática). fitBounds
@@ -673,7 +683,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1062,6 +1072,34 @@ function detenerTrackGPS(){
   if(gpsWatchId!=null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId=null; }
 }
 
+// ── Screen Wake Lock ──────────────────────────────────────
+// Evita que la pantalla se apague durante el vuelo (iOS 16.4+, Chrome Android).
+// Falla silenciosamente en browsers que no la soportan.
+let _wakeLock = null;
+
+async function adquirirWakeLock() {
+  if (!('wakeLock' in navigator)) return; // no soportado
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+    console.log('[WakeLock] pantalla bloqueada activa');
+  } catch(e) {
+    console.warn('[WakeLock] no se pudo adquirir:', e.message);
+  }
+}
+
+function liberarWakeLock() {
+  if (_wakeLock) { _wakeLock.release(); _wakeLock = null; }
+}
+
+// Si la app vuelve al foco (ej: el usuario la reabre) y hay un vuelo en curso,
+// re-adquirir el wake lock automáticamente
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && tsInicio && !tsFin) {
+    adquirirWakeLock();
+  }
+});
+
 // START / STOP
 $('btn-start-stop').addEventListener('click',()=>{
   if(!tsInicio){
@@ -1069,6 +1107,7 @@ $('btn-start-stop').addEventListener('click',()=>{
     if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
     if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); }
+    adquirirWakeLock(); // mantener pantalla encendida
     persistir();
     actualizarEstado('en-vuelo');
     pintarToggleGPS();
@@ -1081,6 +1120,7 @@ $('btn-start-stop').addEventListener('click',()=>{
     if(!confirm('¿Finalizar el vuelo ahora?')) return;
     tsFin=new Date().toISOString();
     detenerTrackGPS();
+    liberarWakeLock(); // liberar wake lock al aterrizar
     persistir();
     actualizarEstado('finalizado');
     $('btn-start-stop').style.display='none';
@@ -1166,6 +1206,7 @@ async function guardar(){
     localStorage.removeItem(LS);
     localStorage.removeItem(LS_GPS_PUNTOS);
     gpsPoints=[];
+    liberarWakeLock();
     guardadoExitoso=true;
     $('v-cierre').style.display='none';
     $('v-guardado').style.display='block';
