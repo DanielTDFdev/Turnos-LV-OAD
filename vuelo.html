@@ -2,6 +2,35 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.2 · 2026-08-04
+  Nueva feature pedida por Daniel: "Iniciar turno sin reserva previa". Caso
+  real: nadie tenía turno cargado, un alumno/piloto se presenta igual a
+  volar. Reemplaza a "+ Sin turno asignado" (que era 100% local — un vuelo
+  "fantasma" que no escribía nada en Firebase). Ahora, en la pantalla
+  vacía de la pestaña Vuelo (sin turnos vigentes), aparece un selector de
+  avión + buscador de alumno/piloto con matching tipo "like" (nombre y
+  email, sobre /alumnos, cacheado en memoria tras la primera búsqueda de
+  la sesión). Al elegir una persona: se crea la reserva en Firebase
+  (avion elegido, fecha/hora de ahora, tipo_vuelo:'instruccion' siempre,
+  estado:'aprobado' con instructor/aprobado_por = el instructor logueado
+  — está presente arrancando el vuelo, no tiene sentido pedir aprobación
+  — y cargado_por = mismo instructor, por lo que NO afecta la cuota
+  semanal del alumno en turnos.html, mismo criterio que "+ CARGAR
+  TURNO"), se escribe un registro de auditoría con accion
+  'alta_turno_manual' (mismo que usa turnos.html, para que aparezca igual
+  en Seguimiento/Consultas — el detalle aclara "in situ desde vuelo.html"
+  para quien lea la auditoría a mano) y se entra directo a la pantalla de
+  vuelo normal con INICIAR VUELO — todo el resto del flujo (timer, GPS,
+  guardado) funciona sin cambios porque el turno creado tiene un `key`
+  real de Firebase, igual que cualquier otro. Si SÍ hay turnos reales
+  (uno o varios) tienen prioridad: la opción de iniciar in situ se oculta
+  en esos casos (`v-nuevo-wrap` solo visible cuando la lista de turnos
+  vigentes está vacía). Sin chequeo de conflicto de horario (a diferencia
+  de "+ CARGAR TURNO" en turnos.html) — decisión deliberada para no portar
+  la lógica de slots/horas de turnos.html a esta app por un caso de uso
+  de bajo riesgo (avión presente, vuelo en el momento). Nuevo import
+  `push` del SDK de Firebase.
+  Ver anterior:
   v4.1 · 2026-08-04
   Wake lock condicional: solo se activa si el instructor habilitó la traza GPS.
   Sin GPS → sin wake lock → ahorra batería. Con GPS → wake lock activo para
@@ -555,7 +584,17 @@ textarea{resize:none;min-height:80px;line-height:1.5}
       <span class="label">Tus turnos aprobados de hoy</span>
       <div id="v-lista-items"></div>
       <button class="btn btn-ghost" id="btn-ver-vencidos" style="display:none;border-color:var(--amber);color:var(--amber)">⚠ Ver turnos vencidos sin cerrar</button>
-      <button class="btn btn-ghost" id="btn-sin-turno">+ Sin turno asignado</button>
+
+      <div id="v-nuevo-wrap" style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(0,200,212,.15)">
+        <span class="label">Iniciar turno sin reserva previa</span>
+        <select id="nt-avion" style="margin-bottom:10px">
+          <option value="LV-OAD">LV-OAD</option>
+          <option value="LV-ART">LV-ART</option>
+          <option value="LV-MPH">LV-MPH</option>
+        </select>
+        <input type="text" id="nt-buscar" placeholder="Buscar alumno o piloto por nombre..." autocomplete="off">
+        <div id="nt-resultados" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
+      </div>
     </div>
 
     <!-- Estado C: vuelo en curso / finalizado -->
@@ -656,7 +695,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getDatabase, ref, get, update, set } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+import { getDatabase, ref, get, update, set, push } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
 const app = initializeApp({
   apiKey:'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
@@ -688,7 +727,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '4.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -835,20 +874,24 @@ async function cargarTabVuelo(forzar=false){
     const vencidosViejos=misTurnos.filter(r=>r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS);
 
     if(vigentes.length===0){
-      // Sin turnos vigentes — mostrar lista vacía con opción manual
+      // Sin turnos vigentes — mostrar lista vacía + opción de iniciar turno in situ
       // (y, si hay turnos viejos sin cerrar, un acceso explícito para no perderlos)
       $('v-lista-items').innerHTML =
         misTurnos.length===0
           ? '<div class="empty-libro" style="padding:24px 0">Sin turnos aprobados para hoy.</div>'
           : `<div class="empty-libro" style="padding:24px 0">Ningún turno para este momento.<br>Tenés ${vencidosViejos.length} turno${vencidosViejos.length>1?'s':''} vencido${vencidosViejos.length>1?'s':''} sin cerrar de hoy.</div>`;
       $('btn-ver-vencidos').style.display=vencidosViejos.length?'':'none';
+      $('v-nuevo-wrap').style.display='block';
       mostrarVista('lista');
     } else if(!forzar&&vigentes.filter(r=>r._diffAbs===vigentes[0]._diffAbs).length===1){
       // Caso normal: un único turno es el más cercano a la hora actual — entrada directa
       mostrarPantallaVuelo(vigentes[0]);
     } else {
-      // Forzado ("Cambiar turno"/"Ver vencidos") o empate exacto de horario (anómalo) — mostrar para elegir
+      // Forzado ("Cambiar turno"/"Ver vencidos") o empate exacto de horario (anómalo) — mostrar
+      // para elegir. Hay turnos reales: tienen prioridad, se oculta la opción de iniciar in situ
+      // (no tiene sentido ofrecer crear un turno nuevo cuando ya hay uno real esperando).
       $('btn-ver-vencidos').style.display='none';
+      $('v-nuevo-wrap').style.display='none';
       $('v-lista-items').innerHTML=vigentes.map(r=>`
         <div class="turno-item${r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS?' vencido':''}" data-key="${r.key}">
           <div class="hora">${r.hora||r.horaInicio||'—'}</div>
@@ -947,7 +990,109 @@ function activarTurno(turno){
   cambiarATab('vuelo');
 }
 
-$('btn-sin-turno').addEventListener('click',()=>mostrarPantallaVuelo(null));
+// ── INICIAR TURNO SIN RESERVA PREVIA (in situ) ──────────────────────────
+// Reemplaza a "Sin turno asignado" (que era 100% local, no escribía nada en
+// Firebase — un vuelo "fantasma"). Pedido de Daniel: cuando nadie tenía
+// turno cargado y alguien se presenta a volar igual, se genera la reserva
+// ahí mismo eligiendo a la persona por búsqueda — el vuelo queda registrado
+// normal (tiempo, aterrizajes, track GPS) atado a esa persona en Firebase,
+// en vez de perderse. Reglas (confirmadas con Daniel):
+//  - Avión: se pregunta explícito (vuelo.html nunca lo pedía antes de esto,
+//    siempre lo heredaba del turno existente).
+//  - tipo_vuelo siempre 'instruccion' cuando se genera desde acá.
+//  - Aprobación automática por el instructor logueado — está presente y
+//    arrancando el vuelo ahora mismo, no tiene sentido pedir aprobación.
+//  - cargado_por = ese instructor ⇒ NO afecta la cuota semanal del alumno
+//    (turnosRestantesSemana en turnos.html ya excluye cualquier reserva
+//    con cargado_por seteado, mismo criterio que "+ CARGAR TURNO").
+//  - Auditoría: mismo accion 'alta_turno_manual' que usa turnos.html para
+//    que aparezca igual en Seguimiento/Consultas — el detalle aclara que
+//    vino de vuelo.html, in situ, para quien lea la auditoría a mano.
+//  - Sin chequeo de conflicto de horario (a diferencia de "+ CARGAR TURNO"
+//    en turnos.html): el caso de uso es "el avión está ahí, se está por
+//    volar ahora", el riesgo de choque es bajo y portar la lógica de
+//    slots/horas de turnos.html complicaba la feature sin necesidad real.
+let _alumnosCache=null; // se carga una sola vez por sesión de la app, se reusa entre búsquedas
+async function cargarAlumnosParaBusqueda(){
+  if(_alumnosCache) return _alumnosCache;
+  const snap=await get(ref(db,'alumnos'));
+  const val=snap.val();
+  _alumnosCache=val?Object.entries(val)
+    .filter(([,a])=>a.estado_login!=='suspendido'&&a.estado!=='pendiente_aprobacion')
+    .map(([k,a])=>({key:k,nombre:a.nombre||a.email||k,email:a.email||'',rol:a.rol||'alumno'}))
+    .sort((a,b)=>a.nombre.localeCompare(b.nombre)):[];
+  return _alumnosCache;
+}
+
+$('nt-buscar').addEventListener('input',async ()=>{
+  const q=$('nt-buscar').value.trim().toLowerCase();
+  const cont=$('nt-resultados');
+  if(!q){ cont.innerHTML=''; return; }
+  const lista=await cargarAlumnosParaBusqueda();
+  const match=lista.filter(p=>p.nombre.toLowerCase().includes(q)||p.email.toLowerCase().includes(q)).slice(0,25);
+  cont.innerHTML=match.length
+    ? match.map(p=>`
+      <div class="turno-item" data-key="${p.key}">
+        <div class="info">
+          <div class="alumno-n">${p.nombre}</div>
+          <div class="avion-n">${p.rol==='piloto'?'Piloto':'Alumno'}</div>
+        </div>
+        <div class="arr">›</div>
+      </div>`).join('')
+    : '<div class="empty-libro" style="padding:16px 0">Sin resultados.</div>';
+  cont.querySelectorAll('.turno-item').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const p=match.find(x=>x.key===el.dataset.key);
+      if(p) crearTurnoInSitu(p);
+    });
+  });
+});
+
+async function crearTurnoInSitu(persona){
+  const avion=$('nt-avion').value;
+  const cont=$('nt-resultados');
+  $('nt-buscar').disabled=true;
+  cont.innerHTML='<div class="spinner"></div>';
+  try{
+    const ahora=new Date();
+    const hora=String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
+    const fecha=hoy();
+    const nuevo={
+      nombre:persona.nombre,
+      email:persona.email,
+      fecha,hora,avion,
+      tipo_vuelo:'instruccion',
+      estado:'aprobado',
+      rol:persona.rol,
+      instructor:session.nombre,
+      aprobado_por:session.nombre,
+      cargado_por:session.nombre,
+      ts:new Date().toISOString()
+    };
+    const nuevaRef=push(ref(db,'reservas'));
+    await set(nuevaRef,nuevo);
+    await set(push(ref(db,'auditoria')),{
+      accion:'alta_turno_manual',
+      rol:'instructor',
+      resultado:'exito',
+      detalle:`${session.nombre} cargó turno — ${avion} — ${fecha} ${hora} hs — alumno: ${nuevo.nombre} — aprobado por ${session.nombre} — in situ desde vuelo.html`,
+      ts:new Date().toISOString()
+    });
+    $('nt-buscar').value='';
+    cont.innerHTML='';
+    turnoActual={...nuevo,key:nuevaRef.key};
+    tsInicio=null;tsFin=null;guardadoExitoso=false;
+    localStorage.removeItem(LS);
+    mostrarPantallaVuelo(turnoActual);
+    toast('Turno creado y aprobado');
+  }catch(e){
+    cont.innerHTML=`<div class="empty-libro">Error al crear el turno: ${e.message}</div>`;
+    console.error(e);
+  }finally{
+    $('nt-buscar').disabled=false;
+  }
+}
+
 $('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
 $('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];localStorage.removeItem(LS_GPS_PUNTOS);turnoActual=null;tsInicio=null;tsFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
 $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
