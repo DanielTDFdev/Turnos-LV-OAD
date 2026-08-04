@@ -1,5 +1,23 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.08
+  FECHA   : 2026-08-04
+  CAMBIOS : Pedido de Daniel: en Mi Perfil → Log de Vuelos (vista del alumno), antes solo
+            había una tarjeta con un botón que abría el modal — el alumno no veía nada de
+            su historial sin un clic extra. Ahora la pestaña muestra directo un listado
+            resumido (fecha + duración) de sus vuelos registrados, más el total acumulado
+            de horas/aterrizajes arriba (mismo criterio que el modal: incluye la carga
+            inicial de /alumnos/{emailKey}). Cada fila es clickeable y abre el modal de
+            siempre (abrirMiLogVuelos) con el resto del detalle — autor, hora exacta, mapa
+            GPS si tiene traza (v7.07). Nueva función renderMiLogVuelosInline(), que reusa
+            el mismo filtro/orden que renderNotasPrivadasAlumno (única fuente de verdad de
+            "qué cuenta como vuelo registrado": r.obs_privada / obs_privada_tiempo_vuelo /
+            obs_privada_aterrizajes seteados). Se dispara desde showAlumnoPerfilTab() al
+            entrar a la pestaña 'log' — no hay listener en vivo sobre _reservasCache, se
+            re-renderiza recién al volver a entrar a la pestaña (mismo patrón que el resto
+            de paneles de Mi Perfil, no es una limitación nueva de este cambio).
+  ANTERIOR: v7.07
+
   VERSION : 7.07
   FECHA   : 2026-08-04
   CAMBIOS : Mapa GPS del vuelo para el alumno. En "Mi Log de Vuelos", cada entrada
@@ -1809,6 +1827,7 @@ html{overflow-x:hidden;max-width:100vw;}
 .screen.active{animation:fadeIn .25s ease}
 
 .card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem;margin-bottom:1rem;position:relative;overflow:hidden;}
+.ap-log-row:hover{border-color:var(--cyan);background:var(--bg4,#161b22);}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.4;}
 
 h2{font-family:var(--font-mono);font-size:14px;color:var(--cyan);letter-spacing:.18em;text-transform:uppercase;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border);}
@@ -2137,7 +2156,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.07</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.08</div>
   </div>
 
 </div>
@@ -2309,7 +2328,10 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div class="card">
         <h3>Mi Log de Vuelos</h3>
         <p style="font-family:var(--font-mono);font-size:11px;color:var(--text3);letter-spacing:.05em;line-height:1.6;margin-bottom:.75rem">Observaciones de tus vuelos y el total de horas/aterrizajes que tus instructores fueron registrando.</p>
-        <button class="primary" onclick="abrirMiLogVuelos()">◈ VER MI LOG DE VUELOS</button>
+        <div id="ap-log-totales" style="display:none;font-family:var(--font-mono);font-size:12px;color:var(--cyan);margin-bottom:.6rem"></div>
+        <div id="ap-log-lista" style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:.75rem"></div>
+        <div id="ap-log-vacio" style="display:none;font-family:var(--font-mono);font-size:11px;color:var(--text3);padding:.5rem 0 .75rem">Todavía no tenés vuelos registrados.</div>
+        <button class="primary" onclick="abrirMiLogVuelos()">◈ VER DETALLE COMPLETO</button>
       </div>
     </div>
     <div id="ap-panel-datos" style="display:none">
@@ -3964,6 +3986,56 @@ window.seleccionarAvion=function(key){
 // v6.83: pedido de Daniel — "Mi Perfil" del alumno pasa a tener pestañas (mismo patrón
 // .tab-bar/.nav-btn que ya usa el resto de la app): Log de Vuelos / Datos Personales /
 // Cambiar Contraseña, en vez de las 3 cards apiladas en un solo scroll largo.
+// v7.08: listado resumido (fecha + duración) directo en la pestaña "Log de Vuelos"
+// de Mi Perfil, para que el alumno no tenga que abrir el modal solo para ver que
+// tiene vuelos cargados. Mismo filtro/orden que renderNotasPrivadasAlumno (única
+// fuente de verdad para "qué cuenta como vuelo registrado"), pero acá se pinta un
+// resumen liviano — la fila completa es clickeable y abre el modal de siempre
+// (abrirMiLogVuelos) con el resto del detalle (autor, hora exacta, mapa GPS si
+// tiene traza, totales acumulados incluyendo carga inicial).
+async function renderMiLogVuelosInline(){
+  if(session?.tipo!=='alumno')return;
+  const cont=document.getElementById('ap-log-lista');
+  const vacio=document.getElementById('ap-log-vacio');
+  const totalesBox=document.getElementById('ap-log-totales');
+  if(!cont)return;
+  const email=session.email;
+  const turnos=Object.values(_reservasCache)
+    .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null))
+    .sort((a,b)=>(b.fecha+' '+b.hora).localeCompare(a.fecha+' '+a.hora));
+
+  if(!turnos.length){
+    cont.innerHTML='';
+    totalesBox.style.display='none';
+    vacio.style.display='block';
+    return;
+  }
+  vacio.style.display='none';
+
+  // Totales (incluye carga inicial del alumno, mismo criterio que el modal)
+  const al=await fbGet('alumnos/'+(session.emailKey||ek(session.email)));
+  let totalHs=al?.horas_iniciales||0, totalAter=al?.aterrizajes_iniciales||0;
+  turnos.forEach(r=>{
+    if(r.obs_privada_tiempo_vuelo!=null)totalHs+=Number(r.obs_privada_tiempo_vuelo);
+    if(r.obs_privada_aterrizajes!=null)totalAter+=Number(r.obs_privada_aterrizajes);
+  });
+  if(totalHs>0||totalAter>0){
+    totalesBox.style.display='block';
+    totalesBox.textContent='✈ Total: '+totalHs.toFixed(1)+' hs de vuelo — '+totalAter+' aterrizajes';
+  } else {
+    totalesBox.style.display='none';
+  }
+
+  cont.innerHTML=turnos.map(r=>{
+    const fecha=fmtFechaLinda(r.fecha);
+    const horas=r.obs_privada_tiempo_vuelo!=null?Number(r.obs_privada_tiempo_vuelo).toFixed(1)+' hs':'—';
+    return `<div class="ap-log-row" onclick="abrirMiLogVuelos()" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:.6rem .75rem;background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono)">
+      <span style="font-size:12px;color:var(--text2)">${fecha}</span>
+      <span style="font-size:13px;color:var(--cyan)">${horas}</span>
+    </div>`;
+  }).join('');
+}
+
 window.showAlumnoPerfilTab=function(tab){
   ['log','datos','pass'].forEach(t=>{
     const panel=document.getElementById('ap-panel-'+t);
@@ -3971,6 +4043,7 @@ window.showAlumnoPerfilTab=function(tab){
     if(panel)panel.style.display=t===tab?'block':'none';
     if(btn)btn.classList.toggle('active',t===tab);
   });
+  if(tab==='log')renderMiLogVuelosInline();
 };
 
 window.showAlumnoTab=function(tab){
