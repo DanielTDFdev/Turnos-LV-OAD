@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.7 · 2026-08-04
+  Visualizador de traza GPS en tab Libro: cada vuelo con tiene_traza_gps=true
+  muestra un botón "🗺 Ver recorrido GPS" que abre un modal a pantalla completa
+  con Leaflet.js + capa satélite ESRI (gratis, sin API key) + capa de etiquetas
+  encima. Dibuja la polilínea del recorrido en cyan, marcador verde en despegue
+  y rojo en aterrizaje con tooltip de hora local. Info bar al pie: cantidad de
+  puntos, duración (calculada de los timestamps de la traza), distancia total
+  (Haversine) y altitud máxima. Si la traza tiene <2 puntos, avisa sin romper
+  el flujo. Instancia de Leaflet se destruye al cerrar el modal para no acumular
+  mapas en memoria.
+  Ver anterior:
   v3.6 · 2026-08-04
   Traza GPS opcional, a pedido de Daniel — el instructor decide por vuelo si
   la activa (toggle en la pantalla previa a INICIAR, se bloquea una vez
@@ -229,6 +240,8 @@
 <link rel="apple-touch-icon" href="/icon-vuelo-192.png">
 <link rel="manifest" href="/manifest-vuelo.json">
 <title>Vuelo · ACRG</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
 
@@ -426,6 +439,30 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 .badge-ok{display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:12px;padding:3px 9px;letter-spacing:.05em}
+
+/* ── Modal mapa ── */
+.map-modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;
+  display:none;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0);
+}
+.map-modal-overlay.open{display:flex}
+.map-modal-header{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 18px;background:var(--bg2);
+  border-bottom:1px solid rgba(0,200,212,.15);flex:none;
+}
+.map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
+.map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
+.btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
+#map-container{flex:1;min-height:0;position:relative}
+#map-leaflet{width:100%;height:100%}
+.map-info-bar{padding:10px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:20px;flex-wrap:wrap;flex:none}
+.map-info-bar span{font-family:var(--mono);font-size:11px;color:var(--gray)}
+.map-info-bar .mv{color:var(--white)}
+.map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
+.btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;transition:all .15s}
+.btn-traza:active{background:rgba(0,200,212,.2)}
 </style>
 </head>
 <body>
@@ -622,7 +659,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1151,6 +1188,14 @@ function persistir(){
 }
 
 // ── TAB LIBRO ─────────────────────────────────────────────
+// Helper: genera HTML del botón de traza (evita template literal anidado con replace)
+function btnTraza(key, nombre, avion, hora) {
+  const n = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const av = (avion||'LV-OAD').replace(/'/g,"\\'");
+  const h  = (hora||'').replace(/'/g,"\\'");
+  return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
+}
+
 $('libro-fecha').addEventListener('change',cargarLibro);
 
 async function cargarLibro(){
@@ -1200,12 +1245,126 @@ async function cargarLibro(){
           <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
           ${tieneObs?'<span class="badge-ok">obs ✓</span>':''}
         </div>
+        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora):''}
       </div>`;
     }).join('');
   }catch(e){
     $('libro-contenido').innerHTML=`<div class="empty-libro">Error: ${e.message}</div>`;
   }
 }
+
+// ── MAPA GPS ──────────────────────────────────────────────
+let _leafletMap = null;
+
+window.abrirMapa = async function(key, alumno, avion, hora) {
+  const modal = $('map-modal');
+  $('map-modal-title').textContent = `${alumno} · ${avion}`;
+  $('map-modal-sub').textContent = hora ? `Turno ${hora} hs` : '';
+  $('map-loading').style.display = 'flex';
+  $('map-info-bar').style.display = 'none';
+  $('map-leaflet').style.opacity = '0';
+  modal.classList.add('open');
+
+  // Destruir instancia anterior de Leaflet si existe
+  if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
+
+  try {
+    const snap = await get(ref(db, `vuelo_tracks/${key}`));
+    const data = snap.val();
+
+    if (!data || !data.puntos || data.puntos.length < 2) {
+      $('map-loading').innerHTML = '<span style="color:var(--amber)">⚠ Traza con menos de 2 puntos — no se puede dibujar el recorrido.</span>';
+      return;
+    }
+
+    const puntos = data.puntos; // [{lat, lng, alt, ts}, ...]
+    const coords = puntos.map(p => [p.lat, p.lng]);
+
+    // Inicializar Leaflet
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false });
+
+    // Capa satélite ESRI (aeronáuticamente más útil que calles)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+    }).addTo(_leafletMap);
+
+    // Capa de etiquetas encima del satélite
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, opacity: 0.7,
+    }).addTo(_leafletMap);
+
+    // Polilínea del recorrido
+    const linea = L.polyline(coords, {
+      color: '#00c8d4', weight: 3, opacity: 0.9,
+      dashArray: null,
+    }).addTo(_leafletMap);
+
+    // Marcador de inicio (verde)
+    const icoInicio = L.divIcon({
+      html: '<div style="background:#22c55e;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(34,197,94,.8)"></div>',
+      className: '', iconSize: [14,14], iconAnchor: [7,7],
+    });
+    L.marker(coords[0], { icon: icoInicio })
+      .bindTooltip('▶ Despegue · ' + fmtUTCFull(puntos[0].ts), { permanent: false })
+      .addTo(_leafletMap);
+
+    // Marcador de fin (rojo)
+    const icoFin = L.divIcon({
+      html: '<div style="background:#ef4444;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(239,68,68,.8)"></div>',
+      className: '', iconSize: [14,14], iconAnchor: [7,7],
+    });
+    L.marker(coords[coords.length-1], { icon: icoFin })
+      .bindTooltip('⏹ Aterrizaje · ' + fmtUTCFull(puntos[puntos.length-1].ts), { permanent: false })
+      .addTo(_leafletMap);
+
+    // Ajustar zoom al recorrido
+    _leafletMap.fitBounds(linea.getBounds(), { padding: [20, 20] });
+
+    // Info bar
+    const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
+    const durMin = Math.round(durMs / 60000);
+    const distKm = calcDistanciaKm(coords);
+    const altMax = Math.max(...puntos.filter(p=>p.alt!=null).map(p=>p.alt));
+
+    $('mi-puntos').textContent = puntos.length;
+    $('mi-duracion').textContent = durMin >= 60
+      ? `${Math.floor(durMin/60)}h ${durMin%60}m`
+      : `${durMin} min`;
+    $('mi-distancia').textContent = distKm >= 1
+      ? `${distKm.toFixed(1)} km`
+      : `${Math.round(distKm*1000)} m`;
+    $('mi-alt').textContent = isFinite(altMax) ? `${Math.round(altMax)} m` : '—';
+
+    $('map-loading').style.display = 'none';
+    $('map-leaflet').style.opacity = '1';
+    $('map-info-bar').style.display = 'flex';
+    // Leaflet necesita que el contenedor sea visible antes de invalidar el tamaño
+    setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 100);
+
+  } catch(e) {
+    $('map-loading').innerHTML = `<span style="color:var(--red)">Error al cargar la traza: ${e.message}</span>`;
+    console.error(e);
+  }
+};
+
+// Distancia total del recorrido (Haversine)
+function calcDistanciaKm(coords) {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const [lat1,lon1] = coords[i-1], [lat2,lon2] = coords[i];
+    const R = 6371;
+    const dLat = (lat2-lat1)*Math.PI/180;
+    const dLon = (lon2-lon1)*Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    total += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+  return total;
+}
+
+$('btn-map-close').addEventListener('click', () => {
+  $('map-modal').classList.remove('open');
+  if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
+});
 
 // ── LOGOUT ────────────────────────────────────────────────
 $('btn-logout').addEventListener('click',()=>{
@@ -1286,5 +1445,29 @@ if('serviceWorker' in navigator){
   });
 }
 </script>
+<!-- Modal mapa GPS -->
+<div class="map-modal-overlay" id="map-modal">
+  <div class="map-modal-header">
+    <div>
+      <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
+      <div class="map-sub" id="map-modal-sub"></div>
+    </div>
+    <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
+  </div>
+  <div id="map-container">
+    <div class="map-loading" id="map-loading">
+      <div class="spinner"></div>
+      <span>Cargando traza...</span>
+    </div>
+    <div id="map-leaflet"></div>
+  </div>
+  <div class="map-info-bar" id="map-info-bar" style="display:none">
+    <span>📍 Puntos: <span class="mv" id="mi-puntos">—</span></span>
+    <span>⏱ Duración: <span class="mv" id="mi-duracion">—</span></span>
+    <span>📏 Distancia: <span class="mv" id="mi-distancia">—</span></span>
+    <span>⬆ Alt. máx: <span class="mv" id="mi-alt">—</span></span>
+  </div>
+</div>
+
 </body>
 </html>
