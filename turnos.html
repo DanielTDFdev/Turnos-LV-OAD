@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.07
+  FECHA   : 2026-08-04
+  CAMBIOS : Mapa GPS del vuelo para el alumno. En "Mi Log de Vuelos", cada entrada
+            que tenga tiene_traza_gps=true muestra un botón "🗺 Ver recorrido GPS".
+            Abre un modal a pantalla completa con Leaflet + satélite ESRI + capa de
+            etiquetas. Polilínea cyan, marcador verde en despegue y rojo en
+            aterrizaje. Info bar con puntos, duración, distancia (Haversine) y
+            altitud máxima. La traza se lee desde /vuelo_tracks/{key} igual que en
+            vuelo.html. Instancia de Leaflet se destruye al cerrar el modal.
   VERSION : 7.06
   FECHA   : 2026-08-03
   CAMBIOS : Pedido de Daniel: "+ CARGAR TURNO" (modal manual, instructor/admin) no pedía el
@@ -1721,6 +1730,8 @@
 <meta name="apple-mobile-web-app-title" content="ACRG Turnos">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/charts/loader.js"></script>
 <style>
@@ -1965,6 +1976,19 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:1rem;}
+/* Modal mapa GPS — ocupa toda la pantalla, z-index sobre el log del alumno */
+#modal-mapa-vuelo{display:none;position:fixed;inset:0;background:#050d1a;z-index:1100;flex-direction:column}
+#modal-mapa-vuelo.open{display:flex}
+#modal-mapa-vuelo .map-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#0b1929;border-bottom:1px solid rgba(0,200,212,.15);flex:none}
+#modal-mapa-vuelo .map-bar .map-title{font-family:var(--font-mono);font-size:12px;color:var(--cyan);letter-spacing:.08em;flex:1}
+#modal-mapa-vuelo .map-bar .map-sub{font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-top:2px}
+#modal-mapa-vuelo .map-leaflet-wrap{flex:1;min-height:0;position:relative}
+#mapa-vuelo-leaflet{width:100%;height:100%}
+#mapa-vuelo-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#050d1a;z-index:10;font-family:var(--font-mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
+#modal-mapa-vuelo .map-info{display:flex;gap:18px;flex-wrap:wrap;padding:10px 16px;background:#0b1929;border-top:1px solid rgba(0,200,212,.1);flex:none;font-family:var(--font-mono);font-size:11px;color:var(--text3)}
+#modal-mapa-vuelo .map-info .mv{color:var(--text)}
+.btn-ver-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.25);border-radius:4px;color:var(--cyan);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;transition:all .15s;letter-spacing:.05em}
+.btn-ver-mapa:hover{background:rgba(0,200,212,.18)}
 .modal-overlay.open{display:flex;}
 .modal{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:1.5rem;max-width:420px;width:100%;position:relative;overflow-x:hidden;overflow-y:auto;max-height:88vh;}
 .modal-tabs{display:flex;gap:6px;margin-bottom:1rem;flex-wrap:wrap;}
@@ -2113,7 +2137,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.06</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.07</div>
   </div>
 
 </div>
@@ -5161,6 +5185,15 @@ function renderObsPublicasAlumno(){
       cuerpo.textContent=obsTexto;
       div.appendChild(cuerpo);
     }
+    // Botón de mapa GPS (solo si el turno tiene traza)
+    if(r.tiene_traza_gps&&r.key){
+      const btnMapa=document.createElement('button');
+      btnMapa.className='btn-ver-mapa';
+      btnMapa.textContent='🗺 Ver recorrido GPS';
+      const rKey=r.key, rNombre=r.nombre||'', rAvion=r.avion||'LV-OAD', rHora=r.hora||'';
+      btnMapa.addEventListener('click',()=>abrirMapaVuelo(rKey,rNombre,rAvion,rHora));
+      div.appendChild(btnMapa);
+    }
     cont.appendChild(div);
   });
 }
@@ -8016,6 +8049,108 @@ if('serviceWorker' in navigator){
     navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
   });
 }
+
+// ── MAPA GPS DEL VUELO (alumno) ───────────────────────────
+let _mapaVueloLeaflet = null;
+
+window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
+  const modal = document.getElementById('modal-mapa-vuelo');
+  document.getElementById('mapa-vuelo-title').textContent = nombre ? `${nombre} — ${avion}` : avion;
+  document.getElementById('mapa-vuelo-sub').textContent = hora ? `Turno ${hora} hs` : '';
+  document.getElementById('mapa-vuelo-loading').style.display = 'flex';
+  document.getElementById('mapa-vuelo-info').style.display = 'none';
+  document.getElementById('mapa-vuelo-leaflet').style.opacity = '0';
+  modal.classList.add('open');
+
+  if (_mapaVueloLeaflet) { _mapaVueloLeaflet.remove(); _mapaVueloLeaflet = null; }
+
+  try {
+    const snap = await fbGet('vuelo_tracks/' + key);
+    const data = snap;
+    if (!data || !data.puntos || data.puntos.length < 2) {
+      document.getElementById('mapa-vuelo-loading').innerHTML =
+        '<span style="color:var(--amber)">⚠ Traza con menos de 2 puntos registrados.</span>';
+      return;
+    }
+    const puntos = data.puntos;
+    const coords = puntos.map(p => [p.lat, p.lng]);
+
+    _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false });
+
+    // Satélite ESRI + etiquetas
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(_mapaVueloLeaflet);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(_mapaVueloLeaflet);
+
+    // Polilínea
+    const linea = L.polyline(coords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_mapaVueloLeaflet);
+
+    // Marcadores inicio / fin
+    const mkIco = color => L.divIcon({
+      html: `<div style="background:${color};width:13px;height:13px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px ${color}88"></div>`,
+      className: '', iconSize: [13,13], iconAnchor: [6,6],
+    });
+    const fmtT = iso => iso ? new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z' : '—';
+    L.marker(coords[0], { icon: mkIco('#22c55e') }).bindTooltip('▶ ' + fmtT(puntos[0].ts)).addTo(_mapaVueloLeaflet);
+    L.marker(coords[coords.length-1], { icon: mkIco('#ef4444') }).bindTooltip('⏹ ' + fmtT(puntos[puntos.length-1].ts)).addTo(_mapaVueloLeaflet);
+
+    _mapaVueloLeaflet.fitBounds(linea.getBounds(), { padding: [40,40], maxZoom: 15 });
+
+    // Info bar
+    const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
+    const durMin = Math.round(durMs / 60000);
+    let distKm = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const [la1,lo1]=coords[i-1],[la2,lo2]=coords[i];
+      const dLat=(la2-la1)*Math.PI/180, dLon=(lo2-lo1)*Math.PI/180;
+      const a=Math.sin(dLat/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLon/2)**2;
+      distKm += 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+    const altMax = Math.max(...puntos.filter(p=>p.alt!=null).map(p=>p.alt));
+    document.getElementById('mv-puntos').textContent = puntos.length;
+    document.getElementById('mv-dur').textContent = durMin >= 60 ? `${Math.floor(durMin/60)}h ${durMin%60}m` : `${durMin} min`;
+    document.getElementById('mv-dist').textContent = distKm >= 1 ? `${distKm.toFixed(1)} km` : `${Math.round(distKm*1000)} m`;
+    document.getElementById('mv-alt').textContent = isFinite(altMax) ? `${Math.round(altMax)} m` : '—';
+
+    document.getElementById('mapa-vuelo-loading').style.display = 'none';
+    document.getElementById('mapa-vuelo-leaflet').style.opacity = '1';
+    document.getElementById('mapa-vuelo-info').style.display = 'flex';
+    setTimeout(() => _mapaVueloLeaflet && _mapaVueloLeaflet.invalidateSize(), 100);
+
+  } catch(e) {
+    document.getElementById('mapa-vuelo-loading').innerHTML =
+      `<span style="color:var(--red)">Error al cargar la traza: ${e.message}</span>`;
+    console.error(e);
+  }
+};
+
+window.cerrarMapaVuelo = function() {
+  document.getElementById('modal-mapa-vuelo').classList.remove('open');
+  if (_mapaVueloLeaflet) { _mapaVueloLeaflet.remove(); _mapaVueloLeaflet = null; }
+};
 </script>
+<!-- Modal mapa GPS del vuelo (alumno) -->
+<div id="modal-mapa-vuelo">
+  <div class="map-bar">
+    <div>
+      <div class="map-title" id="mapa-vuelo-title">RECORRIDO DEL VUELO</div>
+      <div class="map-sub" id="mapa-vuelo-sub"></div>
+    </div>
+    <button onclick="cerrarMapaVuelo()" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--text3);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer">✕ Cerrar</button>
+  </div>
+  <div class="map-leaflet-wrap">
+    <div id="mapa-vuelo-loading">
+      <div style="width:28px;height:28px;border:3px solid rgba(0,200,212,.2);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite"></div>
+      <span>Cargando traza GPS...</span>
+    </div>
+    <div id="mapa-vuelo-leaflet"></div>
+  </div>
+  <div class="map-info" id="mapa-vuelo-info" style="display:none">
+    <span>📍 Puntos: <span class="mv" id="mv-puntos">—</span></span>
+    <span>⏱ Duración: <span class="mv" id="mv-dur">—</span></span>
+    <span>📏 Distancia: <span class="mv" id="mv-dist">—</span></span>
+    <span>⬆ Alt. máx: <span class="mv" id="mv-alt">—</span></span>
+  </div>
+</div>
+
 </body>
 </html>
