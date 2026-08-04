@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.8 · 2026-08-04
+  FIX: "Can't find variable: fmtUTCFull" al abrir el mapa GPS. La función
+  fmtUTCFull fue renombrada a fmtLocalFull en v3.x (ver changelog v3.x) y
+  abrirMapa (window.*) la seguía llamando por el nombre viejo. Como abrirMapa
+  vive en window y fmtLocalFull en el scope del módulo, tampoco podría llamarla
+  directamente. Fix: formateador fmtTs definido inline dentro de abrirMapa,
+  sin depender del scope externo.
+  Ver anterior:
   v3.7 · 2026-08-04
   Visualizador de traza GPS en tab Libro: cada vuelo con tiene_traza_gps=true
   muestra un botón "🗺 Ver recorrido GPS" que abre un modal a pantalla completa
@@ -659,7 +667,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1257,6 +1265,12 @@ async function cargarLibro(){
 let _leafletMap = null;
 
 window.abrirMapa = async function(key, alumno, avion, hora) {
+  // Formateador local para los tooltips — definido acá para no depender del scope del módulo
+  const fmtTs = iso => {
+    if(!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z';
+  };
   const modal = $('map-modal');
   $('map-modal-title').textContent = `${alumno} · ${avion}`;
   $('map-modal-sub').textContent = hora ? `Turno ${hora} hs` : '';
@@ -1305,7 +1319,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       className: '', iconSize: [14,14], iconAnchor: [7,7],
     });
     L.marker(coords[0], { icon: icoInicio })
-      .bindTooltip('▶ Despegue · ' + fmtUTCFull(puntos[0].ts), { permanent: false })
+      .bindTooltip('▶ Despegue · ' + fmtTs(puntos[0].ts), { permanent: false })
       .addTo(_leafletMap);
 
     // Marcador de fin (rojo)
@@ -1314,7 +1328,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       className: '', iconSize: [14,14], iconAnchor: [7,7],
     });
     L.marker(coords[coords.length-1], { icon: icoFin })
-      .bindTooltip('⏹ Aterrizaje · ' + fmtUTCFull(puntos[puntos.length-1].ts), { permanent: false })
+      .bindTooltip('⏹ Aterrizaje · ' + fmtTs(puntos[puntos.length-1].ts), { permanent: false })
       .addTo(_leafletMap);
 
     // Ajustar zoom al recorrido
