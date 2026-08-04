@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.9 · 2026-08-04
+  FIX: mapa abría con zoom excesivo ("map data not yet available") cuando los
+  puntos GPS estaban muy juntos (vuelo corto o prueba estática). fitBounds
+  ahora limita maxZoom:15 — nivel donde ESRI World Imagery tiene cobertura
+  global garantizada y se ve suficiente detalle para un vuelo de instrucción.
+  Ver anterior:
   v3.8 · 2026-08-04
   FIX: "Can't find variable: fmtUTCFull" al abrir el mapa GPS. La función
   fmtUTCFull fue renombrada a fmtLocalFull en v3.x (ver changelog v3.x) y
@@ -667,7 +673,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '3.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1332,7 +1338,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       .addTo(_leafletMap);
 
     // Ajustar zoom al recorrido
-    _leafletMap.fitBounds(linea.getBounds(), { padding: [20, 20] });
+    _leafletMap.fitBounds(linea.getBounds(), { padding: [40, 40], maxZoom: 15 });
 
     // Info bar
     const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
