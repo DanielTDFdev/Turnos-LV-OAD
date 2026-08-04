@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.1 · 2026-08-04
+  Wake lock condicional: solo se activa si el instructor habilitó la traza GPS.
+  Sin GPS → sin wake lock → ahorra batería. Con GPS → wake lock activo para
+  que la pantalla no se apague y el muestreo GPS no se interrumpa.
+  Ver anterior:
   v4.0 · 2026-08-04
   Screen Wake Lock API: al tocar INICIAR VUELO la app le pide al sistema
   operativo que mantenga la pantalla encendida durante todo el vuelo. Esto
@@ -683,7 +688,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '4.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1106,8 +1111,7 @@ $('btn-start-stop').addEventListener('click',()=>{
     // START — confirmar antes de grabar (evita un toque accidental)
     if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
-    if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); }
-    adquirirWakeLock(); // mantener pantalla encendida
+    if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); adquirirWakeLock(); }
     persistir();
     actualizarEstado('en-vuelo');
     pintarToggleGPS();
