@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.4 · 2026-08-04
+  Pedido de Daniel: el visor de mapa mostraba distancia y altitud en
+  unidades métricas (km/m) — ahora se muestran en unidades aeronáuticas:
+  distancia en millas náuticas (nm) y altitud máxima en pies (ft). El
+  cálculo interno se mantiene en km/metros (calcDistanciaKm, altitud
+  cruda del GPS del navegador — siempre en metros por spec) — la
+  conversión (1 km = 0.539957 nm, 1 m = 3.28084 ft) es solo al armar el
+  texto de la info bar (mi-distancia/mi-alt), sin tocar el guardado en
+  Firebase ni el resto de los cálculos.
+  Ver anterior:
   v4.3 · 2026-08-04
   Fix de fondo pedido por Daniel tras un caso real: creó un turno in-situ
   (v4.2) con el alumno equivocado, y no tenía forma de corregirlo sin
@@ -755,7 +765,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '4.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1615,10 +1625,13 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('mi-duracion').textContent = durMin >= 60
       ? `${Math.floor(durMin/60)}h ${durMin%60}m`
       : `${durMin} min`;
-    $('mi-distancia').textContent = distKm >= 1
-      ? `${distKm.toFixed(1)} km`
-      : `${Math.round(distKm*1000)} m`;
-    $('mi-alt').textContent = isFinite(altMax) ? `${Math.round(altMax)} m` : '—';
+    // Cálculo interno se mantiene en km/metros (estándar, sin ambigüedad); la
+    // conversión a millas náuticas y pies es solo para la visualización — pedido
+    // de Daniel, unidades aeronáuticas en vez de métricas.
+    const distNm = distKm * 0.539957;
+    $('mi-distancia').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
+    const altMaxFt = altMax * 3.28084;
+    $('mi-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
 
     $('map-loading').style.display = 'none';
     $('map-leaflet').style.opacity = '1';
