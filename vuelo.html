@@ -2,6 +2,33 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.3 · 2026-08-04
+  Fix de fondo pedido por Daniel tras un caso real: creó un turno in-situ
+  (v4.2) con el alumno equivocado, y no tenía forma de corregirlo sin
+  entrar a turnos.html como admin a borrarlo a mano. Dos cambios:
+  (1) La reserva de un turno in-situ ya NO se crea al elegir a la persona
+  — se crea recién dentro de guardar(), en el mismo momento en que se
+  confirma el vuelo (mismos datos que antes: tipo_vuelo 'instruccion',
+  aprobado por el instructor logueado, cargado_por = ese instructor,
+  auditoría 'alta_turno_manual'). Hasta ese punto, todo vive en memoria +
+  localStorage (turnoActual con esInSitu:true, sin `.key` — mismo campo
+  que ya usaba persistir()) — si te equivocás de persona o cancelás, no
+  queda absolutamente nada escrito en Firebase. crearTurnoInSitu() pasa de
+  async con push+set+auditoría a una función síncrona que solo arma el
+  objeto local.
+  (2) Botón nuevo "✕ Cancelar" (btn-cancelar-vuelo), visible desde que se
+  toca INICIAR VUELO hasta CONFIRMAR (en vuelo y en la pantalla de cierre)
+  — pedido explícito para la fase de pruebas, por si se activa el timer
+  por error. Con confirm() previo, no graba nada: si el turno es real
+  (ya existía en Firebase) no se toca, queda como estaba; si es in-situ,
+  no se crea nada (ver punto 1). Vuelve a la pantalla "Listo para
+  iniciar" con la MISMA persona/avión — no manda de vuelta a elegir turno.
+  Nueva función cancelarVuelo(), reusa detenerTrackGPS/liberarWakeLock ya
+  existentes. Fix menor de robustez: cargarTabVuelo() ahora también
+  protege una selección in-situ pendiente (persona elegida, timer sin
+  arrancar) de perderse si se recarga la app en ese punto exacto — antes
+  solo protegía tsInicio/tsFin.
+  Ver anterior:
   v4.2 · 2026-08-04
   Nueva feature pedida por Daniel: "Iniciar turno sin reserva previa". Caso
   real: nadie tenía turno cargado, un alumno/piloto se presenta igual a
@@ -627,6 +654,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
       <!-- Botón principal -->
       <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
+      <button class="btn btn-ghost" id="btn-cancelar-vuelo" style="display:none;border-color:var(--red);color:var(--red)">✕ Cancelar</button>
 
       <!-- Formulario cierre (oculto hasta STOP) -->
       <div id="v-cierre" style="display:none">
@@ -727,7 +755,7 @@ let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '4.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -832,8 +860,12 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
 // elegir nada. Solo se muestra una lista si hay un empate exacto de horario
 // (caso anómalo) o si se fuerza la pantalla de selección con "Cambiar turno".
 async function cargarTabVuelo(forzar=false){
-  // Si hay un vuelo en curso o finalizado, mostrar directamente (salvo que se fuerce el cambio)
-  if(!forzar&&(tsInicio||tsFin)){
+  // Si hay un vuelo en curso/finalizado, o una persona in-situ ya elegida pero
+  // todavía sin iniciar (turnoActual.esInSitu, sobrevive a un cierre accidental
+  // de la app vía localStorage), mostrar directo — sin este último caso, un
+  // reload en el momento exacto de "elegí a la persona pero no arranqué
+  // todavía" perdía la selección en silencio.
+  if(!forzar&&(tsInicio||tsFin||turnoActual?.esInSitu)){
     mostrarPantallaVuelo(turnoActual);
     return;
   }
@@ -1048,49 +1080,30 @@ $('nt-buscar').addEventListener('input',async ()=>{
   });
 });
 
-async function crearTurnoInSitu(persona){
+// Ya NO escribe nada en Firebase acá — pedido de Daniel tras encontrarse con un
+// turno mal creado (alumno equivocado) sin forma de borrarlo desde la app. Ahora
+// arma un objeto local "pendiente de crear" (marcado con esInSitu:true, sin
+// `.key` todavía) y entra a la pantalla de vuelo normal. La reserva recién se
+// crea en Firebase dentro de guardar(), en el mismo momento en que se confirma
+// el vuelo — así, si te equivocás de persona o cancelás en el medio (botón
+// "Cancelar", ver más abajo), no queda absolutamente nada escrito.
+function crearTurnoInSitu(persona){
   const avion=$('nt-avion').value;
-  const cont=$('nt-resultados');
-  $('nt-buscar').disabled=true;
-  cont.innerHTML='<div class="spinner"></div>';
-  try{
-    const ahora=new Date();
-    const hora=String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
-    const fecha=hoy();
-    const nuevo={
-      nombre:persona.nombre,
-      email:persona.email,
-      fecha,hora,avion,
-      tipo_vuelo:'instruccion',
-      estado:'aprobado',
-      rol:persona.rol,
-      instructor:session.nombre,
-      aprobado_por:session.nombre,
-      cargado_por:session.nombre,
-      ts:new Date().toISOString()
-    };
-    const nuevaRef=push(ref(db,'reservas'));
-    await set(nuevaRef,nuevo);
-    await set(push(ref(db,'auditoria')),{
-      accion:'alta_turno_manual',
-      rol:'instructor',
-      resultado:'exito',
-      detalle:`${session.nombre} cargó turno — ${avion} — ${fecha} ${hora} hs — alumno: ${nuevo.nombre} — aprobado por ${session.nombre} — in situ desde vuelo.html`,
-      ts:new Date().toISOString()
-    });
-    $('nt-buscar').value='';
-    cont.innerHTML='';
-    turnoActual={...nuevo,key:nuevaRef.key};
-    tsInicio=null;tsFin=null;guardadoExitoso=false;
-    localStorage.removeItem(LS);
-    mostrarPantallaVuelo(turnoActual);
-    toast('Turno creado y aprobado');
-  }catch(e){
-    cont.innerHTML=`<div class="empty-libro">Error al crear el turno: ${e.message}</div>`;
-    console.error(e);
-  }finally{
-    $('nt-buscar').disabled=false;
-  }
+  const ahora=new Date();
+  const hora=String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
+  turnoActual={
+    nombre:persona.nombre,
+    email:persona.email,
+    fecha:hoy(),hora,avion,
+    rol:persona.rol,
+    esInSitu:true // sin `.key`: todavía no existe en Firebase
+  };
+  tsInicio=null;tsFin=null;guardadoExitoso=false;
+  $('nt-buscar').value='';
+  $('nt-resultados').innerHTML='';
+  persistir();
+  mostrarPantallaVuelo(turnoActual);
+  toast('Listo — iniciá el vuelo cuando quieras');
 }
 
 $('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
@@ -1125,6 +1138,7 @@ function mostrarPantallaVuelo(turno){
     // Ya finalizó — mostrar formulario de cierre
     actualizarEstado('finalizado');
     $('gps-toggle-card').style.display='none';
+    $('btn-cancelar-vuelo').style.display='';
     mostrarCierre();
   } else if(tsInicio){
     // En vuelo
@@ -1133,6 +1147,7 @@ function mostrarPantallaVuelo(turno){
     pintarToggleGPS();
     $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
     $('btn-start-stop').className='btn btn-red';
+    $('btn-cancelar-vuelo').style.display='';
     $('v-cierre').style.display='none';
     $('v-guardado').style.display='none';
     $('btn-cambiar-turno').style.display='none';
@@ -1143,6 +1158,7 @@ function mostrarPantallaVuelo(turno){
     pintarToggleGPS();
     $('btn-start-stop').textContent='▶ INICIAR VUELO';
     $('btn-start-stop').className='btn btn-cyan';
+    $('btn-cancelar-vuelo').style.display='none';
     $('v-cierre').style.display='none';
     $('v-guardado').style.display='none';
     $('btn-cambiar-turno').style.display='';
@@ -1262,6 +1278,7 @@ $('btn-start-stop').addEventListener('click',()=>{
     pintarToggleGPS();
     $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
     $('btn-start-stop').className='btn btn-red';
+    $('btn-cancelar-vuelo').style.display='';
     $('btn-cambiar-turno').style.display='none';
     toast('Vuelo iniciado · '+fmtLocalFull(tsInicio));
   } else {
@@ -1276,6 +1293,25 @@ $('btn-start-stop').addEventListener('click',()=>{
     mostrarCierre();
   }
 });
+
+// CANCELAR — pedido de Daniel, disponible en todo momento después de tocar
+// INICIAR (tanto en vuelo como en la pantalla de cierre, antes de guardar).
+// No graba nada: si el turno es real (ya existía en Firebase), no se toca —
+// queda tal cual estaba (pendiente/aprobado, lo que fuera). Si es un turno
+// in-situ (crearTurnoInSitu, todavía sin crear en Firebase — ver más abajo),
+// tampoco se crea nada. Solo se descarta el estado local (tsInicio/tsFin/GPS)
+// y se vuelve a la pantalla "Listo para iniciar" con la MISMA persona/avión,
+// lista para tocar INICIAR de nuevo — no manda de vuelta a elegir turno.
+function cancelarVuelo(){
+  if(!confirm('¿Cancelar este vuelo? No se va a grabar nada — queda todo como estaba.')) return;
+  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  liberarWakeLock();
+  tsInicio=null; tsFin=null; guardadoExitoso=false;
+  persistir();
+  mostrarPantallaVuelo(turnoActual);
+  toast('Vuelo cancelado — no se grabó nada');
+}
+$('btn-cancelar-vuelo').addEventListener('click',cancelarVuelo);
 
 function mostrarCierre(){
   const horas=calcHorasDecimal(tsInicio,tsFin);
@@ -1335,7 +1371,47 @@ async function guardar(){
   Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
 
   try{
-    if(turnoActual?.key){
+    if(turnoActual?.esInSitu){
+      // Turno in-situ: recién ACÁ se crea la reserva en Firebase — hasta este
+      // punto no se escribió absolutamente nada (por eso "Cancelar" en cualquier
+      // momento anterior no deja rastro ni requiere borrar nada a mano).
+      const tieneTraza=gpsPoints.length>1;
+      const nuevo={
+        nombre:      turnoActual.nombre,
+        email:       turnoActual.email,
+        fecha:       turnoActual.fecha,
+        hora:        turnoActual.hora,
+        avion:       turnoActual.avion,
+        tipo_vuelo:  'instruccion',
+        estado:      'aprobado',
+        rol:         turnoActual.rol,
+        instructor:  session.nombre,
+        aprobado_por:session.nombre,
+        cargado_por: session.nombre,
+        ts:          new Date().toISOString(),
+        ...datos,
+        ...(tieneTraza?{tiene_traza_gps:true}:{})
+      };
+      const nuevaRef=push(ref(db,'reservas'));
+      await set(nuevaRef,nuevo);
+      turnoActual={...nuevo,key:nuevaRef.key};
+      if(tieneTraza){
+        await set(ref(db,`vuelo_tracks/${nuevaRef.key}`),{
+          puntos: gpsPoints,
+          autor: session.nombre,
+          ts_guardado: new Date().toISOString()
+        });
+      }
+      // Misma acción de auditoría que usa "+ CARGAR TURNO" en turnos.html
+      // (alta_turno_manual), para que aparezca igual en Seguimiento/Consultas.
+      await set(push(ref(db,'auditoria')),{
+        accion:'alta_turno_manual',
+        rol:'instructor',
+        resultado:'exito',
+        detalle:`${session.nombre} cargó turno — ${nuevo.avion} — ${nuevo.fecha} ${nuevo.hora} hs — alumno: ${nuevo.nombre} — aprobado por ${session.nombre} — in situ desde vuelo.html`,
+        ts:new Date().toISOString()
+      });
+    } else if(turnoActual?.key){
       // Traza GPS: nodo aparte de /reservas para no engordar el payload que
       // turnos.html escucha en tiempo real con onValue — solo se pide bajo
       // demanda cuando alguien quiere ver el recorrido de un vuelo puntual.
@@ -1348,9 +1424,6 @@ async function guardar(){
         datos.tiene_traza_gps=true; // flag liviano en la reserva, para mostrar el ícono sin bajar la traza completa
       }
       await update(ref(db,`reservas/${turnoActual.key}`),datos);
-    } else {
-      // Vuelo manual: solo local (no hay reserva, tampoco se guarda la traza)
-      // Podría guardarse en /vuelos_manuales en el futuro
     }
     localStorage.removeItem(LS);
     localStorage.removeItem(LS_GPS_PUNTOS);
@@ -1358,6 +1431,7 @@ async function guardar(){
     liberarWakeLock();
     guardadoExitoso=true;
     $('v-cierre').style.display='none';
+    $('btn-cancelar-vuelo').style.display='none';
     $('v-guardado').style.display='block';
     $('btn-cambiar-turno').style.display='';
     $('guardado-detalle').textContent=
@@ -1379,6 +1453,7 @@ function resetVuelo(){
   $('btn-start-stop').style.display='';
   $('btn-start-stop').textContent='▶ INICIAR VUELO';
   $('btn-start-stop').className='btn btn-cyan';
+  $('btn-cancelar-vuelo').style.display='none';
   $('v-cierre').style.display='none';
   $('v-guardado').style.display='none';
   $('btn-cambiar-turno').style.display='';
