@@ -32,7 +32,1297 @@
   adaptado a que acá la versión vive en una constante JS, no en un div).
   Ver anterior:
   v3.2 · 2026-08-03
+  Ajuste pedido por Daniel: GRACIA_VENCIDO_MS bajado de 2 horas a 30<!DOCTYPE html>
+<!--
+==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v3.6 · 2026-08-04
+  Traza GPS opcional, a pedido de Daniel — el instructor decide por vuelo si
+  la activa (toggle en la pantalla previa a INICIAR, se bloquea una vez
+  iniciado el vuelo; recuerda la última preferencia en localStorage). Si está
+  activa, navigator.geolocation.watchPosition() va guardando puntos
+  {lat,lng,alt,ts} en memoria, con muestreo cada 10s (GPS_MUESTREO_MS —
+  watchPosition puede disparar más seguido, se descartan los puntos de en
+  medio). Los puntos se van espejando a localStorage (LS_GPS_PUNTOS) por si
+  la app se recarga a mitad de vuelo — init() los restaura y retoma el
+  watchPosition si corresponde (tsInicio sin tsFin + gps activo). Al
+  CONFIRMAR Y GUARDAR: si hay 2+ puntos, se suben enteros a un nodo aparte
+  /vuelo_tracks/{key} (mismo key que la reserva) — NO se agregan a
+  /reservas/{key} para no engordar el payload que turnos.html escucha en
+  tiempo real con onValue; solo se van a pedir bajo demanda cuando alguien
+  quiera ver el recorrido de un vuelo puntual. Se agrega un flag liviano
+  tiene_traza_gps:true en la reserva para poder mostrar un ícono sin bajar
+  la traza completa. Si el dispositivo no tiene geolocalización o el
+  usuario no da permiso, el vuelo se sigue registrando normal — un toast
+  avisa que no hubo traza, nunca bloquea el flujo de INICIAR/FINALIZAR.
+  Vuelos manuales (sin turno asociado, turnoActual null) no guardan traza
+  por no tener /reservas/{key} donde anclarla — mismo límite preexistente
+  que ya tenían las horas/aterrizajes de un vuelo manual.
+  Visualización de la traza (mapa): pendiente, próxima entrega — la idea
+  de Daniel es usar Google Maps para plotearla.
+  Ver anterior:
+  v3.5 · 2026-08-03
+  Pedido de Daniel: totalizador del día en la pestaña Libro. Arriba de la
+  lista de vuelos aparece una tarjeta con 3 números: cantidad de vuelos,
+  horas totales (suma de obs_privada_tiempo_vuelo, redondeado a 1
+  decimal) y aterrizajes totales (suma de obs_privada_aterrizajes) de esa
+  fecha. Se calcula sobre el mismo array `mis` que ya arma cargarLibro()
+  (solo vuelos finalizados y guardados), sin pegarle a Firebase de nuevo.
+  Ver anterior:
+  v3.4 · 2026-08-03
+  Pedido de Daniel: confirmación antes de INICIAR y FINALIZAR el vuelo,
+  solo como precaución ante un toque accidental (confirm() nativo en cada
+  rama del handler de btn-start-stop). El timestamp se graba recién
+  después de confirmar, así que refleja el momento real del OK, no el del
+  primer toque.
+  Ver anterior:
+  v3.3 · 2026-08-03
+  Pedido de Daniel: mismo chequeo de versión que ya tiene turnos.html.
+  Como corre standalone (PWA) y la pestaña puede quedar abierta días sin
+  recargar, era fácil terminar usando una versión vieja del archivo sin
+  darse cuenta. Cada 5 min (VERSION_POLL_MS) y al volver a primer plano
+  (visibilitychange), se vuelve a bajar este mismo HTML sin caché
+  (?_v=timestamp, cache:'no-store') y se compara la constante APP_VERSION
+  ahí adentro contra la que quedó corriendo en esta pestaña — si difieren,
+  aparece un banner fijo ámbar arriba de todo (fuera de screen-login y
+  app-shell, visible siempre) con botón "ACTUALIZAR AHORA" que recarga la
+  página. Nuevo extraerVersionDeHTML() (regex sobre "const APP_VERSION =
+  'X.X'", equivalente al que usa turnos.html sobre .hero-sub pero
+  adaptado a que acá la versión vive en una constante JS, no en un div).
+  Ver anterior:
+  v3.2 · 2026-08-03
   Ajuste pedido por Daniel: GRACIA_VENCIDO_MS bajado de 2 horas a 30
+  minutos. Criterio de Daniel: si el turno ya inició hace más de media
+  hora y no está activo (nadie tocó START), es un turno que nadie usó —
+  no corresponde seguir ofreciéndolo como "el de ahora". La lógica ya
+  contemplaba pasar al siguiente turno vigente más próximo automáticamente
+  al descartar el vencido (v3.1); acá solo cambia el número.
+  Ver anterior:
+  v3.1 · 2026-08-03
+  Fix reportado por Daniel: a las 19:30 la app ofrecía como "el turno de
+  ahora" uno de las 17:00, ya bien vencido. Causa: (1) el campo estado de
+  la reserva queda en 'aprobado' hasta que ALGUIEN abre turnos.html y
+  dispara vencerTurnosPendientes() del lado del cliente — no hay cron de
+  servidor para esto, así que si nadie tuvo la página abierta el turno
+  sigue figurando "aprobado" aunque ya pasó; (2) cargarTabVuelo() elegía
+  el turno con MENOR diferencia absoluta sin techo — 5 min o 5 horas para
+  atrás, daba igual.
+  Fix: nueva constante GRACIA_VENCIDO_MS (2 horas, ajustable). Para la
+  entrada automática (no forzada) se ignoran candidatos ya pasados por más
+  de ese margen — no se auto-ofrecen como "el de ahora". Si TODOS los
+  candidatos del día están más vencidos que el margen, se muestra "Ningún
+  turno para este momento" + botón "⚠ Ver turnos vencidos sin cerrar"
+  (nuevo btn-ver-vencidos) que fuerza la lista completa sin filtrar — así
+  quedan accesibles a mano, nunca se pierden. En esa lista forzada, los
+  turnos vencidos por más del margen se marcan con "⚠ VENCIDO" en ámbar
+  (nueva clase .turno-item.vencido/.tag-vencido, distinta de .actual/
+  .tag-actual que ya se usaba en cian para "en curso" en Pendientes).
+  Ver anterior:
+  v3.0 · 2026-08-03
+  Fix pedido por Daniel: el Libro mostraba la hora convertida a local
+  (America/Argentina/Ushuaia, UTC-3) en vez de UTC cruda — como esa zona
+  es exactamente la hora local del club, no se notaba a simple vista, pero
+  no es lo que se necesita para un libro de vuelo (convención aeronáutica:
+  registrar en UTC/Zulu). Ejemplo real: vuelo a las 18:10 hora local
+  (=21:10 UTC) se veía como "18:10" en vez de "21:10".
+  fmtUTC() ahora fuerza timeZone:'UTC' de verdad (antes decía UTC pero
+  convertía a Ushuaia — nombre engañoso, comportamiento incorrecto) y
+  agrega sufijo "Z" a lo mostrado. Se usa solo en el Libro (r.ts_despegue/
+  r.ts_aterrizaje). El timer EN VIVO mientras se vuela sigue en hora local
+  (tiene sentido operativo: mirar el reloj de pared mientras estás
+  volando) — esa función se renombró de fmtUTCFull a fmtLocalFull para
+  que el nombre ya no confunda. Agregado texto aclaratorio en la pestaña
+  Libro: "Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande".
+  No se tocó nada del guardado: ts_despegue/ts_aterrizaje ya se guardaban
+  en UTC crudo (.toISOString()) desde siempre — esto era solo un problema
+  de visualización.
+  Ver anterior:
+  v2.9 · 2026-08-03
+  Tipografía agrandada en toda la app, a pedido de Daniel — la app se usa
+  casi exclusivamente en celular. Foco especial en Libro (el que más se
+  quejaba de chico): vr-hora 14→19px, vr-alumno 16→19px, vr-avion 10→13px,
+  vr-datos 11→14px, más padding en las filas (14/16→16/18). También subido
+  en general: .label 10→12px, .card-title 12→14px, .err 11→13px, inputs
+  16→17px, botones 14→15px, btn-ghost 12→13px, tab-btn 11→13px, top-bar
+  nombre 13→15px / sub 10→12px, login h1 22→24px / p 10→12px, turno-hero
+  (avión 11→13px, hora 12→14px), estado-vuelo (label 11→13px, timestamp
+  28→30px, sub 10→12px), tiempo-calculado t-val 22→24px, turno-item (hora
+  20→22px, alumno 17→19px, avión 10→12px, flecha 18→22px), toast 12→14px,
+  badge-ok 10→12px, hints varios 10→12px. Sin tocar el layout ni la
+  lógica — solo tamaños y algo de padding/gap para que respire.
+  Ver anterior:
+  v2.8 · 2026-08-03
+  Fix pestaña Pendientes: mostraba turnos vencidos sin volar (heredado del
+  filtro de Vuelo, que sí necesita ver vencidos-con-aprobador para poder
+  cerrar un vuelo que ya pasó de hora). Pendientes es para adelantar turnos
+  FUTUROS, no para rescatar vencidos — ahora exige estado==='aprobado'
+  (nada de vencido) y hora del turno >= hora actual (evaluada en el
+  momento, no depende de que el cron ya haya marcado el estado).
+  Ver anterior:
+  v2.7 · 2026-08-03
+  Nueva pestaña "⏳ Pendientes", a pedido de Daniel — 3 pestañas ahora:
+  Vuelo | Pendientes | Libro.
+  - Vuelo: sin cambios de fondo — sigue mostrando el turno más cercano a
+    la hora actual y entrando directo (lógica de v2.6).
+  - Pendientes: lista TODOS los turnos aprobados/vencidos-con-aprobador
+    del día del instructor que todavía no tienen tiempo de vuelo cargado
+    (mismo filtro que Vuelo, sin el recorte al "más cercano"). Tocar un
+    ítem lo "activa" como turno actual y salta a la pestaña Vuelo — sirve
+    para adelantar un turno posterior si el de la hora no se presentó.
+    El turno actualmente en curso/con cierre sin guardar se marca con
+    "● EN CURSO" en la lista.
+  - Libro: sin cambios (vuelos ya finalizados y guardados, desde v2.3).
+  Nueva función activarTurno(turno): si hay un vuelo en curso sin guardar
+  (tsInicio sin tsFin) o un cierre sin guardar (tsFin sin haber tocado
+  CONFIRMAR), pide confirmación antes de descartarlo y activar el nuevo
+  turno — nueva variable guardadoExitoso distingue "ya guardado, listo
+  para saltar sin aviso" de "hay datos sin guardar, avisar". Nueva función
+  cambiarATab(nombre) centraliza el cambio de pestaña (la usan tanto el
+  click de las tabs como activarTurno).
+  Ver anterior:
+  v2.6 · 2026-08-03
+  Reescritura de la selección de turno, a pedido de Daniel: un instructor
+  no tiene dos turnos distintos a la misma fecha/hora (si eso pasara sería
+  un fallo de controles de turnos.html, no algo a resolver acá). Antes la
+  app juntaba todos los turnos aprobados del instructor en una ventana de
+  -1h/+4h respecto de ahora y mostraba una LISTA si había 2+, lo cual podía
+  incluir turnos de otro horario del mismo día (ej. uno a las 10 y otro a
+  las 13 apareciendo juntos a las 10:30) — mezclaba "el turno de ahora" con
+  "el próximo turno del día", y "Cambiar turno" no cambiaba nada en el caso
+  normal de un solo turno activo (volvía a auto-entrar al mismo).
+  Ahora: se descarta la ventana horaria, se calcula el turno con MENOR
+  diferencia absoluta respecto a la hora actual entre todos los aprobados/
+  vencidos-con-aprobador del día, y se entra directo a ese — "ahora te toca
+  volar con Juancito", sin elegir nada. Solo se arma lista si hay un empate
+  exacto de horario (anómalo) o si se fuerza con el nuevo parámetro
+  cargarTabVuelo(forzar=true), que ahora usa "Cambiar turno": lo convierte
+  en una pantalla de override real (ver la lista completa / elegir "Sin
+  turno asignado" aunque haya un turno asignado), en vez de un botón que no
+  hacía nada distinto al re-cargar.
+  Ver anterior:
+  v2.5 · 2026-08-03
+  Pedido de Daniel: el nombre que se ve al instalar en el celular pasa de
+  "ACRG Vuelo" a "Instructores". apple-mobile-web-app-title cambiado acá
+  (define el nombre en iOS) y short_name en manifest-vuelo.json cambiado
+  a "Instructores" (define el nombre en Android). Ícono también nuevo
+  (aporte de Daniel), mismo procesamiento de esquinas de siempre.
+  Ver anterior:
+  v2.4 · 2026-08-03
+  Versión de la app siempre visible en pantalla (antes solo estaba en este
+  comentario). Nueva constante APP_VERSION en el script, que puebla todos
+  los elementos .ver: uno en el top-bar (visible en todo momento dentro
+  de la app, ambas pestañas) y uno en la pantalla de login. A partir de
+  ahora hay DOS lugares para actualizar en cada bump: este comentario y
+  la constante APP_VERSION.
+  Ver anterior:
+  v2.3 · 2026-08-03
+  Fix pestaña Libro: mostraba todos los turnos aprobados/vencidos del
+  instructor para la fecha elegida, incluyendo los que todavía no se
+  volaron o no se guardaron (sin tiempo/aterrizajes cargados). Ahora
+  cargarLibro() exige obs_privada_tiempo_vuelo (mismo criterio que ya usa
+  el resto del sistema para "vuelo finalizado y registrado") — Libro pasa
+  a ser estrictamente el registro de vuelos ya cerrados con GUARDAR.
+  Ver anterior:
+  v2.2 · 2026-08-03
+  Auto-refresh: como corre standalone (PWA, sin botón de recarga), los
+  turnos nuevos/aprobados no se veían hasta cerrar y reabrir la app.
+  Ahora refresca solo: (1) cada 60s vía setInterval, (2) al volver a
+  primer plano (visibilitychange→visible), (3) al restaurar desde bfcache
+  en iOS standalone (pageshow con e.persisted). El refresh SOLO toca la
+  pantalla si vistaActual==='lista' (aún no se eligió turno) o si está en
+  la pestaña Libro (solo lectura) — nunca mientras hay un vuelo elegido,
+  iniciado (tsInicio) o recién terminado sin guardar (tsFin, form de
+  cierre): ese flujo sigue intacto hasta "Cambiar turno" o guardar.
+  Nueva variable vistaActual (seteada en mostrarVista) para saber qué
+  pantalla está activa sin tocar el DOM.
+  Ver anterior:
+  v2.1 · 2026-08-03
+  Soporte PWA (instalable como app): <link rel="manifest"> propio
+  (manifest-vuelo.json), apple-touch-icon e íconos propios (icon-vuelo-192,
+  icon-vuelo-512, icon-vuelo-512-maskable), apple-mobile-web-app-title
+  "ACRG Vuelo", registro de navigator.serviceWorker.register('/sw.js') al
+  final del script (mismo sw.js compartido de la raíz del repo, ya usado por
+  turnos/fpl/portal-alumno/peso-balance). Requiere subir manifest-vuelo.json
+  y los 3 íconos a la raíz del repo.
+  Ver anterior:
+  v2.0 · 2026-08-03
+  Flujo: login → turno del día → START (graba ts_despegue en Firebase) →
+         STOP (graba ts_aterrizaje) → confirmar con aterrizajes y obs →
+         guardar en reserva. Tab "Libro" para ver actividad por fecha.
+  Sin timer visual — solo timestamps UTC de inicio y fin.
+==================================================================================
+-->
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Instructores">
+<meta name="theme-color" content="#050d1a">
+<link rel="apple-touch-icon" href="/icon-vuelo-192.png">
+<link rel="manifest" href="/manifest-vuelo.json">
+<title>Vuelo · ACRG</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
+
+:root{
+  --bg:     #050d1a;
+  --bg2:    #0b1929;
+  --bg3:    #0f2035;
+  --cyan:   #00c8d4;
+  --amber:  #f0a500;
+  --green:  #22c55e;
+  --red:    #ef4444;
+  --white:  #e8f4fd;
+  --gray:   #4a6a8a;
+  --gray2:  #2a4a6a;
+  --mono:   'Share Tech Mono',monospace;
+  --ui:     'Rajdhani',sans-serif;
+  --disp:   'Orbitron',sans-serif;
+  --r:      14px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none;touch-action:manipulation}
+body{background:var(--bg);color:var(--white);font-family:var(--ui)}
+
+/* ── Screens ── */
+.screen{display:none;min-height:100dvh;flex-direction:column;padding:20px}
+.screen.active{display:flex}
+
+/* ── App shell con tabs ── */
+#app-shell{display:none;flex-direction:column;min-height:100dvh}
+#app-shell.active{display:flex}
+
+.top-bar{
+  display:flex;align-items:center;padding:16px 20px 12px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 16px);
+  background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);
+  gap:12px;flex:none;
+}
+.top-bar .inst-info{flex:1}
+.top-bar .inst-info .nombre{
+  font-family:var(--disp);font-size:15px;color:var(--cyan);letter-spacing:.08em;
+}
+.top-bar .inst-info .sub{
+  font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px;
+}
+.ver{font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em}
+.top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.btn-sm{
+  background:transparent;border:1px solid var(--gray2);border-radius:8px;
+  color:var(--gray);font-family:var(--mono);font-size:12px;padding:8px 12px;
+  cursor:pointer;letter-spacing:.06em;white-space:nowrap;
+}
+.btn-sm:active{background:rgba(255,255,255,.06)}
+
+/* Tab bar */
+.tab-bar{
+  display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;
+}
+.tab-btn{
+  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:13px;
+  letter-spacing:.08em;color:var(--gray);cursor:pointer;border:none;background:transparent;
+  text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
+}
+.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+
+/* Tab content */
+.tab-content{display:none;flex:1;overflow-y:auto;padding:20px}
+.tab-content.active{display:block}
+
+/* ── Elementos comunes ── */
+.label{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--gray);text-transform:uppercase;margin-bottom:8px;display:block}
+.card{background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:18px;margin-bottom:12px}
+.card-title{font-family:var(--disp);font-size:14px;color:var(--cyan);letter-spacing:.08em;margin-bottom:12px;text-transform:uppercase}
+.err{font-family:var(--mono);font-size:13px;color:var(--red);min-height:16px;text-align:center;margin-bottom:8px}
+
+input,textarea,select{
+  width:100%;background:var(--bg3);border:1px solid rgba(0,200,212,.2);
+  border-radius:10px;color:var(--white);font-family:var(--mono);
+  font-size:17px;padding:14px 15px;outline:none;transition:border .2s;
+}
+input:focus,textarea:focus,select:focus{border-color:var(--cyan)}
+textarea{resize:none;min-height:80px;line-height:1.5}
+
+.btn{
+  width:100%;padding:18px;border:none;border-radius:12px;
+  font-family:var(--disp);font-size:15px;font-weight:700;
+  letter-spacing:.1em;cursor:pointer;transition:all .12s;text-transform:uppercase;
+  margin-bottom:10px;
+}
+.btn:active{transform:scale(.97);opacity:.88}
+.btn:last-child{margin-bottom:0}
+.btn-cyan{background:var(--cyan);color:var(--bg)}
+.btn-red{background:var(--red);color:#fff}
+.btn-green{background:var(--green);color:var(--bg)}
+.btn-ghost{background:transparent;border:1px solid var(--gray2);color:var(--gray);font-size:13px;padding:14px}
+
+/* ── LOGIN ── */
+#screen-login{align-items:center;justify-content:center;gap:0}
+.login-hero{text-align:center;margin-bottom:36px}
+.login-hero .ico{font-size:48px;margin-bottom:8px}
+.login-hero h1{font-family:var(--disp);font-size:24px;color:var(--cyan);letter-spacing:.12em}
+.login-hero p{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:4px;letter-spacing:.08em}
+.login-card{width:100%;max-width:380px;background:var(--bg2);border:1px solid rgba(0,200,212,.2);border-radius:16px;padding:28px 22px}
+.field{margin-bottom:16px}
+
+/* ── TAB VUELO ── */
+.turno-hero{
+  background:var(--bg3);border:1px solid rgba(0,200,212,.2);border-radius:var(--r);
+  padding:20px;margin-bottom:20px;text-align:center;
+}
+.turno-hero .avion{font-family:var(--mono);font-size:13px;color:var(--amber);letter-spacing:.12em;margin-bottom:6px}
+.turno-hero .alumno{font-family:var(--disp);font-size:25px;color:var(--white);letter-spacing:.04em;margin-bottom:4px}
+.turno-hero .hora-turno{font-family:var(--mono);font-size:14px;color:var(--gray)}
+
+/* Estado del vuelo */
+.estado-vuelo{
+  text-align:center;padding:24px 0;margin-bottom:16px;
+}
+.estado-vuelo .estado-label{
+  font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--gray);
+  text-transform:uppercase;margin-bottom:8px;
+}
+.estado-vuelo .ts-display{
+  font-family:var(--disp);font-size:30px;color:var(--white);letter-spacing:.04em;
+}
+.estado-vuelo .ts-display.en-vuelo{color:var(--cyan)}
+.estado-vuelo .ts-display.finalizado{color:var(--green)}
+.estado-vuelo .ts-sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px}
+
+/* Tiempo calculado */
+.tiempo-calculado{
+  background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
+  border-radius:10px;padding:14px 16px;margin-bottom:12px;
+  display:flex;align-items:center;gap:12px;
+}
+.tiempo-calculado .t-val{font-family:var(--disp);font-size:24px;color:var(--green);flex:1}
+.btn-edit-t{
+  background:transparent;border:1px solid var(--gray2);border-radius:8px;
+  color:var(--gray);font-family:var(--mono);font-size:12px;padding:7px 11px;
+  cursor:pointer;white-space:nowrap;
+}
+
+/* Lista de turnos (cuando hay más de uno) */
+.turno-item{
+  background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);
+  padding:16px 18px;margin-bottom:10px;cursor:pointer;
+  display:flex;align-items:center;gap:14px;transition:border-color .15s;
+}
+.turno-item:active,.turno-item:hover{border-color:var(--cyan)}
+.turno-item .hora{font-family:var(--disp);font-size:22px;color:var(--cyan);min-width:62px}
+.turno-item .info{flex:1}
+.turno-item .alumno-n{font-family:var(--ui);font-size:19px;font-weight:700}
+.turno-item .avion-n{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px}
+.turno-item .arr{color:var(--gray);font-size:22px}
+.turno-item.actual{border-color:var(--cyan);background:rgba(0,200,212,.06)}
+.tag-actual{color:var(--cyan);font-weight:700}
+.turno-item.vencido{border-color:var(--amber);background:rgba(240,165,0,.06)}
+.tag-vencido{color:var(--amber);font-weight:700}
+
+/* ── TAB LIBRO ── */
+.libro-total{
+  display:flex;background:var(--bg3);border:1px solid rgba(0,200,212,.25);border-radius:var(--r);
+  padding:16px 8px;margin-bottom:16px;
+}
+.libro-total .lt-item{flex:1;text-align:center}
+.libro-total .lt-val{font-family:var(--disp);font-size:24px;color:var(--cyan)}
+.libro-total .lt-lbl{font-family:var(--mono);font-size:11px;color:var(--gray);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+.vuelo-row{
+  background:var(--bg2);border:1px solid rgba(0,200,212,.1);border-radius:var(--r);
+  padding:16px 18px;margin-bottom:10px;
+}
+.vuelo-row .vr-top{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.vuelo-row .vr-hora{font-family:var(--disp);font-size:19px;color:var(--cyan)}
+.vuelo-row .vr-alumno{font-family:var(--ui);font-size:19px;font-weight:700;flex:1}
+.vuelo-row .vr-avion{font-family:var(--mono);font-size:13px;color:var(--amber)}
+.vuelo-row .vr-datos{
+  display:flex;gap:16px;font-family:var(--mono);font-size:14px;color:var(--gray);
+  flex-wrap:wrap;row-gap:6px;
+}
+.vuelo-row .vr-datos span{display:flex;align-items:center;gap:5px}
+.vr-val{color:var(--white)}
+.empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+  left:50%;transform:translateX(-50%) translateY(70px);
+  background:var(--bg3);border:1px solid rgba(0,200,212,.3);border-radius:10px;
+  padding:12px 20px;font-family:var(--mono);font-size:14px;color:var(--white);
+  white-space:nowrap;transition:transform .25s;z-index:999;pointer-events:none;
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+.spinner{width:28px;height:28px;border:3px solid rgba(0,200,212,.15);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.badge-ok{display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:12px;padding:3px 9px;letter-spacing:.05em}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="banner-version-nueva" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--amber);color:#0a0a0a;font-family:var(--mono);font-size:12px;letter-spacing:.05em;padding:10px 16px;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.45)">
+  <span>⚠ Esta pestaña está corriendo una <b>versión vieja</b> de la app — actualizá antes de seguir.</span>
+  <button id="btn-recargar-version" style="font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:8px;cursor:pointer">ACTUALIZAR AHORA</button>
+</div>
+
+<div id="screen-login" class="screen active">
+  <div class="login-hero">
+    <div class="ico">✈</div>
+    <h1>ACRG VUELO</h1>
+    <p>REGISTRO DE VUELO · INSTRUCTORES</p>
+    <div class="ver" id="login-ver" style="margin-top:6px">—</div>
+  </div>
+  <div class="login-card">
+    <div class="field">
+      <span class="label">Usuario</span>
+      <input id="l-user" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="tu_usuario">
+    </div>
+    <div class="field">
+      <span class="label">Contraseña</span>
+      <input id="l-pass" type="password" placeholder="••••••">
+    </div>
+    <div class="err" id="l-err"></div>
+    <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app-shell">
+  <!-- Top bar -->
+  <div class="top-bar">
+    <div class="inst-info">
+      <div class="nombre" id="sh-nombre">—</div>
+      <div class="sub" id="sh-fecha">—</div>
+    </div>
+    <div class="top-actions">
+      <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+      <div class="ver" id="app-ver">—</div>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="vuelo">✈ Vuelo</button>
+    <button class="tab-btn" data-tab="pendientes">⏳ Pendientes</button>
+    <button class="tab-btn" data-tab="libro">📋 Libro</button>
+  </div>
+
+  <!-- Tab: VUELO -->
+  <div id="tab-vuelo" class="tab-content active">
+
+    <!-- Estado A: cargando -->
+    <div id="v-loading"><div class="spinner"></div></div>
+
+    <!-- Estado B: elegir turno (múltiples) -->
+    <div id="v-lista" style="display:none">
+      <span class="label">Tus turnos aprobados de hoy</span>
+      <div id="v-lista-items"></div>
+      <button class="btn btn-ghost" id="btn-ver-vencidos" style="display:none;border-color:var(--amber);color:var(--amber)">⚠ Ver turnos vencidos sin cerrar</button>
+      <button class="btn btn-ghost" id="btn-sin-turno">+ Sin turno asignado</button>
+    </div>
+
+    <!-- Estado C: vuelo en curso / finalizado -->
+    <div id="v-vuelo" style="display:none">
+
+      <!-- Info del turno -->
+      <div class="turno-hero" id="turno-hero">
+        <div class="avion" id="th-avion">—</div>
+        <div class="alumno" id="th-alumno">—</div>
+        <div class="hora-turno" id="th-hora">—</div>
+      </div>
+
+      <!-- Estado timestamps -->
+      <div class="estado-vuelo" id="estado-vuelo">
+        <div class="estado-label" id="ev-label">Listo para iniciar</div>
+        <div class="ts-display" id="ev-ts">—</div>
+        <div class="ts-sub" id="ev-sub"></div>
+      </div>
+
+      <!-- Traza GPS (opcional, a criterio del instructor) -->
+      <div class="card" id="gps-toggle-card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer">
+        <div>
+          <div class="card-title" style="margin-bottom:2px">📍 Traza GPS</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--gray)" id="gps-toggle-sub">Registra el recorrido del vuelo (opcional)</div>
+        </div>
+        <div id="gps-toggle-track" style="width:38px;height:20px;border-radius:10px;position:relative;transition:background .2s;flex:none">
+          <div id="gps-toggle-thumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+        </div>
+      </div>
+
+      <!-- Botón principal -->
+      <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
+
+      <!-- Formulario cierre (oculto hasta STOP) -->
+      <div id="v-cierre" style="display:none">
+        <div class="card">
+          <div class="card-title">Tiempo de vuelo</div>
+          <div class="tiempo-calculado">
+            <div class="t-val" id="t-calculado">—</div>
+            <button class="btn-edit-t" id="btn-edit-t">✎ editar</button>
+          </div>
+          <input id="t-manual" type="number" step="0.1" min="0" max="12"
+            placeholder="ej: 1.3 (horas decimales)" style="display:none;margin-top:8px">
+          <div style="font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px">
+            En horas decimales · ej: 1.5 = 1h 30min
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Aterrizajes</div>
+          <input id="c-aterr" type="number" min="0" max="99" placeholder="Cantidad de aterrizajes">
+        </div>
+
+        <div class="card">
+          <div class="card-title">Observación <span style="color:var(--gray);font-size:12px;font-family:var(--mono)">(privada · opcional)</span></div>
+          <textarea id="c-obs" placeholder="Maniobras practicadas, condiciones, notas..."></textarea>
+        </div>
+
+        <div class="err" id="c-err" style="margin-top:4px"></div>
+        <button class="btn btn-green" id="btn-confirmar">✓ CONFIRMAR Y GUARDAR</button>
+        <button class="btn btn-ghost" id="btn-nuevo-vuelo">Nuevo vuelo</button>
+      </div>
+
+      <!-- Confirmación guardado -->
+      <div id="v-guardado" style="display:none;text-align:center;padding:20px 0">
+        <div style="font-size:40px;margin-bottom:12px">✓</div>
+        <div style="font-family:var(--disp);font-size:16px;color:var(--green);letter-spacing:.1em;margin-bottom:8px">GUARDADO</div>
+        <div style="font-family:var(--mono);font-size:13px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
+        <button class="btn btn-cyan" id="btn-otro-vuelo">Siguiente vuelo</button>
+      </div>
+
+      <button class="btn btn-ghost" id="btn-cambiar-turno" style="margin-top:4px">← Cambiar turno</button>
+    </div>
+
+  </div>
+
+  <!-- Tab: PENDIENTES -->
+  <div id="tab-pendientes" class="tab-content">
+    <span class="label">Turnos del día pendientes de volar</span>
+    <div id="p-items"><div class="spinner"></div></div>
+  </div>
+
+  <!-- Tab: LIBRO -->
+  <div id="tab-libro" class="tab-content">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span class="label" style="margin:0;flex:none">Fecha</span>
+      <input id="libro-fecha" type="date" style="flex:1;font-size:14px;padding:10px 12px">
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:16px">
+      Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande
+    </div>
+    <div id="libro-contenido"><div class="empty-libro">Seleccioná una fecha para ver tu actividad.</div></div>
+  </div>
+
+</div><!-- /app-shell -->
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getDatabase, ref, get, update, set } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+
+const app = initializeApp({
+  apiKey:'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
+  authDomain:'turnos-lv-oad.firebaseapp.com',
+  databaseURL:'https://turnos-lv-oad-default-rtdb.firebaseio.com',
+  projectId:'turnos-lv-oad',
+  messagingSenderId:'855020455192',
+  appId:'1:855020455192:web:4b6d18f1b2efbb52faca6d',
+});
+const db = getDatabase(app);
+
+// ── Helpers ───────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
+const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
+const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
+const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
+
+function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
+function showEl(id,show=true){ $(id).style.display=show?($(id).tagName==='BUTTON'||$(id).classList.contains('btn')?'block':'block'):'none'; }
+
+// ── Estado ────────────────────────────────────────────────
+let session = null;
+let turnoActual = null;   // reserva seleccionada (o null)
+let tsInicio = null;      // ISO string — momento de START
+let tsFin = null;         // ISO string — momento de STOP
+let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
+let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
+const LS = 'acrg-vuelo-v2';
+const APP_VERSION = '3.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+
+// ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
+const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
+const LS_GPS_PREF    = 'acrg-vuelo-gps-pref';      // preferencia recordada entre vuelos (on/off)
+const GPS_MUESTREO_MS = 10000; // 10s entre puntos, a pedido de Daniel
+let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1'; // toggle actual (editable solo antes de iniciar)
+let gpsWatchId     = null;   // id de navigator.geolocation.watchPosition, null si no está corriendo
+let gpsPoints      = [];     // [{lat,lng,alt,ts}] del vuelo en curso
+let gpsUltimoPunto = 0;      // Date.now() del último punto guardado, para el muestreo cada 10s
+document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
+
+// ── Init ─────────────────────────────────────────────────
+init();
+
+function init(){
+  // Restaurar sesión de turnos.html
+  try{
+    const s=JSON.parse(sessionStorage.getItem('lvoad-session')||'{}');
+    if(s&&s.tipo==='instructor'&&s.nombre) session={user:s.user,nombre:s.nombre,email:s.email||''};
+  }catch{}
+
+  // Restaurar vuelo en curso desde localStorage
+  try{
+    const est=JSON.parse(localStorage.getItem(LS)||'null');
+    if(est){
+      turnoActual=est.turno||null;
+      tsInicio=est.tsInicio||null;
+      tsFin=est.tsFin||null;
+      // Si el vuelo seguía en curso con GPS activo, retoma el muestreo
+      // (watchPosition se corta solo con la recarga de página).
+      if(tsInicio&&!tsFin&&est.gpsHabilitado){
+        gpsHabilitado=true;
+        try{ gpsPoints=JSON.parse(localStorage.getItem(LS_GPS_PUNTOS)||'[]'); }catch{ gpsPoints=[]; }
+        iniciarTrackGPS();
+      }
+    }
+  }catch{}
+
+  if(session){
+    abrirApp();
+  } else {
+    $('screen-login').classList.add('active');
+  }
+}
+
+// ── LOGIN ─────────────────────────────────────────────────
+$('btn-login').addEventListener('click',login);
+$('l-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+
+async function login(){
+  const user=$('l-user').value.trim().toLowerCase();
+  const pass=$('l-pass').value;
+  $('l-err').textContent='';
+  if(!user||!pass){$('l-err').textContent='Completá los campos.';return;}
+  $('btn-login').disabled=true;$('btn-login').textContent='...';
+  try{
+    const snap=await get(ref(db,'instructores'));
+    const inst=snap.val()||{};
+    let found=null;
+    Object.entries(inst).forEach(([k,v])=>{
+      if((v.user||k)===user&&v.pass===pass)
+        found={user:v.user||k,nombre:v.nombre||k,email:v.email||''};
+    });
+    if(!found){$('l-err').textContent='Usuario o contraseña incorrectos.';return;}
+    session=found;
+    sessionStorage.setItem('lvoad-session',JSON.stringify({tipo:'instructor',...session}));
+    abrirApp();
+  }catch(e){$('l-err').textContent='Error de conexión.';}
+  finally{$('btn-login').disabled=false;$('btn-login').textContent='INGRESAR';}
+}
+
+// ── APP SHELL ─────────────────────────────────────────────
+function abrirApp(){
+  $('screen-login').classList.remove('active');
+  $('app-shell').classList.add('active');
+  $('sh-nombre').textContent=session.nombre.split(' ')[0];
+  $('sh-fecha').textContent=fmtFecha(hoy());
+  // Libro: fecha default = hoy
+  $('libro-fecha').value=hoy();
+  cargarTabVuelo();
+}
+
+// Tabs
+function cambiarATab(nombre){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===nombre));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('active',c.id==='tab-'+nombre));
+}
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    cambiarATab(btn.dataset.tab);
+    if(btn.dataset.tab==='libro') cargarLibro();
+    else if(btn.dataset.tab==='pendientes') cargarPendientes();
+  });
+});
+
+// ── TAB VUELO ─────────────────────────────────────────────
+// Un instructor no tiene dos turnos distintos a la misma fecha/hora (si eso
+// pasara sería un fallo de los controles de turnos.html, no algo a resolver
+// acá). Por eso la app no arma una "lista de turnos posibles": calcula cuál
+// es el turno más cercano a la hora actual y entra directo a ese — la idea
+// es "ahora te toca volar con Juancito", sin que el instructor tenga que
+// elegir nada. Solo se muestra una lista si hay un empate exacto de horario
+// (caso anómalo) o si se fuerza la pantalla de selección con "Cambiar turno".
+async function cargarTabVuelo(forzar=false){
+  // Si hay un vuelo en curso o finalizado, mostrar directamente (salvo que se fuerce el cambio)
+  if(!forzar&&(tsInicio||tsFin)){
+    mostrarPantallaVuelo(turnoActual);
+    return;
+  }
+
+  mostrarVista('loading');
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const fecha=hoy();
+    const ahora=new Date();
+    const misTurnos=todas.filter(r=>{
+      if(r.fecha!==fecha) return false;
+      const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
+                     r.instructor===session.user||r.aprobado_por===session.user;
+      if(!esDeEste) return false;
+      // Estado: aprobado, o vencido con aprobado_por (pasó la hora pero fue un vuelo real)
+      const estadoOk=r.estado==='aprobado'||(r.estado==='vencido'&&r.aprobado_por);
+      if(!estadoOk) return false;
+      // Excluir turnos que ya tienen tiempo de vuelo cargado — ya se voló y registró
+      if(r.obs_privada_tiempo_vuelo) return false;
+      return true;
+    }).map(r=>{
+      const horaT=r.hora||r.horaInicio||'00:00';
+      const [hh,mm]=horaT.split(':').map(Number);
+      const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
+      return {...r,_diffAbs:Math.abs(ahora-turnoTs),_pasado:turnoTs<ahora};
+    }).sort((a,b)=>a._diffAbs-b._diffAbs);
+
+    // Techo de "atraso razonable": el campo estado del turno queda en 'aprobado'
+    // hasta que alguien abre turnos.html y dispara vencerTurnosPendientes() del
+    // lado del cliente — no hay cron de servidor para esto. Si nadie tuvo la
+    // página abierta, un turno de hace 5 horas puede seguir figurando "aprobado"
+    // y sería absurdo ofrecerlo como "el de ahora". Por eso, para la entrada
+    // automática (no forzada), se ignoran candidatos ya pasados por más de
+    // GRACIA_VENCIDO_MS — pero siguen existiendo y son accesibles a mano.
+    const GRACIA_VENCIDO_MS=30*60000; // 30 minutos — ajustable
+    const vigentes=forzar?misTurnos:misTurnos.filter(r=>!(r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS));
+    const vencidosViejos=misTurnos.filter(r=>r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS);
+
+    if(vigentes.length===0){
+      // Sin turnos vigentes — mostrar lista vacía con opción manual
+      // (y, si hay turnos viejos sin cerrar, un acceso explícito para no perderlos)
+      $('v-lista-items').innerHTML =
+        misTurnos.length===0
+          ? '<div class="empty-libro" style="padding:24px 0">Sin turnos aprobados para hoy.</div>'
+          : `<div class="empty-libro" style="padding:24px 0">Ningún turno para este momento.<br>Tenés ${vencidosViejos.length} turno${vencidosViejos.length>1?'s':''} vencido${vencidosViejos.length>1?'s':''} sin cerrar de hoy.</div>`;
+      $('btn-ver-vencidos').style.display=vencidosViejos.length?'':'none';
+      mostrarVista('lista');
+    } else if(!forzar&&vigentes.filter(r=>r._diffAbs===vigentes[0]._diffAbs).length===1){
+      // Caso normal: un único turno es el más cercano a la hora actual — entrada directa
+      mostrarPantallaVuelo(vigentes[0]);
+    } else {
+      // Forzado ("Cambiar turno"/"Ver vencidos") o empate exacto de horario (anómalo) — mostrar para elegir
+      $('btn-ver-vencidos').style.display='none';
+      $('v-lista-items').innerHTML=vigentes.map(r=>`
+        <div class="turno-item${r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS?' vencido':''}" data-key="${r.key}">
+          <div class="hora">${r.hora||r.horaInicio||'—'}</div>
+          <div class="info">
+            <div class="alumno-n">${r.nombre||'—'}</div>
+            <div class="avion-n">${r.avion||'LV-OAD'}${r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS?' · <span class="tag-vencido">⚠ VENCIDO</span>':''}</div>
+          </div>
+          <div class="arr">›</div>
+        </div>`).join('');
+      document.querySelectorAll('#v-lista-items .turno-item').forEach(el=>{
+        el.addEventListener('click',()=>{
+          const t=vigentes.find(r=>r.key===el.dataset.key);
+          mostrarPantallaVuelo(t);
+        });
+      });
+      mostrarVista('lista');
+    }
+  }catch(e){
+    $('v-lista-items').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
+    mostrarVista('lista');
+  }
+}
+
+// ── TAB PENDIENTES ────────────────────────────────────────
+// Lista completa de turnos del día del instructor que todavía no se
+// volaron/registraron (los mismos criterios que usa Vuelo, sin el filtro
+// de "el más cercano"). Sirve para adelantar un turno posterior si el de
+// ahora no se presentó, tocando el ítem correspondiente.
+async function cargarPendientes(){
+  $('p-items').innerHTML='<div class="spinner"></div>';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const fecha=hoy();
+    const ahora=new Date();
+    const pend=todas.filter(r=>{
+      if(r.fecha!==fecha) return false;
+      const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
+                     r.instructor===session.user||r.aprobado_por===session.user;
+      if(!esDeEste) return false;
+      if(r.estado!=='aprobado') return false; // solo aprobados — nada vencido
+      if(r.obs_privada_tiempo_vuelo) return false; // ya volado y guardado
+      // Por venir: la hora del turno todavía no llegó
+      const horaT=r.hora||r.horaInicio||'00:00';
+      const [hh,mm]=horaT.split(':').map(Number);
+      const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
+      return turnoTs>=ahora;
+    }).sort((a,b)=>(a.hora||a.horaInicio||'').localeCompare(b.hora||b.horaInicio||''));
+
+    if(!pend.length){
+      $('p-items').innerHTML='<div class="empty-libro">Sin turnos pendientes para hoy.</div>';
+      return;
+    }
+
+    $('p-items').innerHTML=pend.map(r=>{
+      const esActual=!!(turnoActual&&r.key===turnoActual.key&&(tsInicio||tsFin));
+      return `<div class="turno-item${esActual?' actual':''}" data-key="${r.key}">
+        <div class="hora">${r.hora||r.horaInicio||'—'}</div>
+        <div class="info">
+          <div class="alumno-n">${r.nombre||'—'}</div>
+          <div class="avion-n">${r.avion||'LV-OAD'}${esActual?' · <span class="tag-actual">● EN CURSO</span>':''}</div>
+        </div>
+        <div class="arr">›</div>
+      </div>`;
+    }).join('');
+
+    document.querySelectorAll('#p-items .turno-item').forEach(el=>{
+      el.addEventListener('click',()=>{
+        const t=pend.find(r=>r.key===el.dataset.key);
+        if(t) activarTurno(t);
+      });
+    });
+  }catch(e){
+    $('p-items').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
+  }
+}
+
+// Activa desde Pendientes un turno como el actual en Vuelo, adelantándolo
+// aunque no sea el más cercano en horario (turno anterior no se presentó).
+function activarTurno(turno){
+  // Si ya es el turno activo, solo llevar a la pantalla de vuelo sin tocar nada
+  if(turnoActual&&turno.key===turnoActual.key&&(tsInicio||tsFin)){
+    cambiarATab('vuelo');
+    return;
+  }
+  // Evitar perder un vuelo en curso o un cierre sin guardar por accidente
+  if(tsInicio&&!tsFin){
+    if(!confirm('Hay un vuelo en curso sin guardar. ¿Descartarlo y activar este turno?')) return;
+  } else if(tsFin&&!guardadoExitoso){
+    if(!confirm('Hay un cierre de vuelo sin guardar. ¿Descartarlo y activar este turno?')) return;
+  }
+  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  turnoActual=turno;tsInicio=null;tsFin=null;guardadoExitoso=false;
+  localStorage.removeItem(LS);
+  mostrarPantallaVuelo(turno);
+  cambiarATab('vuelo');
+}
+
+$('btn-sin-turno').addEventListener('click',()=>mostrarPantallaVuelo(null));
+$('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
+$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];localStorage.removeItem(LS_GPS_PUNTOS);turnoActual=null;tsInicio=null;tsFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
+$('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
+$('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
+
+function mostrarVista(v){
+  vistaActual=v;
+  $('v-loading').style.display=v==='loading'?'block':'none';
+  $('v-lista').style.display=v==='lista'?'block':'none';
+  $('v-vuelo').style.display=v==='vuelo'?'block':'none';
+}
+
+function mostrarPantallaVuelo(turno){
+  turnoActual=turno;
+  mostrarVista('vuelo');
+
+  // Hero del turno
+  if(turno){
+    $('th-avion').textContent=turno.avion||'LV-OAD';
+    $('th-alumno').textContent=turno.nombre||'—';
+    $('th-hora').textContent=`Turno: ${turno.hora||turno.horaInicio||'—'} hs`;
+  } else {
+    $('th-avion').textContent='Vuelo manual';
+    $('th-alumno').textContent=session.nombre;
+    $('th-hora').textContent='Sin reserva asignada';
+  }
+
+  // Mostrar estado según lo que hay en memoria
+  if(tsFin){
+    // Ya finalizó — mostrar formulario de cierre
+    actualizarEstado('finalizado');
+    $('gps-toggle-card').style.display='none';
+    mostrarCierre();
+  } else if(tsInicio){
+    // En vuelo
+    actualizarEstado('en-vuelo');
+    $('gps-toggle-card').style.display='flex';
+    pintarToggleGPS();
+    $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
+    $('btn-start-stop').className='btn btn-red';
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='none';
+    $('btn-cambiar-turno').style.display='none';
+  } else {
+    // Sin iniciar
+    actualizarEstado('idle');
+    $('gps-toggle-card').style.display='flex';
+    pintarToggleGPS();
+    $('btn-start-stop').textContent='▶ INICIAR VUELO';
+    $('btn-start-stop').className='btn btn-cyan';
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='none';
+    $('btn-cambiar-turno').style.display='';
+  }
+}
+
+function actualizarEstado(estado){
+  const label=$('ev-label'), ts=$('ev-ts'), sub=$('ev-sub');
+  ts.className='ts-display';
+  if(estado==='idle'){
+    label.textContent='Listo para iniciar';
+    ts.textContent='—';
+    sub.textContent='';
+  } else if(estado==='en-vuelo'){
+    label.textContent='Despegó a las';
+    ts.textContent=fmtLocalFull(tsInicio);
+    ts.classList.add('en-vuelo');
+    sub.textContent='Hora local · esperando aterrizaje...';
+  } else if(estado==='finalizado'){
+    label.textContent='Aterrizó a las';
+    ts.textContent=fmtLocalFull(tsFin);
+    ts.classList.add('finalizado');
+    const horas=calcHorasDecimal(tsInicio,tsFin);
+    sub.textContent=`Despegue: ${fmtLocalFull(tsInicio)} · Vuelo: ${horas} hs`;
+  }
+}
+
+// ── Toggle GPS ───────────────────────────────────────────
+function pintarToggleGPS(){
+  const track=$('gps-toggle-track'), sub=$('gps-toggle-sub'), card=$('gps-toggle-card');
+  const bloqueado=!!tsInicio; // no se puede cambiar con el vuelo ya iniciado
+  track.style.background=gpsHabilitado?'var(--cyan)':'var(--gray2)';
+  $('gps-toggle-thumb').style.left=gpsHabilitado?'20px':'2px';
+  card.style.opacity=bloqueado?'.6':'1';
+  card.style.cursor=bloqueado?'default':'pointer';
+  if(bloqueado){
+    sub.textContent=gpsHabilitado?'Registrando cada '+(GPS_MUESTREO_MS/1000)+'s...':'Desactivada para este vuelo';
+  } else {
+    sub.textContent='Registra el recorrido del vuelo (opcional)';
+  }
+}
+function toggleGPS(){
+  if(tsInicio) return; // bloqueado durante el vuelo
+  gpsHabilitado=!gpsHabilitado;
+  localStorage.setItem(LS_GPS_PREF,gpsHabilitado?'1':'0');
+  pintarToggleGPS();
+}
+$('gps-toggle-card').addEventListener('click',toggleGPS);
+
+// ── Captura de traza GPS ─────────────────────────────────
+function iniciarTrackGPS(){
+  if(!('geolocation' in navigator)){
+    toast('Este dispositivo no permite obtener ubicación — el vuelo se registra igual, sin traza');
+    return;
+  }
+  gpsWatchId=navigator.geolocation.watchPosition(
+    (pos)=>{
+      const ahora=Date.now();
+      if(ahora-gpsUltimoPunto<GPS_MUESTREO_MS) return; // muestreo cada 10s, watchPosition puede disparar más seguido
+      gpsUltimoPunto=ahora;
+      gpsPoints.push({
+        lat: +pos.coords.latitude.toFixed(6),
+        lng: +pos.coords.longitude.toFixed(6),
+        alt: pos.coords.altitude!=null?Math.round(pos.coords.altitude):null,
+        ts:  new Date().toISOString()
+      });
+      try{ localStorage.setItem(LS_GPS_PUNTOS,JSON.stringify(gpsPoints)); }catch(e){}
+    },
+    (err)=>{
+      console.warn('GPS error:',err);
+      toast('No se pudo activar el GPS — el vuelo se registra igual, sin traza');
+    },
+    { enableHighAccuracy:true, maximumAge:5000, timeout:15000 }
+  );
+}
+function detenerTrackGPS(){
+  if(gpsWatchId!=null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId=null; }
+}
+
+// START / STOP
+$('btn-start-stop').addEventListener('click',()=>{
+  if(!tsInicio){
+    // START — confirmar antes de grabar (evita un toque accidental)
+    if(!confirm('¿Iniciar el vuelo ahora?')) return;
+    tsInicio=new Date().toISOString();
+    if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); }
+    persistir();
+    actualizarEstado('en-vuelo');
+    pintarToggleGPS();
+    $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
+    $('btn-start-stop').className='btn btn-red';
+    $('btn-cambiar-turno').style.display='none';
+    toast('Vuelo iniciado · '+fmtLocalFull(tsInicio));
+  } else {
+    // STOP — confirmar antes de grabar
+    if(!confirm('¿Finalizar el vuelo ahora?')) return;
+    tsFin=new Date().toISOString();
+    detenerTrackGPS();
+    persistir();
+    actualizarEstado('finalizado');
+    $('btn-start-stop').style.display='none';
+    mostrarCierre();
+  }
+});
+
+function mostrarCierre(){
+  const horas=calcHorasDecimal(tsInicio,tsFin);
+  $('t-calculado').textContent=`${horas} hs`;
+  $('t-manual').style.display='none';
+  $('btn-edit-t').textContent='✎ editar';
+  $('c-err').textContent='';
+  $('v-cierre').style.display='block';
+  $('v-guardado').style.display='none';
+  $('btn-start-stop').style.display='none';
+}
+
+// Editar tiempo
+$('btn-edit-t').addEventListener('click',()=>{
+  const inp=$('t-manual');
+  if(inp.style.display==='none'){
+    inp.value=calcHorasDecimal(tsInicio,tsFin);
+    inp.style.display='block';
+    inp.focus();
+    $('btn-edit-t').textContent='✓ ok';
+  } else {
+    const v=parseFloat(inp.value);
+    if(!isNaN(v)&&v>0) $('t-calculado').textContent=`${Math.round(v*10)/10} hs`;
+    inp.style.display='none';
+    $('btn-edit-t').textContent='✎ editar';
+  }
+});
+
+// CONFIRMAR Y GUARDAR
+$('btn-confirmar').addEventListener('click',guardar);
+
+async function guardar(){
+  const tManual=$('t-manual').style.display!=='none';
+  let horas=tManual
+    ? (parseFloat($('t-manual').value)||calcHorasDecimal(tsInicio,tsFin))
+    : parseFloat($('t-calculado').textContent);
+  horas=Math.round(horas*10)/10;
+  const aterr=parseInt($('c-aterr').value||'0')||0;
+  const obs=$('c-obs').value.trim();
+  $('c-err').textContent='';
+
+  if(!horas||horas<=0){$('c-err').textContent='El tiempo de vuelo no puede ser 0.';return;}
+
+  $('btn-confirmar').disabled=true;
+  $('btn-confirmar').textContent='Guardando...';
+
+  const datos={
+    obs_privada_tiempo_vuelo: horas,
+    obs_privada_aterrizajes:  aterr||null,
+    obs_privada:              obs||null,
+    obs_privada_autor:        session.nombre,
+    obs_privada_ts:           new Date().toISOString(),
+    ts_despegue:              tsInicio,
+    ts_aterrizaje:            tsFin,
+  };
+  // Limpiar nulls
+  Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
+
+  try{
+    if(turnoActual?.key){
+      // Traza GPS: nodo aparte de /reservas para no engordar el payload que
+      // turnos.html escucha en tiempo real con onValue — solo se pide bajo
+      // demanda cuando alguien quiere ver el recorrido de un vuelo puntual.
+      if(gpsPoints.length>1){
+        await set(ref(db,`vuelo_tracks/${turnoActual.key}`),{
+          puntos: gpsPoints,
+          autor: session.nombre,
+          ts_guardado: new Date().toISOString()
+        });
+        datos.tiene_traza_gps=true; // flag liviano en la reserva, para mostrar el ícono sin bajar la traza completa
+      }
+      await update(ref(db,`reservas/${turnoActual.key}`),datos);
+    } else {
+      // Vuelo manual: solo local (no hay reserva, tampoco se guarda la traza)
+      // Podría guardarse en /vuelos_manuales en el futuro
+    }
+    localStorage.removeItem(LS);
+    localStorage.removeItem(LS_GPS_PUNTOS);
+    gpsPoints=[];
+    guardadoExitoso=true;
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='block';
+    $('btn-cambiar-turno').style.display='';
+    $('guardado-detalle').textContent=
+      `${turnoActual?.nombre||'Vuelo manual'} · ${horas} hs · ${aterr} aterrizajes`;
+    toast('✓ Guardado correctamente');
+  }catch(e){
+    $('c-err').textContent='Error al guardar: '+e.message;
+    console.error(e);
+  }finally{
+    $('btn-confirmar').disabled=false;
+    $('btn-confirmar').textContent='✓ CONFIRMAR Y GUARDAR';
+  }
+}
+
+function resetVuelo(){
+  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  tsInicio=null;tsFin=null;turnoActual=null;guardadoExitoso=false;
+  localStorage.removeItem(LS);
+  $('btn-start-stop').style.display='';
+  $('btn-start-stop').textContent='▶ INICIAR VUELO';
+  $('btn-start-stop').className='btn btn-cyan';
+  $('v-cierre').style.display='none';
+  $('v-guardado').style.display='none';
+  $('btn-cambiar-turno').style.display='';
+  $('gps-toggle-card').style.display='flex';
+  pintarToggleGPS();
+  actualizarEstado('idle');
+}
+
+function persistir(){
+  localStorage.setItem(LS,JSON.stringify({turno:turnoActual,tsInicio,tsFin,gpsHabilitado}));
+}
+
+// ── TAB LIBRO ─────────────────────────────────────────────
+$('libro-fecha').addEventListener('change',cargarLibro);
+
+async function cargarLibro(){
+  const fecha=$('libro-fecha').value;
+  if(!fecha) return;
+  $('libro-contenido').innerHTML='<div class="spinner"></div>';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const mis=todas.filter(r=>
+      r.fecha===fecha&&
+      (r.instructor===session.nombre||r.aprobado_por===session.nombre||
+       r.instructor===session.user||r.aprobado_por===session.user)&&
+      (r.estado==='aprobado'||r.estado==='vencido')&&
+      !!r.obs_privada_tiempo_vuelo // solo vuelos finalizados y guardados (tiempo cargado)
+    ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+
+    if(!mis.length){
+      $('libro-contenido').innerHTML=`<div class="empty-libro">Sin vuelos registrados el ${fmtFecha(fecha)}.</div>`;
+      return;
+    }
+
+    const totalHoras=mis.reduce((acc,r)=>acc+(parseFloat(r.obs_privada_tiempo_vuelo)||0),0);
+    const totalAterr=mis.reduce((acc,r)=>acc+(parseInt(r.obs_privada_aterrizajes)||0),0);
+    const totalizador=`<div class="libro-total">
+      <div class="lt-item"><div class="lt-val">${mis.length}</div><div class="lt-lbl">Vuelo${mis.length===1?'':'s'}</div></div>
+      <div class="lt-item"><div class="lt-val">${Math.round(totalHoras*10)/10}</div><div class="lt-lbl">Horas</div></div>
+      <div class="lt-item"><div class="lt-val">${totalAterr}</div><div class="lt-lbl">Aterrizajes</div></div>
+    </div>`;
+
+    $('libro-contenido').innerHTML=totalizador+mis.map(r=>{
+      const despegue=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
+      const aterr=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
+      const horas=r.obs_privada_tiempo_vuelo||'—';
+      const aterrizajes=r.obs_privada_aterrizajes||'—';
+      const tieneObs=!!r.obs_privada;
+      return `<div class="vuelo-row">
+        <div class="vr-top">
+          <div class="vr-hora">${r.hora||r.horaInicio||'—'}</div>
+          <div class="vr-alumno">${r.nombre||'—'}</div>
+          <div class="vr-avion">${r.avion||'LV-OAD'}</div>
+        </div>
+        <div class="vr-datos">
+          <span>▶ <span class="vr-val">${despegue}</span></span>
+          <span>⏹ <span class="vr-val">${aterr}</span></span>
+          <span>⏱ <span class="vr-val">${horas} hs</span></span>
+          <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
+          ${tieneObs?'<span class="badge-ok">obs ✓</span>':''}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    $('libro-contenido').innerHTML=`<div class="empty-libro">Error: ${e.message}</div>`;
+  }
+}
+
+// ── LOGOUT ────────────────────────────────────────────────
+$('btn-logout').addEventListener('click',()=>{
+  if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
+  session=null;sessionStorage.removeItem('lvoad-session');
+  if(!tsInicio) localStorage.removeItem(LS);
+  $('app-shell').classList.remove('active');
+  $('screen-login').classList.add('active');
+  $('l-pass').value='';$('l-err').textContent='';
+});
+
+// ── AUTO-REFRESH ──────────────────────────────────────────
+// La app corre standalone (PWA) sin botón de recarga, así que los turnos
+// nuevos/aprobados no aparecían hasta cerrar y reabrir. Refresca solo:
+//  - si estamos en la lista de turnos del día (vistaActual==='lista'):
+//    ahí sí se puede reemplazar el contenido sin perder nada.
+//  - si estamos en la pestaña Pendientes o Libro (ambas de solo lectura/
+//    selección, no hay datos en edición que perder).
+// NUNCA toca la pantalla mientras hay un turno elegido/vuelo en curso o
+// recién finalizado (vistaActual==='vuelo'): un vuelo iniciado (tsInicio)
+// o terminado pero sin guardar (tsFin, form de cierre con aterrizajes/obs
+// cargados a mano) sigue su flujo normal, intacto, hasta que el propio
+// instructor toque "Cambiar turno", elija otro turno en Pendientes, o guarde.
+function autoRefrescar(){
+  if(!session) return;
+  if(!$('app-shell').classList.contains('active')) return;
+  if($('tab-vuelo').classList.contains('active')){
+    if(vistaActual==='lista') cargarTabVuelo();
+  } else if($('tab-pendientes').classList.contains('active')){
+    cargarPendientes();
+  } else if($('tab-libro').classList.contains('active')){
+    cargarLibro();
+  }
+}
+setInterval(autoRefrescar,60000); // cada 60s
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible') autoRefrescar();
+});
+window.addEventListener('pageshow',(e)=>{
+  if(e.persisted) autoRefrescar(); // iOS standalone: vuelve del bfcache al reabrir
+});
+
+// ── CHEQUEO DE VERSIÓN ────────────────────────────────────
+// Mismo mecanismo que turnos.html: la pestaña puede quedar abierta días
+// (PWA sin recarga automática) corriendo una versión vieja del archivo
+// mientras el repo ya tiene una más nueva. Cada VERSION_POLL_MS (y al
+// volver a primer plano) se vuelve a bajar este mismo HTML sin caché y se
+// compara la constante APP_VERSION contra la que quedó corriendo acá — si
+// difieren, se muestra el banner fijo con botón para recargar.
+function extraerVersionDeHTML(html){
+  const m=html.match(/const APP_VERSION\s*=\s*'([\d.]+)'/);
+  return m?('v'+m[1]):null;
+}
+const VERSION_ACTUAL='v'+APP_VERSION;
+const VERSION_POLL_MS=5*60*1000; // 5 minutos
+let _versionDesactualizada=false;
+async function chequearVersionNueva(){
+  if(_versionDesactualizada) return;
+  try{
+    const r=await fetch(location.pathname+'?_v='+Date.now(),{cache:'no-store'});
+    if(!r.ok) return;
+    const html=await r.text();
+    const versionServidor=extraerVersionDeHTML(html);
+    if(versionServidor&&versionServidor!==VERSION_ACTUAL){
+      _versionDesactualizada=true;
+      const b=document.getElementById('banner-version-nueva');
+      if(b)b.style.display='flex';
+    }
+  }catch(e){console.warn('No se pudo chequear si hay una version nueva:',e);}
+}
+document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
+setInterval(chequearVersionNueva,VERSION_POLL_MS);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+  });
+}
+</script>
+</body>
+</html>
+
   minutos. Criterio de Daniel: si el turno ya inició hace más de media
   hora y no está activo (nadie tocó START), es un turno que nadie usó —
   no corresponde seguir ofreciéndolo como "el de ahora". La lógica ya
