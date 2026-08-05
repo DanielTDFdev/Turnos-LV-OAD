@@ -1,7 +1,1129 @@
 <!DOCTYPE html>
 <!--
 ==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande<!DOCTYPE html>
+<!--
+==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v1.1 · 2026-08-04
+  Pedido de Daniel: pestaña "📋 Libro" con todos los vuelos registrados
+  para el usuario logueado, con detalle y mapa — antes esta app no tenía
+  ningún lugar propio para ver el historial (solo quedaba visible desde
+  turnos.html → Mi Perfil → Log de Vuelos, v7.09).
+  - Dos pestañas ahora: ✈ Vuelo | 📋 Libro (mismo patrón visual que
+    vuelo.html, adaptado — acá no hace falta una pestaña "Pendientes"
+    porque no hay concepto de turno a elegir).
+  - Libro: selector de fecha (default hoy), totalizador (vuelos/horas/
+    aterrizajes), lista de vuelos ordenada por hora. Filtra por
+    r.email===session.email y (piloto_tiempo_vuelo!=null O
+    obs_privada_tiempo_vuelo!=null) — incluye tanto los autorregistrados
+    desde esta app como cualquier vuelo acompañado (ej. un chequeo con
+    instructor en LV-OAD) que haya quedado a nombre de este piloto.
+  - Privacidad respetada: el texto de obs_privada NUNCA se muestra acá
+    (sigue siendo nota privada del instructor, mismo criterio que
+    turnos.html) — solo se muestran horas/aterrizajes de esos vuelos.
+    piloto_obs sí se muestra siempre — es autorreporte propio, no hay
+    nada que ocultar.
+  - Horas de despegue/aterrizaje en UTC (Zulu), mismo criterio que
+    vuelo.html (bitácora aeronáutica).
+  - Visor de mapa GPS (Leaflet + satélite ESRI, distancia en nm, altitud
+    en ft) — copiado tal cual de vuelo.html, funciona igual. Botón
+    "🗺 Ver recorrido GPS" en cada vuelo con tiene_traza_gps=true.
+  Ver anterior:
+  v1.0 · 2026-08-04
+  Primera entrega. Pedido de Daniel: equivalente de vuelo.html pero para
+  PILOTOS (no instructores) — el piloto vuela solo, sin nadie supervisando en
+  vivo. Reusa gran parte de la infraestructura de vuelo.html (timer INICIAR/
+  FINALIZAR con confirmación, traza GPS opcional con wake lock condicional,
+  botón Cancelar sin grabar nada, creación diferida hasta CONFIRMAR, chequeo
+  de versión, PWA) pero con un flujo mucho más simple: SIN pantallas de
+  selección de turno — el piloto entra, elige avión, e inicia directo. Todo
+  el "¿a qué turno corresponde esto?" se resuelve recién al guardar.
+
+  Diferencias de fondo respecto a vuelo.html (todas confirmadas con Daniel):
+  - Avión: solo LV-ART / LV-MPH — nunca LV-OAD (instrucción exclusiva, no
+    tiene sentido para un piloto volando solo).
+  - tipo_vuelo siempre 'particular', estado siempre 'aprobado' — sin pedir
+    aprobación de nadie (mismo criterio que el autoservicio de piloto en
+    turnos.html, v6.94/v6.96: particular de piloto se autoaprueba).
+  - Sin instructor/aprobado_por/cargado_por en el turno creado — no es carga
+    de staff, es la propia reserva del piloto (no afecta cuota semanal de
+    todos modos: turnosRestantesSemana() en turnos.html ya excluye a los
+    pilotos por completo, `if(!esPiloto&&rol==='alumno')`).
+  - Sin campos obs_privada_* (ese modelo es "nota privada del instructor
+    sobre un alumno" — no aplica). Campos nuevos: piloto_tiempo_vuelo,
+    piloto_aterrizajes, piloto_obs (visible, no oculta — no es "privada"),
+    piloto_autor, piloto_ts. Ver turnos.html v7.09 para el cambio que hace
+    que estos vuelos también aparezcan en "Mi Perfil → Log de Vuelos".
+  - AL GUARDAR (no antes): busca una reserva propia del piloto para hoy,
+    mismo avión, estado 'aprobado', todavía sin volar, con horario dentro de
+    ±20 minutos del momento de INICIAR VUELO. Si la encuentra, la actualiza
+    (queda "volada"). Si no, crea una nueva in-situ (mismo patrón que
+    vuelo.html v4.3: nada se escribe en Firebase hasta CONFIRMAR).
+  - Auditoría: accion:'alta_turno' (NO 'alta_turno_manual' — ese es
+    específico de carga por staff; este es autoservicio del propio piloto,
+    mismo accion que usa confirmarTurno() en turnos.html) — solo se escribe
+    en el caso de inserción nueva, no al actualizar una reserva ya existente
+    (esa ya tiene su propio rastro de auditoría de cuando se pidió).
+  - Login: mismas credenciales que turnos.html (/alumnos, contraseña plana —
+    igual que ya hace vuelo.html con instructores; NO se replicó el flujo
+    de Firebase Auth más nuevo que ya tiene turnos.html para alumnos, dato
+    a tener en cuenta si algún día se completa la Fase 6 de la migración
+    de Auth — "eliminar contraseñas planas" — y esto deja de funcionar).
+    Restringido a rol==='piloto'. Comparte la misma sessionStorage
+    'lvoad-session' que turnos.html — si ya estás logueado ahí, entra
+    directo; y al loguearte acá, turnos.html también te reconoce.
+  - Sin pantalla "Libro": el historial del piloto vive en turnos.html →
+    Mi Perfil → Log de Vuelos (mismo lugar donde ya mira el alumno). No
+    tiene sentido duplicar esa pantalla acá.
+  - Sin visor de mapa GPS en este archivo — se ve desde turnos.html (que ya
+    tiene su propia copia del visor, reutilizada para alumnos desde v7.07).
+  - Ícono/manifest: placeholder (copia de los íconos de vuelo.html) hasta
+    que Daniel mande uno propio para esta app.
+==================================================================================
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Piloto">
+<meta name="theme-color" content="#050d1a">
+<link rel="apple-touch-icon" href="/icon-piloto-192.png">
+<link rel="manifest" href="/manifest-piloto.json">
+<title>Vuelo Piloto · ACRG</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
+
+:root{
+  --bg:     #050d1a;
+  --bg2:    #0b1929;
+  --bg3:    #0f2035;
+  --cyan:   #00c8d4;
+  --amber:  #f0a500;
+  --green:  #22c55e;
+  --red:    #ef4444;
+  --white:  #e8f4fd;
+  --gray:   #4a6a8a;
+  --gray2:  #2a4a6a;
+  --mono:   'Share Tech Mono',monospace;
+  --ui:     'Rajdhani',sans-serif;
+  --disp:   'Orbitron',sans-serif;
+  --r:      14px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none;touch-action:manipulation}
+body{background:var(--bg);color:var(--white);font-family:var(--ui)}
+
+.screen{display:none;min-height:100dvh;flex-direction:column;padding:20px}
+.screen.active{display:flex}
+
+#app-shell{display:none;flex-direction:column;min-height:100dvh}
+#app-shell.active{display:flex}
+
+.top-bar{
+  display:flex;align-items:center;padding:16px 20px 12px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 16px);
+  background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);
+  gap:12px;flex:none;
+}
+.top-bar .inst-info{flex:1}
+.top-bar .inst-info .nombre{font-family:var(--disp);font-size:15px;color:var(--cyan);letter-spacing:.08em}
+.top-bar .inst-info .sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px}
+.ver{font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em}
+.top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.btn-sm{
+  background:transparent;border:1px solid var(--gray2);border-radius:8px;
+  color:var(--gray);font-family:var(--mono);font-size:12px;padding:8px 12px;
+  cursor:pointer;letter-spacing:.06em;white-space:nowrap;
+}
+.btn-sm:active{background:rgba(255,255,255,.06)}
+
+.contenido{flex:1;overflow-y:auto;padding:20px}
+
+.label{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--gray);text-transform:uppercase;margin-bottom:8px;display:block}
+.card{background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:18px;margin-bottom:12px}
+.card-title{font-family:var(--disp);font-size:14px;color:var(--cyan);letter-spacing:.08em;margin-bottom:12px;text-transform:uppercase}
+.err{font-family:var(--mono);font-size:13px;color:var(--red);min-height:16px;text-align:center;margin-bottom:8px}
+
+input,textarea,select{
+  width:100%;background:var(--bg3);border:1px solid rgba(0,200,212,.2);
+  border-radius:10px;color:var(--white);font-family:var(--mono);
+  font-size:17px;padding:14px 15px;outline:none;transition:border .2s;
+}
+input:focus,textarea:focus,select:focus{border-color:var(--cyan)}
+textarea{resize:none;min-height:80px;line-height:1.5}
+select:disabled{opacity:.55}
+
+.btn{
+  width:100%;padding:18px;border:none;border-radius:12px;
+  font-family:var(--disp);font-size:15px;font-weight:700;
+  letter-spacing:.1em;cursor:pointer;transition:all .12s;text-transform:uppercase;
+  margin-bottom:10px;
+}
+.btn:active{transform:scale(.97);opacity:.88}
+.btn:last-child{margin-bottom:0}
+.btn-cyan{background:var(--cyan);color:var(--bg)}
+.btn-red{background:var(--red);color:#fff}
+.btn-green{background:var(--green);color:var(--bg)}
+.btn-ghost{background:transparent;border:1px solid var(--gray2);color:var(--gray);font-size:13px;padding:14px}
+
+#screen-login{align-items:center;justify-content:center;gap:0}
+.login-hero{text-align:center;margin-bottom:36px}
+.login-hero .ico{font-size:48px;margin-bottom:8px}
+.login-hero h1{font-family:var(--disp);font-size:24px;color:var(--cyan);letter-spacing:.12em}
+.login-hero p{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:4px;letter-spacing:.08em}
+.login-card{width:100%;max-width:380px;background:var(--bg2);border:1px solid rgba(0,200,212,.2);border-radius:16px;padding:28px 22px}
+.field{margin-bottom:16px}
+
+.estado-vuelo{text-align:center;padding:24px 0;margin-bottom:16px}
+.estado-vuelo .estado-label{
+  font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--gray);
+  text-transform:uppercase;margin-bottom:8px;
+}
+.estado-vuelo .ts-display{font-family:var(--disp);font-size:30px;color:var(--white);letter-spacing:.04em}
+.estado-vuelo .ts-display.en-vuelo{color:var(--cyan)}
+.estado-vuelo .ts-display.finalizado{color:var(--green)}
+.estado-vuelo .ts-sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px}
+
+.tiempo-calculado{
+  background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
+  border-radius:10px;padding:14px 16px;margin-bottom:12px;
+  display:flex;align-items:center;gap:12px;
+}
+.tiempo-calculado .t-val{font-family:var(--disp);font-size:24px;color:var(--green);flex:1}
+.btn-edit-t{
+  background:transparent;border:1px solid var(--gray2);border-radius:8px;
+  color:var(--gray);font-family:var(--mono);font-size:12px;padding:7px 11px;
+  cursor:pointer;white-space:nowrap;
+}
+
+.toast{
+  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+  left:50%;transform:translateX(-50%) translateY(70px);
+  background:var(--bg3);border:1px solid rgba(0,200,212,.3);border-radius:10px;
+  padding:12px 20px;font-family:var(--mono);font-size:14px;color:var(--white);
+  white-space:nowrap;transition:transform .25s;z-index:999;pointer-events:none;
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+.spinner{width:28px;height:28px;border:3px solid rgba(0,200,212,.15);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Tab bar */
+.tab-bar{display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none}
+.tab-btn{
+  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:13px;
+  letter-spacing:.08em;color:var(--gray);cursor:pointer;border:none;background:transparent;
+  text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
+}
+.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Libro */
+.libro-total{
+  display:flex;background:var(--bg3);border:1px solid rgba(0,200,212,.25);border-radius:var(--r);
+  padding:16px 8px;margin-bottom:16px;
+}
+.libro-total .lt-item{flex:1;text-align:center}
+.libro-total .lt-val{font-family:var(--disp);font-size:24px;color:var(--cyan)}
+.libro-total .lt-lbl{font-family:var(--mono);font-size:11px;color:var(--gray);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+.vuelo-row{
+  background:var(--bg2);border:1px solid rgba(0,200,212,.1);border-radius:var(--r);
+  padding:16px 18px;margin-bottom:10px;
+}
+.vuelo-row .vr-top{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.vuelo-row .vr-hora{font-family:var(--disp);font-size:19px;color:var(--cyan)}
+.vuelo-row .vr-avion{font-family:var(--ui);font-size:19px;font-weight:700;flex:1}
+.vuelo-row .vr-datos{
+  display:flex;gap:16px;font-family:var(--mono);font-size:14px;color:var(--gray);
+  flex-wrap:wrap;row-gap:6px;margin-bottom:8px;
+}
+.vuelo-row .vr-datos span{display:flex;align-items:center;gap:5px}
+.vr-val{color:var(--white)}
+.vuelo-row .vr-obs{font-family:var(--mono);font-size:12px;color:var(--white);white-space:pre-wrap;line-height:1.5;margin-bottom:8px;opacity:.85}
+.empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
+
+.btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;transition:all .15s}
+.btn-traza:active{background:rgba(0,200,212,.2)}
+
+/* Modal mapa */
+.map-modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;
+  display:none;flex-direction:column;
+  padding-top:env(safe-area-inset-top,0);
+}
+.map-modal-overlay.open{display:flex}
+.map-modal-header{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 18px;background:var(--bg2);
+  border-bottom:1px solid rgba(0,200,212,.15);flex:none;
+}
+.map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
+.map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
+.btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
+#map-container{flex:1;min-height:0;position:relative}
+#map-leaflet{width:100%;height:100%}
+.map-info-bar{padding:12px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:22px;flex-wrap:wrap;flex:none}
+.map-info-bar span{font-family:var(--mono);font-size:14px;color:var(--gray)}
+.map-info-bar .mv{color:var(--white);font-weight:700;font-size:15px}
+.map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
+</style>
+</head>
+<body>
+
+<div id="banner-version-nueva" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--amber);color:#0a0a0a;font-family:var(--mono);font-size:12px;letter-spacing:.05em;padding:10px 16px;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.45)">
+  <span>⚠ Esta pestaña está corriendo una <b>versión vieja</b> de la app — actualizá antes de seguir.</span>
+  <button id="btn-recargar-version" style="font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:8px;cursor:pointer">ACTUALIZAR AHORA</button>
+</div>
+
+<div id="screen-login" class="screen active">
+  <div class="login-hero">
+    <div class="ico">✈</div>
+    <h1>ACRG PILOTO</h1>
+    <p>REGISTRO DE VUELO · PILOTOS</p>
+    <div class="ver" id="login-ver" style="margin-top:6px">—</div>
+  </div>
+  <div class="login-card">
+    <div class="field">
+      <span class="label">Usuario o email</span>
+      <input id="l-user" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="tu_usuario">
+    </div>
+    <div class="field">
+      <span class="label">Contraseña</span>
+      <input id="l-pass" type="password" placeholder="••••••">
+    </div>
+    <div class="err" id="l-err"></div>
+    <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
+  </div>
+</div>
+
+<div id="app-shell">
+  <div class="top-bar">
+    <div class="inst-info">
+      <div class="nombre" id="sh-nombre">—</div>
+      <div class="sub" id="sh-fecha">—</div>
+    </div>
+    <div class="top-actions">
+      <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+      <div class="ver" id="app-ver">—</div>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="vuelo">✈ Vuelo</button>
+    <button class="tab-btn" data-tab="libro">📋 Libro</button>
+  </div>
+
+  <div id="tab-vuelo" class="tab-content active">
+  <div class="contenido">
+
+    <!-- Avión (editable solo antes de iniciar) -->
+    <div id="v-avion-wrap">
+      <span class="label">Avión</span>
+      <select id="p-avion">
+        <option value="LV-ART">LV-ART — Archer II</option>
+        <option value="LV-MPH">LV-MPH — Lance II</option>
+      </select>
+    </div>
+
+    <!-- Estado del vuelo -->
+    <div class="estado-vuelo" id="estado-vuelo">
+      <div class="estado-label" id="ev-label">Listo para iniciar</div>
+      <div class="ts-display" id="ev-ts">—</div>
+      <div class="ts-sub" id="ev-sub"></div>
+    </div>
+
+    <!-- Traza GPS (opcional) -->
+    <div class="card" id="gps-toggle-card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer">
+      <div>
+        <div class="card-title" style="margin-bottom:2px">📍 Traza GPS</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--gray)" id="gps-toggle-sub">Registra el recorrido del vuelo (opcional)</div>
+      </div>
+      <div id="gps-toggle-track" style="width:38px;height:20px;border-radius:10px;position:relative;transition:background .2s;flex:none">
+        <div id="gps-toggle-thumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+      </div>
+    </div>
+
+    <!-- Botón principal -->
+    <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
+    <button class="btn btn-ghost" id="btn-cancelar-vuelo" style="display:none;border-color:var(--red);color:var(--red)">✕ Cancelar</button>
+
+    <!-- Formulario cierre (oculto hasta STOP) -->
+    <div id="v-cierre" style="display:none">
+      <div class="card">
+        <div class="card-title">Tiempo de vuelo</div>
+        <div class="tiempo-calculado">
+          <div class="t-val" id="t-calculado">—</div>
+          <button class="btn-edit-t" id="btn-edit-t">✎ editar</button>
+        </div>
+        <input id="t-manual" type="number" step="0.1" min="0" max="12"
+          placeholder="ej: 1.3 (horas decimales)" style="display:none;margin-top:8px">
+        <div style="font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px">
+          En horas decimales · ej: 1.5 = 1h 30min
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Aterrizajes</div>
+        <input id="c-aterr" type="number" min="0" max="99" placeholder="Cantidad de aterrizajes">
+      </div>
+
+      <div class="card">
+        <div class="card-title">Observación <span style="color:var(--gray);font-size:12px;font-family:var(--mono)">(opcional)</span></div>
+        <textarea id="c-obs" placeholder="Maniobras practicadas, condiciones, notas..."></textarea>
+      </div>
+
+      <div class="err" id="c-err" style="margin-top:4px"></div>
+      <button class="btn btn-green" id="btn-confirmar">✓ CONFIRMAR Y GUARDAR</button>
+    </div>
+
+    <!-- Confirmación guardado -->
+    <div id="v-guardado" style="display:none;text-align:center;padding:20px 0">
+      <div style="font-size:40px;margin-bottom:12px">✓</div>
+      <div style="font-family:var(--disp);font-size:16px;color:var(--green);letter-spacing:.1em;margin-bottom:8px">GUARDADO</div>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
+      <button class="btn btn-cyan" id="btn-otro-vuelo">Volar de nuevo</button>
+    </div>
+
+  </div>
+  </div><!-- /tab-vuelo -->
+
+  <!-- Tab: LIBRO -->
+  <div id="tab-libro" class="tab-content">
+  <div class="contenido">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span class="label" style="margin:0;flex:none">Fecha</span>
+      <input id="libro-fecha" type="date" style="flex:1;font-size:14px;padding:10px 12px">
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:16px">
+      Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande
+    </div>
+    <div id="libro-contenido"><div class="empty-libro">Seleccioná una fecha para ver tu actividad.</div></div>
+  </div>
+  </div><!-- /tab-libro -->
+
+</div><!-- /app-shell -->
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getDatabase, ref, get, update, set, push } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+
+const app = initializeApp({
+  apiKey:'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
+  authDomain:'turnos-lv-oad.firebaseapp.com',
+  databaseURL:'https://turnos-lv-oad-default-rtdb.firebaseio.com',
+  projectId:'turnos-lv-oad',
+  messagingSenderId:'855020455192',
+  appId:'1:855020455192:web:4b6d18f1b2efbb52faca6d',
+});
+const db = getDatabase(app);
+
+// ── Helpers ───────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
+const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
+const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
+const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
+const ek = email => (email||'').toLowerCase().replace(/\./g,'_').replace('@','__at__');
+
+function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
+
+// ── Estado ────────────────────────────────────────────────
+let session = null;
+let tsInicio = null;
+let tsFin = null;
+let guardadoExitoso = false;
+const LS = 'acrg-piloto-v1';
+const APP_VERSION = '1.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
+
+// ── Traza GPS (opcional) ─────────────────────────────────
+const LS_GPS_PUNTOS = 'acrg-piloto-v1-gps-puntos';
+const LS_GPS_PREF   = 'acrg-piloto-gps-pref';
+const GPS_MUESTREO_MS = 10000;
+let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1';
+let gpsWatchId     = null;
+let gpsPoints      = [];
+let gpsUltimoPunto = 0;
+
+// ── Init ─────────────────────────────────────────────────
+init();
+
+function init(){
+  // Restaurar sesión de turnos.html (mismo mecanismo que vuelo.html usa con
+  // instructores, acá aplicado a la sesión de alumno/piloto)
+  try{
+    const s=JSON.parse(sessionStorage.getItem('lvoad-session')||'{}');
+    if(s&&s.tipo==='alumno'&&s.rol==='piloto'&&s.nombre) session={nombre:s.nombre,email:s.email||'',emailKey:s.emailKey||''};
+  }catch{}
+
+  // Restaurar vuelo en curso desde localStorage
+  try{
+    const est=JSON.parse(localStorage.getItem(LS)||'null');
+    if(est){
+      tsInicio=est.tsInicio||null;
+      tsFin=est.tsFin||null;
+      if(est.avion) $('p-avion').value=est.avion;
+      if(tsInicio&&!tsFin&&est.gpsHabilitado){
+        gpsHabilitado=true;
+        try{ gpsPoints=JSON.parse(localStorage.getItem(LS_GPS_PUNTOS)||'[]'); }catch{ gpsPoints=[]; }
+        iniciarTrackGPS();
+      }
+    }
+  }catch{}
+
+  if(session){
+    abrirApp();
+  } else {
+    $('screen-login').classList.add('active');
+  }
+}
+
+// ── LOGIN ─────────────────────────────────────────────────
+// Mismas credenciales que turnos.html (/alumnos, contraseña plana — mismo
+// patrón simple que ya usa vuelo.html con instructores; ver nota en el
+// header sobre la Fase 6 pendiente de la migración a Firebase Auth).
+// Restringido a rol==='piloto'.
+$('btn-login').addEventListener('click',login);
+$('l-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+
+async function login(){
+  const id=$('l-user').value.trim().toLowerCase();
+  const pass=$('l-pass').value;
+  $('l-err').textContent='';
+  if(!id||!pass){$('l-err').textContent='Completá los campos.';return;}
+  $('btn-login').disabled=true;$('btn-login').textContent='...';
+  try{
+    let alumno=null,k=null;
+    if(id.includes('@')){
+      k=ek(id);
+      alumno=(await get(ref(db,'alumnos/'+k))).val();
+    } else {
+      const todos=(await get(ref(db,'alumnos'))).val()||{};
+      for(const [key,a] of Object.entries(todos)){
+        if((a.username||'').toLowerCase()===id){alumno=a;k=key;break;}
+      }
+    }
+    if(!alumno||alumno.pass!==pass){
+      $('l-err').textContent='Usuario/email o contraseña incorrectos.';
+      return;
+    }
+    if((alumno.rol||'alumno')!=='piloto'){
+      $('l-err').textContent='Esta app es solo para pilotos.';
+      return;
+    }
+    if(alumno.estado_login==='suspendido'){
+      $('l-err').textContent='⚠ Tu acceso está suspendido. Comunicate con administración.';
+      return;
+    }
+    session={nombre:alumno.nombre,email:alumno.email,emailKey:k};
+    // Misma sessionStorage que turnos.html — así quedás logueado en ambos lados
+    sessionStorage.setItem('lvoad-session',JSON.stringify({
+      tipo:'alumno',rol:'piloto',nombre:alumno.nombre,email:alumno.email,
+      emailKey:k,username:alumno.username||''
+    }));
+    abrirApp();
+  }catch(e){
+    $('l-err').textContent='Error de conexión.';
+    console.error(e);
+  }finally{
+    $('btn-login').disabled=false;$('btn-login').textContent='INGRESAR';
+  }
+}
+
+// ── APP SHELL ─────────────────────────────────────────────
+function abrirApp(){
+  $('screen-login').classList.remove('active');
+  $('app-shell').classList.add('active');
+  $('sh-nombre').textContent=session.nombre.split(' ')[0];
+  $('sh-fecha').textContent=fmtFecha(hoy());
+  $('libro-fecha').value=hoy();
+  renderPantalla();
+}
+
+// Tabs
+function cambiarATab(nombre){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===nombre));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.toggle('active',c.id==='tab-'+nombre));
+}
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    cambiarATab(btn.dataset.tab);
+    if(btn.dataset.tab==='libro') cargarLibro();
+  });
+});
+
+// ── Render de pantalla según estado en memoria ───────────
+function renderPantalla(){
+  if(tsFin){
+    actualizarEstado('finalizado');
+    $('gps-toggle-card').style.display='none';
+    $('v-avion-wrap').style.display='none';
+    $('btn-cancelar-vuelo').style.display='';
+    mostrarCierre();
+  } else if(tsInicio){
+    actualizarEstado('en-vuelo');
+    $('gps-toggle-card').style.display='flex';
+    pintarToggleGPS();
+    $('v-avion-wrap').style.display='none';
+    $('btn-start-stop').style.display='';
+    $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
+    $('btn-start-stop').className='btn btn-red';
+    $('btn-cancelar-vuelo').style.display='';
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='none';
+  } else {
+    actualizarEstado('idle');
+    $('gps-toggle-card').style.display='flex';
+    pintarToggleGPS();
+    $('v-avion-wrap').style.display='block';
+    $('p-avion').disabled=false;
+    $('btn-start-stop').style.display='';
+    $('btn-start-stop').textContent='▶ INICIAR VUELO';
+    $('btn-start-stop').className='btn btn-cyan';
+    $('btn-cancelar-vuelo').style.display='none';
+    $('v-cierre').style.display='none';
+    $('v-guardado').style.display='none';
+  }
+}
+
+function actualizarEstado(estado){
+  const label=$('ev-label'), ts=$('ev-ts'), sub=$('ev-sub');
+  ts.className='ts-display';
+  if(estado==='idle'){
+    label.textContent='Listo para iniciar';
+    ts.textContent='—';
+    sub.textContent='';
+  } else if(estado==='en-vuelo'){
+    label.textContent='Despegó a las';
+    ts.textContent=fmtLocalFull(tsInicio);
+    ts.classList.add('en-vuelo');
+    sub.textContent='Hora local · esperando aterrizaje...';
+  } else if(estado==='finalizado'){
+    label.textContent='Aterrizó a las';
+    ts.textContent=fmtLocalFull(tsFin);
+    ts.classList.add('finalizado');
+    const horas=calcHorasDecimal(tsInicio,tsFin);
+    sub.textContent=`Despegue: ${fmtLocalFull(tsInicio)} · Vuelo: ${horas} hs`;
+  }
+}
+
+// ── Toggle GPS ───────────────────────────────────────────
+function pintarToggleGPS(){
+  const track=$('gps-toggle-track'), sub=$('gps-toggle-sub'), card=$('gps-toggle-card');
+  const bloqueado=!!tsInicio;
+  track.style.background=gpsHabilitado?'var(--cyan)':'var(--gray2)';
+  $('gps-toggle-thumb').style.left=gpsHabilitado?'20px':'2px';
+  card.style.opacity=bloqueado?'.6':'1';
+  card.style.cursor=bloqueado?'default':'pointer';
+  if(bloqueado){
+    sub.textContent=gpsHabilitado?'Registrando cada '+(GPS_MUESTREO_MS/1000)+'s...':'Desactivada para este vuelo';
+  } else {
+    sub.textContent='Registra el recorrido del vuelo (opcional)';
+  }
+}
+function toggleGPS(){
+  if(tsInicio) return;
+  gpsHabilitado=!gpsHabilitado;
+  localStorage.setItem(LS_GPS_PREF,gpsHabilitado?'1':'0');
+  pintarToggleGPS();
+}
+$('gps-toggle-card').addEventListener('click',toggleGPS);
+
+function iniciarTrackGPS(){
+  if(!('geolocation' in navigator)){
+    toast('Este dispositivo no permite obtener ubicación — el vuelo se registra igual, sin traza');
+    return;
+  }
+  gpsWatchId=navigator.geolocation.watchPosition(
+    (pos)=>{
+      const ahora=Date.now();
+      if(ahora-gpsUltimoPunto<GPS_MUESTREO_MS) return;
+      gpsUltimoPunto=ahora;
+      gpsPoints.push({
+        lat: +pos.coords.latitude.toFixed(6),
+        lng: +pos.coords.longitude.toFixed(6),
+        alt: pos.coords.altitude!=null?Math.round(pos.coords.altitude):null,
+        ts:  new Date().toISOString()
+      });
+      try{ localStorage.setItem(LS_GPS_PUNTOS,JSON.stringify(gpsPoints)); }catch(e){}
+    },
+    (err)=>{
+      console.warn('GPS error:',err);
+      toast('No se pudo activar el GPS — el vuelo se registra igual, sin traza');
+    },
+    { enableHighAccuracy:true, maximumAge:5000, timeout:15000 }
+  );
+}
+function detenerTrackGPS(){
+  if(gpsWatchId!=null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId=null; }
+}
+
+// ── Screen Wake Lock ──────────────────────────────────────
+let _wakeLock = null;
+async function adquirirWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+  } catch(e) { console.warn('[WakeLock] no se pudo adquirir:', e.message); }
+}
+function liberarWakeLock() {
+  if (_wakeLock) { _wakeLock.release(); _wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && tsInicio && !tsFin) adquirirWakeLock();
+});
+
+// ── START / STOP ──────────────────────────────────────────
+$('btn-start-stop').addEventListener('click',()=>{
+  if(!tsInicio){
+    if(!confirm('¿Iniciar el vuelo ahora?')) return;
+    tsInicio=new Date().toISOString();
+    $('p-avion').disabled=true;
+    if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); adquirirWakeLock(); }
+    persistir();
+    actualizarEstado('en-vuelo');
+    pintarToggleGPS();
+    $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
+    $('btn-start-stop').className='btn btn-red';
+    $('btn-cancelar-vuelo').style.display='';
+    $('v-avion-wrap').style.display='none';
+    toast('Vuelo iniciado · '+fmtLocalFull(tsInicio));
+  } else {
+    if(!confirm('¿Finalizar el vuelo ahora?')) return;
+    tsFin=new Date().toISOString();
+    detenerTrackGPS();
+    liberarWakeLock();
+    persistir();
+    actualizarEstado('finalizado');
+    $('btn-start-stop').style.display='none';
+    mostrarCierre();
+  }
+});
+
+// CANCELAR — no graba nada. Si había una reserva propia que hubiera hecho
+// match, no se toca (recién se busca/actualiza al CONFIRMAR). Vuelve a la
+// pantalla inicial con el mismo avión ya elegido.
+function cancelarVuelo(){
+  if(!confirm('¿Cancelar este vuelo? No se va a grabar nada.')) return;
+  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  liberarWakeLock();
+  tsInicio=null; tsFin=null; guardadoExitoso=false;
+  persistir();
+  renderPantalla();
+  toast('Vuelo cancelado — no se grabó nada');
+}
+$('btn-cancelar-vuelo').addEventListener('click',cancelarVuelo);
+
+function mostrarCierre(){
+  const horas=calcHorasDecimal(tsInicio,tsFin);
+  $('t-calculado').textContent=`${horas} hs`;
+  $('t-manual').style.display='none';
+  $('btn-edit-t').textContent='✎ editar';
+  $('c-err').textContent='';
+  $('v-cierre').style.display='block';
+  $('v-guardado').style.display='none';
+  $('btn-start-stop').style.display='none';
+}
+
+$('btn-edit-t').addEventListener('click',()=>{
+  const inp=$('t-manual');
+  if(inp.style.display==='none'){
+    inp.value=calcHorasDecimal(tsInicio,tsFin);
+    inp.style.display='block';
+    inp.focus();
+    $('btn-edit-t').textContent='✓ ok';
+  } else {
+    const v=parseFloat(inp.value);
+    if(!isNaN(v)&&v>0) $('t-calculado').textContent=`${Math.round(v*10)/10} hs`;
+    inp.style.display='none';
+    $('btn-edit-t').textContent='✎ editar';
+  }
+});
+
+// ── CONFIRMAR Y GUARDAR ──────────────────────────────────
+// Acá (y sólo acá) pasa todo lo interesante: matching ±20min contra
+// reservas propias del piloto, o inserción in-situ si no hay ninguna.
+$('btn-confirmar').addEventListener('click',guardar);
+
+async function guardar(){
+  const tManual=$('t-manual').style.display!=='none';
+  let horas=tManual
+    ? (parseFloat($('t-manual').value)||calcHorasDecimal(tsInicio,tsFin))
+    : parseFloat($('t-calculado').textContent);
+  horas=Math.round(horas*10)/10;
+  const aterr=parseInt($('c-aterr').value||'0')||0;
+  const obs=$('c-obs').value.trim();
+  $('c-err').textContent='';
+
+  if(!horas||horas<=0){$('c-err').textContent='El tiempo de vuelo no puede ser 0.';return;}
+
+  $('btn-confirmar').disabled=true;
+  $('btn-confirmar').textContent='Guardando...';
+
+  const avion=$('p-avion').value;
+  const tieneTraza=gpsPoints.length>1;
+  const datosVuelo={
+    piloto_tiempo_vuelo: horas,
+    piloto_aterrizajes:  aterr||null,
+    piloto_obs:          obs||null,
+    piloto_autor:        session.nombre,
+    piloto_ts:           new Date().toISOString(),
+    ts_despegue:         tsInicio,
+    ts_aterrizaje:       tsFin,
+    ...(tieneTraza?{tiene_traza_gps:true}:{})
+  };
+  Object.keys(datosVuelo).forEach(k=>{ if(datosVuelo[k]===null) delete datosVuelo[k]; });
+
+  try{
+    const fecha=hoy();
+    const iniDate=new Date(tsInicio);
+    const VENTANA_MS=20*60000; // ±20 minutos, pedido de Daniel
+
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const candidatos=todas.filter(r=>{
+      if(r.email!==session.email) return false;
+      if(r.fecha!==fecha) return false;
+      if(r.avion!==avion) return false;
+      if(r.estado!=='aprobado') return false;
+      if(r.piloto_tiempo_vuelo!=null) return false; // ya volado
+      return true;
+    }).map(r=>{
+      const horaT=r.hora||r.horaInicio||'00:00';
+      const [hh,mm]=horaT.split(':').map(Number);
+      const turnoTs=new Date(iniDate.getFullYear(),iniDate.getMonth(),iniDate.getDate(),hh,mm);
+      return {...r,_diff:Math.abs(turnoTs-iniDate)};
+    }).filter(r=>r._diff<=VENTANA_MS).sort((a,b)=>a._diff-b._diff);
+
+    let key;
+    if(candidatos.length){
+      // Coincide con una reserva propia ya cargada — se marca como volada
+      key=candidatos[0].key;
+      await update(ref(db,`reservas/${key}`),datosVuelo);
+    } else {
+      // Sin reserva previa — se crea in-situ, tal como hace vuelo.html
+      const horaIni=String(iniDate.getHours()).padStart(2,'0')+':'+String(iniDate.getMinutes()).padStart(2,'0');
+      const nuevo={
+        nombre:      session.nombre,
+        email:       session.email,
+        fecha,hora:  horaIni,
+        avion,
+        tipo_vuelo:  'particular',
+        estado:      'aprobado',
+        rol:         'piloto',
+        ts:          new Date().toISOString(),
+        ...datosVuelo
+      };
+      const nuevaRef=push(ref(db,'reservas'));
+      await set(nuevaRef,nuevo);
+      key=nuevaRef.key;
+      // Mismo accion que usa el autoservicio normal en turnos.html — NO
+      // 'alta_turno_manual' (eso es específico de carga por staff).
+      await set(push(ref(db,'auditoria')),{
+        accion:'alta_turno',
+        rol:'piloto',
+        resultado:'exito',
+        detalle:`${session.nombre} — ${avion} — ${fecha} ${horaIni} hs — vuelo particular registrado desde vuelo-piloto.html`,
+        ts:new Date().toISOString()
+      });
+    }
+
+    if(tieneTraza){
+      await set(ref(db,`vuelo_tracks/${key}`),{
+        puntos: gpsPoints,
+        autor: session.nombre,
+        ts_guardado: new Date().toISOString()
+      });
+    }
+
+    localStorage.removeItem(LS);
+    localStorage.removeItem(LS_GPS_PUNTOS);
+    gpsPoints=[];
+    liberarWakeLock();
+    guardadoExitoso=true;
+    $('v-cierre').style.display='none';
+    $('btn-cancelar-vuelo').style.display='none';
+    $('v-guardado').style.display='block';
+    $('guardado-detalle').textContent=`${avion} · ${horas} hs · ${aterr} aterrizajes`;
+    toast('✓ Guardado correctamente');
+  }catch(e){
+    $('c-err').textContent='Error al guardar: '+e.message;
+    console.error(e);
+  }finally{
+    $('btn-confirmar').disabled=false;
+    $('btn-confirmar').textContent='✓ CONFIRMAR Y GUARDAR';
+  }
+}
+
+$('btn-otro-vuelo').addEventListener('click',resetVuelo);
+function resetVuelo(){
+  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  tsInicio=null;tsFin=null;guardadoExitoso=false;
+  localStorage.removeItem(LS);
+  renderPantalla();
+}
+
+function persistir(){
+  localStorage.setItem(LS,JSON.stringify({avion:$('p-avion').value,tsInicio,tsFin,gpsHabilitado}));
+}
+
+// ── LOGOUT ────────────────────────────────────────────────
+$('btn-logout').addEventListener('click',()=>{
+  if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
+  session=null;sessionStorage.removeItem('lvoad-session');
+  if(!tsInicio) localStorage.removeItem(LS);
+  $('app-shell').classList.remove('active');
+  $('screen-login').classList.add('active');
+  $('l-pass').value='';$('l-err').textContent='';
+});
+
+// ── TAB LIBRO ─────────────────────────────────────────────
+// Todos los vuelos registrados para este piloto: los propios (piloto_*,
+// desde esta misma app) y, si alguna vez voló acompañado (ej. un chequeo
+// con instructor en LV-OAD, tipo_vuelo instrucción), también los de
+// obs_privada_* — pero SIN mostrar el texto de esa observación, que sigue
+// siendo privada del instructor (mismo criterio que turnos.html: el
+// piloto ve sus horas/aterrizajes de esos vuelos pero no la nota). El
+// texto de piloto_obs, en cambio, siempre se muestra — es autorreporte
+// propio, no hay nada que ocultarle a nadie.
+$('libro-fecha').addEventListener('change',cargarLibro);
+
+async function cargarLibro(){
+  const fecha=$('libro-fecha').value;
+  if(!fecha) return;
+  $('libro-contenido').innerHTML='<div class="spinner"></div>';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const mis=todas.filter(r=>
+      r.email===session.email&&
+      r.fecha===fecha&&
+      (r.piloto_tiempo_vuelo!=null||r.obs_privada_tiempo_vuelo!=null)
+    ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+
+    if(!mis.length){
+      $('libro-contenido').innerHTML=`<div class="empty-libro">Sin vuelos registrados el ${fmtFecha(fecha)}.</div>`;
+      return;
+    }
+
+    const totalHoras=mis.reduce((acc,r)=>acc+(parseFloat(r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo)||0),0);
+    const totalAterr=mis.reduce((acc,r)=>acc+(parseInt(r.piloto_aterrizajes??r.obs_privada_aterrizajes)||0),0);
+    const totalizador=`<div class="libro-total">
+      <div class="lt-item"><div class="lt-val">${mis.length}</div><div class="lt-lbl">Vuelo${mis.length===1?'':'s'}</div></div>
+      <div class="lt-item"><div class="lt-val">${Math.round(totalHoras*10)/10}</div><div class="lt-lbl">Horas</div></div>
+      <div class="lt-item"><div class="lt-val">${totalAterr}</div><div class="lt-lbl">Aterrizajes</div></div>
+    </div>`;
+
+    $('libro-contenido').innerHTML=totalizador+mis.map(r=>{
+      const despegue=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
+      const aterr=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
+      const horas=(r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo)??'—';
+      const aterrizajes=(r.piloto_aterrizajes??r.obs_privada_aterrizajes)??'—';
+      const obsVisible=r.piloto_obs||''; // obs_privada NUNCA se muestra acá — sigue siendo privada del instructor
+      return `<div class="vuelo-row">
+        <div class="vr-top">
+          <div class="vr-hora">${r.hora||r.horaInicio||'—'}</div>
+          <div class="vr-avion">${r.avion||'—'}</div>
+        </div>
+        <div class="vr-datos">
+          <span>▶ <span class="vr-val">${despegue}</span></span>
+          <span>⏹ <span class="vr-val">${aterr}</span></span>
+          <span>⏱ <span class="vr-val">${horas} hs</span></span>
+          <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
+        </div>
+        ${obsVisible?`<div class="vr-obs">${obsVisible.replace(/</g,'&lt;')}</div>`:''}
+        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora):''}
+      </div>`;
+    }).join('');
+  }catch(e){
+    $('libro-contenido').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
+    console.error(e);
+  }
+}
+
+function btnTraza(key, nombre, avion, hora) {
+  const n = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const av = (avion||'—').replace(/'/g,"\\'");
+  const h  = (hora||'').replace(/'/g,"\\'");
+  return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
+}
+
+// ── Visor de mapa GPS (idéntico al de vuelo.html) ────────
+let _leafletMap = null;
+window.abrirMapa = async function(key, alumno, avion, hora) {
+  const fmtTs = iso => {
+    if(!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z';
+  };
+  const modal = $('map-modal');
+  $('map-modal-title').textContent = `${avion}`;
+  $('map-modal-sub').textContent = hora ? `Vuelo ${hora} hs` : '';
+  $('map-loading').style.display = 'flex';
+  $('map-info-bar').style.display = 'none';
+  $('map-leaflet').style.opacity = '0';
+  modal.classList.add('open');
+
+  if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
+
+  try {
+    const snap = await get(ref(db, `vuelo_tracks/${key}`));
+    const data = snap.val();
+
+    if (!data || !data.puntos || data.puntos.length < 2) {
+      $('map-loading').innerHTML = '<span style="color:var(--amber)">⚠ Traza con menos de 2 puntos — no se puede dibujar el recorrido.</span>';
+      return;
+    }
+
+    const puntos = data.puntos;
+    const coords = puntos.map(p => [p.lat, p.lng]);
+
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false });
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19,
+    }).addTo(_leafletMap);
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, opacity: 0.7,
+    }).addTo(_leafletMap);
+
+    const linea = L.polyline(coords, {
+      color: '#00c8d4', weight: 3, opacity: 0.9,
+      dashArray: null,
+    }).addTo(_leafletMap);
+
+    const icoInicio = L.divIcon({
+      html: '<div style="background:#22c55e;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(34,197,94,.8)"></div>',
+      className: '', iconSize: [14,14], iconAnchor: [7,7],
+    });
+    L.marker(coords[0], { icon: icoInicio })
+      .bindTooltip('▶ Despegue · ' + fmtTs(puntos[0].ts), { permanent: false })
+      .addTo(_leafletMap);
+
+    const icoFin = L.divIcon({
+      html: '<div style="background:#ef4444;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(239,68,68,.8)"></div>',
+      className: '', iconSize: [14,14], iconAnchor: [7,7],
+    });
+    L.marker(coords[coords.length-1], { icon: icoFin })
+      .bindTooltip('⏹ Aterrizaje · ' + fmtTs(puntos[puntos.length-1].ts), { permanent: false })
+      .addTo(_leafletMap);
+
+    _leafletMap.fitBounds(linea.getBounds(), { padding: [40, 40], maxZoom: 15 });
+
+    const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
+    const durMin = Math.round(durMs / 60000);
+    const distKm = calcDistanciaKm(coords);
+    const altMax = Math.max(...puntos.filter(p=>p.alt!=null).map(p=>p.alt));
+
+    $('mi-puntos').textContent = puntos.length;
+    $('mi-duracion').textContent = durMin >= 60
+      ? `${Math.floor(durMin/60)}h ${durMin%60}m`
+      : `${durMin} min`;
+    const distNm = distKm * 0.539957;
+    $('mi-distancia').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
+    const altMaxFt = altMax * 3.28084;
+    $('mi-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
+
+    $('map-loading').style.display = 'none';
+    $('map-leaflet').style.opacity = '1';
+    $('map-info-bar').style.display = 'flex';
+    setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 100);
+
+  } catch(e) {
+    $('map-loading').innerHTML = `<span style="color:var(--red)">Error al cargar la traza: ${e.message}</span>`;
+    console.error(e);
+  }
+};
+
+function calcDistanciaKm(coords) {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const [lat1,lon1] = coords[i-1], [lat2,lon2] = coords[i];
+    const R = 6371;
+    const dLat = (lat2-lat1)*Math.PI/180;
+    const dLon = (lon2-lon1)*Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    total += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+  return total;
+}
+
+$('btn-map-close').addEventListener('click', () => {
+  $('map-modal').classList.remove('open');
+  if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
+});
+
+// ── CHEQUEO DE VERSIÓN ────────────────────────────────────
+// Mismo mecanismo que vuelo.html/turnos.html.
+function extraerVersionDeHTML(html){
+  const m=html.match(/const APP_VERSION\s*=\s*'([\d.]+)'/);
+  return m?('v'+m[1]):null;
+}
+const VERSION_ACTUAL='v'+APP_VERSION;
+const VERSION_POLL_MS=5*60*1000;
+let _versionDesactualizada=false;
+async function chequearVersionNueva(){
+  if(_versionDesactualizada) return;
+  try{
+    const r=await fetch(location.pathname+'?_v='+Date.now(),{cache:'no-store'});
+    if(!r.ok) return;
+    const html=await r.text();
+    const versionServidor=extraerVersionDeHTML(html);
+    if(versionServidor&&versionServidor!==VERSION_ACTUAL){
+      _versionDesactualizada=true;
+      const b=document.getElementById('banner-version-nueva');
+      if(b)b.style.display='flex';
+    }
+  }catch(e){console.warn('No se pudo chequear si hay una version nueva:',e);}
+}
+document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
+setInterval(chequearVersionNueva,VERSION_POLL_MS);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+  });
+}
+</script>
+<!-- Modal mapa GPS -->
+<div class="map-modal-overlay" id="map-modal">
+  <div class="map-modal-header">
+    <div>
+      <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
+      <div class="map-sub" id="map-modal-sub"></div>
+    </div>
+    <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
+  </div>
+  <div id="map-container">
+    <div class="map-loading" id="map-loading">
+      <div class="spinner"></div>
+      <span>Cargando traza...</span>
+    </div>
+    <div id="map-leaflet"></div>
+  </div>
+  <div class="map-info-bar" id="map-info-bar" style="display:none">
+    <span>📍 Puntos: <span class="mv" id="mi-puntos">—</span></span>
+    <span>⏱ Duración: <span class="mv" id="mi-duracion">—</span></span>
+    <span>📏 Distancia: <span class="mv" id="mi-distancia">—</span></span>
+    <span>⬆ Alt. máx: <span class="mv" id="mi-alt">—</span></span>
+  </div>
+</div>
+
+</body>
+</html>
   v1.0 · 2026-08-04
   Primera entrega. Pedido de Daniel: equivalente de vuelo.html pero para
   PILOTOS (no instructores) — el piloto vuela solo, sin nadie supervisando en
