@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v2.2 · 2026-08-05
+  FIX v2.1: mismo bug que vuelo.html v5.6 — el div de copyright tenía
+  class="ver" y el querySelectorAll('.ver') que pisa el número de versión
+  lo sobreescribía. Sacada la clase.
   v2.1 · 2026-08-05
   Pie de página "(c) 2026 by DAC" agregado debajo del login-card en la
   pantalla de login (pedido de Daniel).
@@ -414,7 +418,7 @@ select:disabled{opacity:.55}
     <div class="err" id="l-err"></div>
     <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
   </div>
-  <div class="ver" style="text-align:center;margin-top:18px;opacity:.6">(c) 2026 by DAC</div>
+  <div style="text-align:center;margin-top:18px;opacity:.6;font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em">(c) 2026 by DAC</div>
 </div>
 
 <div id="app-shell">
@@ -581,7 +585,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '2.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
