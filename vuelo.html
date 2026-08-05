@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.5 · 2026-08-05
+  Pie de página "(c) 2026 by DAC" agregado debajo del login-card en la
+  pantalla de login (pedido de Daniel).
+  ⚠ NOTA: el log de este header saltó de v5.0 directo a v5.4 (bumps 5.1-5.3
+  quedaron sin documentar acá aunque APP_VERSION sí se actualizó en cada uno
+  — revisar si hace falta reconstruir esas entradas).
+  Ver anterior:
   v5.0 · 2026-08-05
   Estética login: logo del aeroclub (icon-vuelo-192.png, ícono propio de esta
   app) en lugar del emoji ✈. Título "AEROCLUB RÍO GRANDE" + subtítulo
@@ -689,6 +696,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     <div class="err" id="l-err"></div>
     <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
   </div>
+  <div class="ver" style="text-align:center;margin-top:18px;opacity:.6">(c) 2026 by DAC</div>
 </div>
 
 <!-- APP SHELL -->
@@ -898,7 +906,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.5'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
