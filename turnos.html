@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.14
+  FECHA   : 2026-08-05
+  CAMBIOS : chequearVersionNueva() ahora también corre una vez a los 5s de cargar
+            (setTimeout), no solo cada VERSION_POLL_MS (5 min) o al volver a la
+            pestaña. Antes, si alguien abría la página con una versión vieja
+            cacheada y probaba algo en el primer minuto, el aviso de "versión
+            desactualizada" nunca alcanzaba a dispararse. Mismo fix aplicado en
+            vuelo.html v5.7 y vuelo-piloto.html v2.3. Reportado por Daniel.
   VERSION : 7.13
   FECHA   : 2026-08-05
   CAMBIOS : FIX — la pestaña "🔒 Log de Instructores" del modal Log del Alumno
@@ -2218,7 +2226,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.13</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.14</div>
   </div>
 
 </div>
@@ -8273,6 +8281,12 @@ async function chequearVersionNueva(){
 }
 document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
 setInterval(chequearVersionNueva,VERSION_POLL_MS);
+// v7.14: antes el primer chequeo recién corría a los 5 min (VERSION_POLL_MS) o si el
+// usuario cambiaba de pestaña y volvía — alguien que entraba con una versión vieja
+// cacheada y probaba algo en el primer minuto nunca veía el aviso. Ahora también
+// corre una vez, temprano, a los 5s de cargar (delay chico para no competir con el
+// resto de la inicialización de la página).
+setTimeout(chequearVersionNueva,5000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
 
 if('serviceWorker' in navigator){
