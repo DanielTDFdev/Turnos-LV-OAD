@@ -1,7 +1,7 @@
 # Documentación técnica — Sistema de Turnos (turnos.html)
 
 **Aeroclub Río Grande (SAWE) — Tierra del Fuego, Argentina**
-Versión documentada: **turnos.html v7.09** · **fpl.html v3.27** · **portal-alumno.html v1.18** · **peso-balance.html v1.7** · **reporte.html v1.4** · **vuelo.html v4.7** · **vuelo-piloto.html v1.5** · Fecha: 2026-08-04
+Versión documentada: **turnos.html v7.11** · **fpl.html v3.27** · **portal-alumno.html v1.18** · **peso-balance.html v1.7** · **reporte.html v1.4** · **vuelo.html v5.4** · **vuelo-piloto.html v2.0** · Fecha: 2026-08-05
 
 > Documento de referencia: describe qué hace cada parte del sistema. Mantener actualizado cuando se agreguen funciones.
 > Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una calculadora de peso y balance (`peso-balance.html`, §24), un **reporte de actividad** (`reporte.html`, §25), una **app de registro de vuelo para instructores** (`vuelo.html`, §26) y su equivalente **para pilotos** (`vuelo-piloto.html`, §27), soporte **PWA** en los seis archivos principales (instalables como app en el celular). Los **procesos server-side** en GitHub Actions se describen en §20 y §21.
@@ -476,6 +476,11 @@ Registro de eventos (`registrarAuditoria`): login (éxito/fallo/bloqueado), regi
 
 ## 18. Estado actual y trabajo pendiente
 
+- **Exportación GPX en turnos.html y vuelo.html (HECHO, 2026-08-05, turnos.html v7.10→v7.11 / vuelo.html v4.8→v4.9):** el botón de exportación GPS pasó de JSON a GPX 1.1 estándar (`<trkpt lat/lon>`, `<ele>`, `<time>` por punto). Compatible con CloudAhoy, Tacview, Google Earth Pro, gpx.studio y cualquier herramienta que acepte GPX. Nombre de archivo: `track_{avion}_{fecha}_{alumno}.gpx`. Disponible en el tab Libro de vuelo.html y en el Log de Vuelos del alumno/piloto en turnos.html. Ver §26.
+- **Estética login vuelo.html y vuelo-piloto.html (HECHO, 2026-08-05, v5.0→v5.4 / v1.6→v2.0):** logo `logo_aeroclub.png` en el login de ambas apps (con `object-fit:contain` para respetar proporciones), título "AEROCLUB RÍO GRANDE" + subtítulo "INSTRUCTORES"/"PILOTOS".
+- **Spinner de aterrizajes (HECHO, 2026-08-05, vuelo.html v5.3 / vuelo-piloto.html v1.9):** el campo numérico de aterrizajes reemplazado por un spinner táctil (botones − y + a los lados, número grande en el centro). Arranca en 0, mínimo 0, máximo 99. Se integra con la persistencia en localStorage igual que antes.
+- **Aviso GPS pantalla encendida (HECHO, 2026-08-05, vuelo.html v5.4 / vuelo-piloto.html v2.0):** cartel ámbar que aparece entre el toggle GPS y el botón START cuando el GPS está habilitado. Avisa que la pantalla debe permanecer encendida para registrar el track completo, e incluye instrucción específica para Samsung (Ajustes → Apps → Chrome → Batería → Sin restricciones). Se oculta automáticamente al iniciar el vuelo (el wake lock ya está activo) y cuando el GPS está desactivado. Motivado por caso real: instructor con Samsung moderno voló 3 horas y solo registró 2 puntos por bloqueo de pantalla. Limitación documentada: iOS bloquea JS en background independientemente del wake lock si el usuario apaga la pantalla manualmente — esto es una restricción de la plataforma, no resoluble desde una PWA sin compilar una app nativa (Capacitor/Cordova + cuenta Apple Developer 99 USD/año + Mac con Xcode).
+
 - **Reporte de actividad `reporte.html` (HECHO, 2026-08-03, v1.4):** archivo independiente con dos secciones: (1) actividad de aeronaves por período/matrícula con clasificación de estados, horas de vuelo y exportación a Excel/PDF; (2) horas por instructor con selector de fecha y exportación. Acceso solo admin/administrador. Ver §25.
 - **App de registro de vuelo `vuelo.html` (HECHO, 2026-08-03, v2.0):** app mobile-first para instructores. Muestra los turnos aprobados del día (con entrada directa si hay uno solo), graba timestamps UTC de despegue y aterrizaje en Firebase, calcula el tiempo de vuelo, permite cargar aterrizajes y observación. Tab "Libro" para consultar actividad por fecha. Persistencia en `localStorage` contra cierres accidentales. Ver §26.
 
@@ -887,6 +892,13 @@ Como corre standalone (PWA, sin botón de recarga), los turnos nuevos/aprobados 
 
 ### Nodo nuevo: `/vuelo_tracks/{key}`
 Array de puntos GPS (`{lat, lng, alt, ts}` por muestra), separado de `/reservas` para no inflar el listener en tiempo real que usa `turnos.html`. La `key` coincide con la de la reserva asociada.
+
+### Actualizaciones 2026-08-05 (vuelo.html v5.4 / vuelo-piloto.html v2.0)
+- **Logo:** `logo_aeroclub.png` en el login de ambas apps (`object-fit:contain`, respeta proporciones). Título "AEROCLUB RÍO GRANDE" + subtítulo "INSTRUCTORES"/"PILOTOS".
+- **Spinner de aterrizajes:** reemplaza el `<input type="number">` por un spinner táctil (botones − / + con número grande central). Arranca en 0, integrado con localStorage.
+- **Aviso GPS:** cartel ámbar visible entre el toggle GPS y el botón START cuando GPS está habilitado y vuelo no iniciado. Avisa mantener pantalla encendida. Instrucción específica para Samsung: Ajustes → Apps → Chrome → Batería → Sin restricciones. Se oculta al iniciar el vuelo.
+- **Exportación GPX:** botón "⬇ GPX" en el tab Libro descarga la traza en GPX 1.1 (`<trkpt lat/lon>`, `<ele>`, `<time>`). Compatible con CloudAhoy, Tacview, Google Earth Pro, gpx.studio. Disponible también en turnos.html v7.11 en el Log de Vuelos del alumno/piloto.
+- **Limitación documentada (iOS):** el GPS en background no funciona en Safari iOS si la pantalla se apaga manualmente — es una restricción de la plataforma, no resoluble desde una PWA sin una app nativa (Capacitor + Mac + Apple Developer 99 USD/año). El wake lock previene el apagado automático pero no el manual.
 
 ## 27. App de Registro de Vuelo para Pilotos (`vuelo-piloto.html`)
 
