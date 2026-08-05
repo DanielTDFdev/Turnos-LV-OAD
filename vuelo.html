@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.0 · 2026-08-05
+  Estética login: logo del aeroclub (icon-vuelo-192.png, ícono propio de esta
+  app) en lugar del emoji ✈. Título "AEROCLUB RÍO GRANDE" + subtítulo
+  "INSTRUCTORES" para diferenciar visualmente de vuelo-piloto.html.
+  Ver anterior:
   v4.9 · 2026-08-05
   Exportación cambiada de JSON a GPX (estándar universal). El archivo descargado
   es GPX 1.1 válido con <trkpt lat/lon>, <ele> (altitud) y <time> (timestamp ISO)
@@ -516,8 +521,9 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 /* ── LOGIN ── */
 #screen-login{align-items:center;justify-content:center;gap:0}
 .login-hero{text-align:center;margin-bottom:36px}
-.login-hero .ico{font-size:48px;margin-bottom:8px}
+.login-hero .ico{width:88px;height:88px;border-radius:20px;margin:0 auto 14px;display:block;object-fit:cover;box-shadow:0 0 24px rgba(0,200,212,.25)}
 .login-hero h1{font-family:var(--disp);font-size:24px;color:var(--cyan);letter-spacing:.12em}
+.login-hero h2{font-family:var(--mono);font-size:13px;color:var(--white);letter-spacing:.2em;margin-top:4px;text-transform:uppercase}
 .login-hero p{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:4px;letter-spacing:.08em}
 .login-card{width:100%;max-width:380px;background:var(--bg2);border:1px solid rgba(0,200,212,.2);border-radius:16px;padding:28px 22px}
 .field{margin-bottom:16px}
@@ -657,9 +663,9 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
 <div id="screen-login" class="screen active">
   <div class="login-hero">
-    <div class="ico">✈</div>
-    <h1>ACRG VUELO</h1>
-    <p>REGISTRO DE VUELO · INSTRUCTORES</p>
+    <img class="ico" src="icon-vuelo-192.png" alt="Aeroclub Río Grande">
+    <h1>AEROCLUB RÍO GRANDE</h1>
+    <h2>INSTRUCTORES</h2>
     <div class="ver" id="login-ver" style="margin-top:6px">—</div>
   </div>
   <div class="login-card">
@@ -868,7 +874,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
