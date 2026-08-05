@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.7 · 2026-08-05
+  chequearVersionNueva() ahora también corre una vez a los 5s de cargar
+  (setTimeout), no solo cada VERSION_POLL_MS (5 min) o al volver a la pestaña.
+  Antes, si alguien abría la página con una versión vieja cacheada y probaba
+  algo en el primer minuto, el aviso de "versión desactualizada" nunca
+  alcanzaba a dispararse. Reportado por Daniel.
   v5.6 · 2026-08-05
   FIX v5.5: el div de "(c) 2026 by DAC" tenía class="ver", la misma clase que
   usa document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION)
@@ -912,7 +918,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2066,6 +2072,12 @@ async function chequearVersionNueva(){
 }
 document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
 setInterval(chequearVersionNueva,VERSION_POLL_MS);
+// v5.7: antes el primer chequeo recién corría a los 5 min (VERSION_POLL_MS) o si el
+// usuario cambiaba de pestaña y volvía — alguien que entraba con una versión vieja
+// cacheada y probaba algo en el primer minuto nunca veía el aviso. Ahora también
+// corre una vez, temprano, a los 5s de cargar (delay chico para no competir con el
+// resto de la inicialización de la página).
+setTimeout(chequearVersionNueva,5000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
 
 if('serviceWorker' in navigator){
