@@ -1,5 +1,11 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.11
+  FECHA   : 2026-08-05
+  CAMBIOS : Exportación GPS cambiada de JSON a GPX estándar (mismo cambio que
+            vuelo.html v4.9). GPX 1.1 con <trkpt lat/lon>, <ele> y <time> por
+            punto. Compatible con CloudAhoy, Tacview, Google Earth, GpxOverlay.
+            Nombre de archivo: track_{avion}_{fecha}_{alumno}.gpx.
   VERSION : 7.10
   FECHA   : 2026-08-05
   CAMBIOS : Botón "⬇ Exportar GPS" (ámbar) en el Log de Vuelos del alumno/piloto,
@@ -2189,7 +2195,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.10</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.11</div>
   </div>
 
 </div>
@@ -5314,7 +5320,7 @@ function renderObsPublicasAlumno(){
       div.appendChild(btnMapa);
       const btnExp=document.createElement('button');
       btnExp.className='btn-export-mapa';
-      btnExp.textContent='⬇ Exportar GPS';
+      btnExp.textContent='⬇ GPX';
       btnExp.addEventListener('click',()=>exportarTrazaTurnos(rKey,rNombre,rAvion,rFecha));
       div.appendChild(btnExp);
     }
@@ -8268,23 +8274,39 @@ window.cerrarMapaVuelo = function() {
 window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
   try {
     const data = await fbGet('vuelo_tracks/' + key);
-    if (!data) { alert('No hay datos de traza para este vuelo.'); return; }
-    const exportData = {
-      meta: {
-        reserva_key: key,
-        alumno: nombre || '',
-        avion:  avion  || '',
-        fecha:  fecha  || '',
-        exportado: new Date().toISOString(),
-        app: 'Aeroclub Río Grande — turnos.html',
-      },
-      puntos: data.puntos || [],
-      total_puntos: (data.puntos||[]).length,
-    };
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    if (!data || !data.puntos || !data.puntos.length) {
+      alert('No hay datos de traza para este vuelo.'); return;
+    }
+    const puntos = data.puntos;
+    const ts0 = puntos[0].ts || new Date().toISOString();
+
+    const trkpts = puntos.map(p => {
+      const alt  = p.alt != null ? `\n        <ele>${p.alt.toFixed(1)}</ele>` : '';
+      const time = p.ts ? `\n        <time>${p.ts}</time>` : '';
+      return `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}">${alt}${time}\n      </trkpt>`;
+    }).join('\n');
+
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Aeroclub Río Grande — turnos.html"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${avion} — ${nombre} — ${fecha}</name>
+    <time>${ts0}</time>
+  </metadata>
+  <trk>
+    <name>${avion} ${fecha} ${nombre}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.json`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.gpx`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
     a.href = url; a.download = nombreArchivo;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a);
