@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.8 · 2026-08-05
+  Botón "⬇ Exportar GPS" (ámbar) en el tab Libro, al lado del "🗺 Ver recorrido
+  GPS", en cada vuelo con traza registrada. Descarga el JSON de /vuelo_tracks/{key}
+  con metadata (reserva_key, alumno, avión, fecha, timestamp de exportación) y el
+  array de puntos completo. Nombre de archivo: track_{avion}_{fecha}_{alumno}.json.
+  Permite abrir la traza en herramientas externas de análisis 3D como Flyahoy u otras
+  que acepten JSON con coordenadas GPS.
+  Ver anterior:
   v4.7 · 2026-08-04
   Pedido de Daniel: "hagamos todo lo posible para protegernos ante la
   eventual pérdida temporal de conectividad" (mismo pedido que originó
@@ -624,6 +632,8 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
 .btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;transition:all .15s}
 .btn-traza:active{background:rgba(0,200,212,.2)}
+.btn-export-gps{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;margin-left:6px;transition:all .15s}
+.btn-export-gps:active{background:rgba(240,165,0,.2)}
 </style>
 </head>
 <body>
@@ -852,7 +862,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1683,6 +1693,48 @@ function btnTraza(key, nombre, avion, hora) {
   return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
 }
 
+function btnExportGPS(key, nombre, avion, fecha) {
+  const n  = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const av = (avion||'LV-OAD').replace(/'/g,"\\'");
+  const f  = (fecha||'').replace(/'/g,"\\'");
+  return `<button class="btn-export-gps" onclick="exportarTraza('${key}','${n}','${av}','${f}')">⬇ Exportar GPS</button>`;
+}
+
+window.exportarTraza = async function(key, nombre, avion, fecha) {
+  try {
+    const snap = await get(ref(db, `vuelo_tracks/${key}`));
+    const data = snap.val();
+    if (!data) { alert('No hay datos de traza para este vuelo.'); return; }
+
+    // Construir el JSON de exportación con metadata útil
+    const exportData = {
+      meta: {
+        reserva_key: key,
+        alumno: nombre || '',
+        avion:  avion  || '',
+        fecha:  fecha  || '',
+        exportado: new Date().toISOString(),
+        app: 'Aeroclub Río Grande — vuelo.html',
+      },
+      puntos: data.puntos || [],
+      total_puntos: (data.puntos||[]).length,
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.json`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al exportar: ' + e.message);
+  }
+};
+
 $('libro-fecha').addEventListener('change',cargarLibro);
 
 async function cargarLibro(){
@@ -1732,7 +1784,7 @@ async function cargarLibro(){
           <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
           ${tieneObs?'<span class="badge-ok">obs ✓</span>':''}
         </div>
-        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora):''}
+        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+''+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
       </div>`;
     }).join('');
   }catch(e){
