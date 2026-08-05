@@ -1,0 +1,31 @@
+{
+  "name": "Aeroclub Río Grande - Piloto",
+  "short_name": "Piloto",
+  "description": "App de registro de vuelo para pilotos del Aeroclub Río Grande",
+  "start_url": "/vuelo-piloto.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050d1a",
+  "theme_color": "#050d1a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-piloto-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-piloto-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-piloto-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

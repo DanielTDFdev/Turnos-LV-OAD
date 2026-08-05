@@ -1,5 +1,27 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.09
+  FECHA   : 2026-08-04
+  CAMBIOS : Complemento de vuelo-piloto.html (app nueva, autoservicio de vuelo para
+            pilotos, sin instructor supervisando). Esos vuelos se guardan con campos
+            propios (piloto_tiempo_vuelo, piloto_aterrizajes, piloto_obs, piloto_autor,
+            piloto_ts) en vez de obs_privada_* — ese modelo es "nota privada del
+            instructor sobre un alumno", no aplica acá (piloto_obs NO es privada:
+            visible siempre, para el propio piloto y para instructor/admin). Sin este
+            cambio, esos vuelos no aparecían en ningún lado de Mi Perfil → Log de
+            Vuelos. Tres funciones extendidas para sumar la fuente piloto_*, siempre
+            en paralelo a obs_privada_* (mutuamente excluyentes por turno, nunca
+            compiten): renderMiLogVuelosInline() (el listado resumido de la pestaña,
+            v7.08), renderNotasPrivadasAlumno() (el detalle del modal — piloto_obs
+            se muestra siempre, sin el gateo de _logAlumnoModoAlumno que sí aplica a
+            obs_privada) y renderObsPublicasAlumno() (la sección de arriba del modal,
+            con el badge de estado y el botón "🗺 Ver recorrido GPS" — sin este fix el
+            botón nunca aparecía para un vuelo autorregistrado por el piloto, aunque
+            tuviera tiene_traza_gps=true, porque el filtro de esa función no conocía
+            los campos piloto_*). Los totales de horas/aterrizajes en las tres también
+            suman de la fuente que corresponda por turno.
+  ANTERIOR: v7.08
+
   VERSION : 7.08
   FECHA   : 2026-08-04
   CAMBIOS : Pedido de Daniel: en Mi Perfil → Log de Vuelos (vista del alumno), antes solo
@@ -2156,7 +2178,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.08</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.09</div>
   </div>
 
 </div>
@@ -4000,8 +4022,12 @@ async function renderMiLogVuelosInline(){
   const totalesBox=document.getElementById('ap-log-totales');
   if(!cont)return;
   const email=session.email;
+  // v7.09: suma también los vuelos autorregistrados por el propio piloto desde
+  // vuelo-piloto.html (piloto_tiempo_vuelo/piloto_aterrizajes/piloto_obs) —
+  // ese modelo no tiene dueño-instructor, es autoservicio, distinto de
+  // obs_privada_* (nota privada del instructor sobre un alumno).
   const turnos=Object.values(_reservasCache)
-    .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null))
+    .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null))
     .sort((a,b)=>(b.fecha+' '+b.hora).localeCompare(a.fecha+' '+a.hora));
 
   if(!turnos.length){
@@ -4017,7 +4043,9 @@ async function renderMiLogVuelosInline(){
   let totalHs=al?.horas_iniciales||0, totalAter=al?.aterrizajes_iniciales||0;
   turnos.forEach(r=>{
     if(r.obs_privada_tiempo_vuelo!=null)totalHs+=Number(r.obs_privada_tiempo_vuelo);
+    else if(r.piloto_tiempo_vuelo!=null)totalHs+=Number(r.piloto_tiempo_vuelo);
     if(r.obs_privada_aterrizajes!=null)totalAter+=Number(r.obs_privada_aterrizajes);
+    else if(r.piloto_aterrizajes!=null)totalAter+=Number(r.piloto_aterrizajes);
   });
   if(totalHs>0||totalAter>0){
     totalesBox.style.display='block';
@@ -4028,7 +4056,8 @@ async function renderMiLogVuelosInline(){
 
   cont.innerHTML=turnos.map(r=>{
     const fecha=fmtFechaLinda(r.fecha);
-    const horas=r.obs_privada_tiempo_vuelo!=null?Number(r.obs_privada_tiempo_vuelo).toFixed(1)+' hs':'—';
+    const horasVal=r.obs_privada_tiempo_vuelo!=null?r.obs_privada_tiempo_vuelo:r.piloto_tiempo_vuelo;
+    const horas=horasVal!=null?Number(horasVal).toFixed(1)+' hs':'—';
     return `<div class="ap-log-row" onclick="abrirMiLogVuelos()" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:.6rem .75rem;background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono)">
       <span style="font-size:12px;color:var(--text2)">${fecha}</span>
       <span style="font-size:13px;color:var(--cyan)">${horas}</span>
@@ -5229,10 +5258,14 @@ function renderObsPublicasAlumno(){
   const vacio=document.getElementById('mla-obs-pub-vacio');
   cont.innerHTML='';
   const email=_logAlumnoCtx.email;
+  // v7.09: el filtro también deja pasar vuelos autorregistrados por el piloto
+  // (piloto_tiempo_vuelo/piloto_aterrizajes) — si no, esta sección se los
+  // comía en silencio y el botón "Ver recorrido GPS" nunca aparecía para
+  // esos vuelos, aunque tuvieran traza guardada.
   const turnos=Object.values(_reservasCache)
     .filter(r=>r.email===email)
     .map(r=>({r,obsTexto:[r.obs?r.obs:'',r.obs_cancelacion?'Cancelación: '+r.obs_cancelacion:'',r.obs_post?'Post-vuelo: '+r.obs_post:''].filter(Boolean).join(' — ')}))
-    .filter(x=>x.obsTexto||x.r.obs_privada_tiempo_vuelo!=null||x.r.obs_privada_aterrizajes!=null)
+    .filter(x=>x.obsTexto||x.r.obs_privada_tiempo_vuelo!=null||x.r.obs_privada_aterrizajes!=null||x.r.piloto_tiempo_vuelo!=null||x.r.piloto_aterrizajes!=null)
     .sort((a,b)=>(b.r.fecha+' '+b.r.hora).localeCompare(a.r.fecha+' '+a.r.hora));
   if(!turnos.length){ vacio.style.display='block'; return; }
   vacio.style.display='none';
@@ -5245,11 +5278,13 @@ function renderObsPublicasAlumno(){
     const badge=document.createElement('span'); badge.className='badge badge-'+r.estado; badge.style.fontSize='9px'; badge.textContent=r.estado;
     head.appendChild(izq); head.appendChild(badge);
     div.appendChild(head);
-    if(r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null){
+    const horasVal=r.obs_privada_tiempo_vuelo!=null?r.obs_privada_tiempo_vuelo:r.piloto_tiempo_vuelo;
+    const aterrVal=r.obs_privada_aterrizajes!=null?r.obs_privada_aterrizajes:r.piloto_aterrizajes;
+    if(horasVal!=null||aterrVal!=null){
       const datos=document.createElement('div');
       datos.style.cssText='display:flex;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:11px;color:var(--cyan);margin-bottom:.3rem';
-      if(r.obs_privada_tiempo_vuelo!=null){const s=document.createElement('span');s.textContent='⏱ '+Number(r.obs_privada_tiempo_vuelo).toFixed(1)+' hs';datos.appendChild(s);}
-      if(r.obs_privada_aterrizajes!=null){const s=document.createElement('span');s.textContent='⬇ '+r.obs_privada_aterrizajes+' aterrizajes';datos.appendChild(s);}
+      if(horasVal!=null){const s=document.createElement('span');s.textContent='⏱ '+Number(horasVal).toFixed(1)+' hs';datos.appendChild(s);}
+      if(aterrVal!=null){const s=document.createElement('span');s.textContent='⬇ '+aterrVal+' aterrizajes';datos.appendChild(s);}
       div.appendChild(datos);
     }
     if(obsTexto){
@@ -5414,8 +5449,10 @@ function renderNotasPrivadasAlumno(){
   const vacio=document.getElementById('mla-vacio');
   const totalesBox=document.getElementById('mla-totales');
   const email=_logAlumnoCtx.email;
+  // v7.09: suma también los vuelos autorregistrados por el piloto desde
+  // vuelo-piloto.html (piloto_*) — ver nota en renderMiLogVuelosInline.
   const turnos=Object.values(_reservasCache)
-    .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null))
+    .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null))
     .sort((a,b)=>(b.fecha+' '+b.hora).localeCompare(a.fecha+' '+a.hora));
   cont.innerHTML='';
   // Totales acumulados (v6.72, ahora sin riesgo de duplicado desde v6.73: como es UN
@@ -5426,7 +5463,9 @@ function renderNotasPrivadasAlumno(){
   let totalHs=_logAlumnoCtx.horasIniciales||0, totalAter=_logAlumnoCtx.aterrizajesIniciales||0;
   turnos.forEach(r=>{
     if(r.obs_privada_tiempo_vuelo!=null)totalHs+=Number(r.obs_privada_tiempo_vuelo);
+    else if(r.piloto_tiempo_vuelo!=null)totalHs+=Number(r.piloto_tiempo_vuelo);
     if(r.obs_privada_aterrizajes!=null)totalAter+=Number(r.obs_privada_aterrizajes);
+    else if(r.piloto_aterrizajes!=null)totalAter+=Number(r.piloto_aterrizajes);
   });
   const conDatos=totalHs>0||totalAter>0;
   if(conDatos){
@@ -5438,26 +5477,35 @@ function renderNotasPrivadasAlumno(){
   if(!turnos.length){ vacio.style.display='block'; return; }
   vacio.style.display='none';
   turnos.forEach(r=>{
+    const esPiloto=r.obs_privada_tiempo_vuelo==null&&r.obs_privada_aterrizajes==null&&r.obs_privada==null&&(r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.piloto_obs);
+    const horasVal=esPiloto?r.piloto_tiempo_vuelo:r.obs_privada_tiempo_vuelo;
+    const aterrVal=esPiloto?r.piloto_aterrizajes:r.obs_privada_aterrizajes;
+    const obsVal=esPiloto?r.piloto_obs:r.obs_privada;
+    const autorVal=esPiloto?r.piloto_autor:r.obs_privada_autor;
+    const tsVal=esPiloto?r.piloto_ts:r.obs_privada_ts;
     const ref=fmtFechaLinda(r.fecha)+' '+r.hora+' hs '+(r.avion||'LV-OAD');
     const div=document.createElement('div');
-    div.style.cssText='padding:.6rem .75rem;background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:var(--radius)';
+    div.style.cssText='padding:.6rem .75rem;background:var(--bg3);border:1px solid var(--border);border-left:3px solid '+(esPiloto?'var(--amber)':'var(--cyan)')+';border-radius:var(--radius)';
     const head=document.createElement('div');
     head.style.cssText='display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.05em;margin-bottom:.3rem';
-    const izq=document.createElement('span'); izq.textContent=(r.obs_privada_autor||'—')+' — '+(r.obs_privada_ts?fmtTsLindo(r.obs_privada_ts):'');
+    const izq=document.createElement('span'); izq.textContent=(autorVal||'—')+(esPiloto?' (autorregistrado)':'')+' — '+(tsVal?fmtTsLindo(tsVal):'');
     const der=document.createElement('span'); der.style.color='var(--amber)'; der.textContent='✈ '+ref;
     head.appendChild(izq); head.appendChild(der);
     div.appendChild(head);
-    if(r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null){
+    if(horasVal!=null||aterrVal!=null){
       const datos=document.createElement('div');
       datos.style.cssText='display:flex;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:11px;color:var(--cyan);margin-bottom:.3rem';
-      if(r.obs_privada_tiempo_vuelo!=null){const s=document.createElement('span');s.textContent='⏱ '+Number(r.obs_privada_tiempo_vuelo).toFixed(1)+' hs';datos.appendChild(s);}
-      if(r.obs_privada_aterrizajes!=null){const s=document.createElement('span');s.textContent='⬇ '+r.obs_privada_aterrizajes+' aterrizajes';datos.appendChild(s);}
+      if(horasVal!=null){const s=document.createElement('span');s.textContent='⏱ '+Number(horasVal).toFixed(1)+' hs';datos.appendChild(s);}
+      if(aterrVal!=null){const s=document.createElement('span');s.textContent='⬇ '+aterrVal+' aterrizajes';datos.appendChild(s);}
       div.appendChild(datos);
     }
-    if(r.obs_privada&&!_logAlumnoModoAlumno){
+    // obs_privada (nota del instructor) se oculta en modo alumno — es privada.
+    // piloto_obs NO se oculta nunca: no es "privada", es autorreporte del propio
+    // piloto, visible para él mismo y para instructor/admin (pedido de Daniel).
+    if(obsVal&&(esPiloto||!_logAlumnoModoAlumno)){
       const cuerpo=document.createElement('div');
       cuerpo.style.cssText='font-family:var(--font-mono);font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.5';
-      cuerpo.textContent=r.obs_privada;
+      cuerpo.textContent=obsVal;
       div.appendChild(cuerpo);
     }
     cont.appendChild(div);
