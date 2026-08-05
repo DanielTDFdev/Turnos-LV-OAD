@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v2.3 · 2026-08-05
+  chequearVersionNueva() ahora también corre una vez a los 5s de cargar
+  (setTimeout), no solo cada VERSION_POLL_MS (5 min) o al volver a la pestaña.
+  Mismo fix que vuelo.html v5.7.
   v2.2 · 2026-08-05
   FIX v2.1: mismo bug que vuelo.html v5.6 — el div de copyright tenía
   class="ver" y el querySelectorAll('.ver') que pisa el número de versión
@@ -585,7 +589,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '2.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1395,6 +1399,12 @@ async function chequearVersionNueva(){
 }
 document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
 setInterval(chequearVersionNueva,VERSION_POLL_MS);
+// v2.3: antes el primer chequeo recién corría a los 5 min (VERSION_POLL_MS) o si el
+// usuario cambiaba de pestaña y volvía — alguien que entraba con una versión vieja
+// cacheada y probaba algo en el primer minuto nunca veía el aviso. Ahora también
+// corre una vez, temprano, a los 5s de cargar (delay chico para no competir con el
+// resto de la inicialización de la página).
+setTimeout(chequearVersionNueva,5000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
 
 if('serviceWorker' in navigator){
