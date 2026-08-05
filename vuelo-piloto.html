@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v2.1 · 2026-08-05
+  Pie de página "(c) 2026 by DAC" agregado debajo del login-card en la
+  pantalla de login (pedido de Daniel).
+  ⚠ NOTA: mismo salto de header sin documentar que en vuelo.html — este
+  header venía de v1.6 pero APP_VERSION ya estaba en 2.0 (bumps 1.7-1.9 sin
+  entrada acá).
   v1.6 · 2026-08-05
   Estética login: logo del aeroclub (icon-piloto-192.png, ícono propio de esta
   app) en lugar del emoji ✈. Título "AEROCLUB RÍO GRANDE" + subtítulo "PILOTOS".
@@ -408,6 +414,7 @@ select:disabled{opacity:.55}
     <div class="err" id="l-err"></div>
     <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
   </div>
+  <div class="ver" style="text-align:center;margin-top:18px;opacity:.6">(c) 2026 by DAC</div>
 </div>
 
 <div id="app-shell">
@@ -574,7 +581,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '2.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
