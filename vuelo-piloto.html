@@ -454,6 +454,15 @@ select:disabled{opacity:.55}
       </div>
     </div>
 
+    <!-- Aviso de pantalla para GPS (visible solo cuando GPS activo) -->
+    <div id="gps-warning" style="display:none;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:12px;padding:12px 14px;margin-bottom:0">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:700;letter-spacing:.06em;margin-bottom:6px">⚠ MANTENÉ LA PANTALLA ENCENDIDA</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--amber);opacity:.85;line-height:1.6">
+        Si la pantalla se bloquea, el GPS deja de registrar.<br>
+        <span style="color:var(--white);opacity:.7">Samsung: Ajustes → Apps → Chrome → Batería → Sin restricciones</span>
+      </div>
+    </div>
+
     <!-- Botón principal -->
     <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
     <button class="btn btn-ghost" id="btn-cancelar-vuelo" style="display:none;border-color:var(--red);color:var(--red)">✕ Cancelar</button>
@@ -565,7 +574,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '1.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -797,6 +806,8 @@ function pintarToggleGPS(){
   } else {
     sub.textContent='Registra el recorrido del vuelo (opcional)';
   }
+  const warn=$('gps-warning');
+  if(warn) warn.style.display=(gpsHabilitado&&!bloqueado)?'block':'none';
 }
 function toggleGPS(){
   if(tsInicio) return;
