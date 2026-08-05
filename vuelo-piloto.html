@@ -362,6 +362,13 @@ select:disabled{opacity:.55}
 .map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
 .map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
 .btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
+.spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
+.spinner-btn{width:56px;height:56px;border:none;border-radius:12px;font-size:28px;font-weight:700;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);-webkit-tap-highlight-color:transparent}
+.spinner-btn.minus{background:var(--gray2);border-radius:12px 0 0 12px}
+.spinner-btn.plus{background:var(--cyan);border-radius:0 12px 12px 0}
+.spinner-btn:active{opacity:.75;transform:scale(.95)}
+.spinner-val{font-family:var(--disp);font-size:36px;color:var(--white);min-width:80px;text-align:center;letter-spacing:.05em;background:var(--bg3);border-top:1px solid rgba(0,200,212,.2);border-bottom:1px solid rgba(0,200,212,.2);height:56px;display:flex;align-items:center;justify-content:center}
+.spinner-label{font-family:var(--mono);font-size:10px;color:var(--gray);text-align:center;margin-top:6px;letter-spacing:.08em}
 #map-container{flex:1;min-height:0;position:relative}
 #map-leaflet{width:100%;height:100%}
 .map-info-bar{padding:12px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:22px;flex-wrap:wrap;flex:none}
@@ -468,7 +475,13 @@ select:disabled{opacity:.55}
 
       <div class="card">
         <div class="card-title">Aterrizajes</div>
-        <input id="c-aterr" type="number" min="0" max="99" placeholder="Cantidad de aterrizajes">
+        <div class="spinner-wrap">
+          <button class="spinner-btn minus" onclick="stepAterr(-1)">−</button>
+          <div class="spinner-val" id="c-aterr-display">0</div>
+          <button class="spinner-btn plus" onclick="stepAterr(1)">+</button>
+        </div>
+        <div class="spinner-label">toque para sumar o restar</div>
+        <input type="hidden" id="c-aterr" value="0">
       </div>
 
       <div class="card">
@@ -552,7 +565,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '1.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '1.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -885,13 +898,16 @@ function mostrarCierre(){
   $('t-manual').style.display='none';
   $('btn-edit-t').textContent='✎ editar';
   $('c-err').textContent='';
+  $('c-aterr').value='0';
+  $('c-aterr-display').textContent='0';
+  $('c-obs').value='';
   $('v-cierre').style.display='block';
   $('v-guardado').style.display='none';
   $('btn-start-stop').style.display='none';
   // Restaurar borrador si venía de una recarga a mitad de cierre (ver
   // persistir()/init()) — se aplica una sola vez y se descarta.
   if(_cierreRestaurado){
-    if(_cierreRestaurado.cAterr) $('c-aterr').value=_cierreRestaurado.cAterr;
+    if(_cierreRestaurado.cAterr){ $('c-aterr').value=_cierreRestaurado.cAterr; $('c-aterr-display').textContent=_cierreRestaurado.cAterr; }
     if(_cierreRestaurado.cObs) $('c-obs').value=_cierreRestaurado.cObs;
     if(_cierreRestaurado.tManualVisible&&_cierreRestaurado.tManualValor){
       $('t-manual').value=_cierreRestaurado.tManualValor;
@@ -903,7 +919,13 @@ function mostrarCierre(){
     _cierreRestaurado=null;
   }
 }
-$('c-aterr').addEventListener('input',persistir);
+window.stepAterr = function(delta) {
+  const inp = $('c-aterr');
+  const val = Math.max(0, Math.min(99, (parseInt(inp.value)||0) + delta));
+  inp.value = val;
+  $('c-aterr-display').textContent = val;
+  persistir();
+};
 $('c-obs').addEventListener('input',persistir);
 
 $('btn-edit-t').addEventListener('click',()=>{
