@@ -1,5 +1,28 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.13
+  FECHA   : 2026-08-05
+  CAMBIOS : FIX — la pestaña "🔒 Log de Instructores" del modal Log del Alumno
+            (renderNotasPrivadasAlumno) nunca tenía los botones "🗺 Ver recorrido
+            GPS" / "⬇ GPX", aunque el turno tuviera tiene_traza_gps:true. Solo
+            existían en la pestaña pública "Observaciones al Alumno"
+            (renderObsPublicasAlumno). Reportado por Daniel: vuelo autorregistrado
+            de un piloto con traza guardada (visible en vuelo-piloto.html) no se
+            podía ver desde acá. Mismo patrón de botones copiado 1:1.
+  VERSION : 7.12
+  FECHA   : 2026-08-05
+  CAMBIOS : Cancelación automática de turnos al bloquear un avión. Dos disparadores:
+            (1) toggleActivoAvion() al poner el avión OFF — cancela TODOS los turnos
+            aprobados/pendientes futuros de ese avión (desde ahora en adelante).
+            (2) toggleBloqueoDia() al bloquear un día puntual — cancela solo los
+            turnos aprobados/pendientes futuros de ESE día para ese avión. En ambos
+            casos: confirm() previo mostrando la cantidad de turnos afectados antes
+            de aplicar el bloqueo (si se cancela el confirm, no se bloquea nada);
+            cada turno cancelado queda cancelado_rol:'instructor' (mismo criterio que
+            baja por falta de disponibilidad del instructor, v7.05-adyacente),
+            auditoría 'cancelacion_turno' por cada uno, y mailCancel() automático a
+            cada usuario. Nuevo turnoEsFuturo() usa horaInicio si es turno de rango
+            (turnoYaPaso() solo mira r.hora y daría falso positivo en rangos).
   VERSION : 7.11
   FECHA   : 2026-08-05
   CAMBIOS : Exportación GPS cambiada de JSON a GPX estándar (mismo cambio que
@@ -2195,7 +2218,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.11</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.13</div>
   </div>
 
 </div>
@@ -5242,6 +5265,41 @@ function turnoYaPaso(r){
   return new Date(y,m-1,d,hh,mm,0).getTime()<(Date.now()+_serverOffsetMs);
 }
 
+// ── CANCELACIÓN AUTOMÁTICA POR BLOQUEO DE AVIÓN/DÍA (v7.12) ────────────
+// Al poner un avión fuera de servicio (toggleActivoAvion) o bloquear un día
+// puntual (toggleBloqueoDia), los turnos aprobados/pendientes que caen en los
+// días/horas subsiguientes se cancelan automáticamente y se avisa por mail a
+// cada usuario afectado. turnoEsFuturo() usa horaInicio (rango) si existe,
+// igual que las demás validaciones de rango del sistema — turnoYaPaso() solo
+// mira r.hora y por eso no sirve acá sin dar falsos positivos en turnos de rango.
+function turnoEsFuturo(r){
+  const horaEf=r.horaInicio||r.hora||'00:00';
+  const[y,m,d]=r.fecha.split('-').map(Number);
+  const[hh,mm]=horaEf.split(':').map(Number);
+  return new Date(y,m-1,d,hh,mm,0).getTime()>=ahoraServidor().getTime();
+}
+// fechaFiltro null = todo lo futuro del avión (avión OFF); fechaFiltro='YYYY-MM-DD' = solo ese día (bloqueo de día puntual).
+async function turnosFuturosParaCancelarPorBloqueo(avion,fechaFiltro=null){
+  const todasReservas=await fbGet('reservas');
+  if(!todasReservas)return[];
+  const hoy=fmtDate(ahoraServidor());
+  return Object.entries(todasReservas).filter(([,r])=>
+    (r.avion||'LV-OAD')===avion &&
+    (r.estado==='aprobado'||r.estado==='pendiente') &&
+    (fechaFiltro?r.fecha===fechaFiltro:r.fecha>=hoy) &&
+    turnoEsFuturo(r)
+  );
+}
+async function cancelarTurnosPorBloqueo(lista,motivo){
+  for(const[key,r] of lista){
+    const upd={estado:'cancelado',instructor:session.nombre,cancelado_por:session.nombre,cancelado_rol:'instructor',ts_cancelacion:serverTimestamp(),obs_cancelacion:motivo};
+    await fbUpdate('reservas/'+key,upd);
+    await registrarAuditoria('cancelacion_turno',session.rol||'instructor','exito',
+      session.nombre+' — '+(r.avion||'LV-OAD')+' — '+r.fecha+' '+(r.hora||((r.horaInicio||'')+(r.horaFin?' a '+r.horaFin:'')))+' hs — alumno: '+r.nombre+' — '+motivo);
+    mailCancel(r,motivo);
+  }
+}
+
 // ── LOG PRIVADO DEL ALUMNO (v6.70) ──────────────────────────────
 // Notas de instructores sobre el progreso de un alumno (log, warnings, etc.),
 // NUNCA visibles para el alumno. Vive en /logs_alumno/{emailKey}, separado de
@@ -5529,6 +5587,22 @@ function renderNotasPrivadasAlumno(){
       cuerpo.style.cssText='font-family:var(--font-mono);font-size:12px;color:var(--text2);white-space:pre-wrap;line-height:1.5';
       cuerpo.textContent=obsVal;
       div.appendChild(cuerpo);
+    }
+    // Botones GPS (v7.12 — antes solo estaban en renderObsPublicasAlumno; esta
+    // pestaña "Log de Instructores" se los estaba comiendo aunque el turno
+    // tuviera traza registrada, ej. vuelos autorregistrados por piloto).
+    if(r.tiene_traza_gps&&r.key){
+      const rKey=r.key, rNombre=r.nombre||'', rAvion=r.avion||'LV-OAD', rHora=r.hora||'', rFecha=r.fecha||'';
+      const btnMapa=document.createElement('button');
+      btnMapa.className='btn-ver-mapa';
+      btnMapa.textContent='🗺 Ver recorrido GPS';
+      btnMapa.addEventListener('click',()=>abrirMapaVuelo(rKey,rNombre,rAvion,rHora));
+      div.appendChild(btnMapa);
+      const btnExp=document.createElement('button');
+      btnExp.className='btn-export-mapa';
+      btnExp.textContent='⬇ GPX';
+      btnExp.addEventListener('click',()=>exportarTrazaTurnos(rKey,rNombre,rAvion,rFecha));
+      div.appendChild(btnExp);
     }
     cont.appendChild(div);
   });
@@ -6347,11 +6421,19 @@ window.toggleActivoAvion=async function(){
   if(!configs[avion])configs[avion]={...DEFAULT_CONFIG_AVION,horariosDia:{...DEFAULT_CONFIG_AVION.horariosDia},diasBloqueados:[],activo:true};
   const actual=configs[avion].activo!==false;
   const nuevo=!actual;
-  if(!nuevo&&!confirm('¿Deshabilitar '+avion+'? Los usuarios no podrán verla ni reservarla hasta que la vuelvas a habilitar.'))return;
+  let afectados=[];
+  if(!nuevo){
+    afectados=await turnosFuturosParaCancelarPorBloqueo(avion);
+    const aviso=afectados.length
+      ?'\n\n⚠ Hay '+afectados.length+' turno(s) aprobado(s)/pendiente(s) a partir de ahora en '+avion+'. Se cancelarán automáticamente y se avisará por mail a cada usuario.'
+      :'';
+    if(!confirm('¿Deshabilitar '+avion+'? Los usuarios no podrán verla ni reservarla hasta que la vuelvas a habilitar.'+aviso))return;
+  }
   configs[avion].activo=nuevo;
   await saveConfigAvion(avion);
   await registrarAuditoria(nuevo?'avion_habilitado':'avion_deshabilitado',session.rol||'instructor','exito',
     session.nombre+' — '+avion);
+  if(!nuevo&&afectados.length)await cancelarTurnosPorBloqueo(afectados,'Avión '+avion+' puesto fuera de servicio');
   if(enDias)renderToggleAvion(avion);
   else renderHorariosConfig();
 };
@@ -6441,11 +6523,17 @@ window.toggleBloqueoDia=async function(ds){
   if(!configs[activeDiasAvion])configs[activeDiasAvion]={...DEFAULT_CONFIG_AVION,horariosDia:{...DEFAULT_CONFIG_AVION.horariosDia},diasBloqueados:[]};
   const bl=configs[activeDiasAvion].diasBloqueados;
   const estabaBloqueado=bl.includes(ds);
+  let afectados=[];
+  if(!estabaBloqueado){
+    afectados=await turnosFuturosParaCancelarPorBloqueo(activeDiasAvion,ds);
+    if(afectados.length&&!confirm('Hay '+afectados.length+' turno(s) aprobado(s)/pendiente(s) el '+ds+' para '+activeDiasAvion+'.\n\nSe cancelarán automáticamente y se avisará por mail a cada usuario.\n\n¿Bloquear el día de todas formas?'))return;
+  }
   if(estabaBloqueado)configs[activeDiasAvion].diasBloqueados=bl.filter(d=>d!==ds);
   else configs[activeDiasAvion].diasBloqueados.push(ds);
   await saveConfigAvion(activeDiasAvion);
   await registrarAuditoria(estabaBloqueado?'dia_desbloqueado':'dia_bloqueado',session.rol||'instructor','exito',
     session.nombre+' — '+activeDiasAvion+' — '+ds);
+  if(!estabaBloqueado&&afectados.length)await cancelarTurnosPorBloqueo(afectados,'Día '+ds+' bloqueado para '+activeDiasAvion);
   renderCalMes();
 };
 
