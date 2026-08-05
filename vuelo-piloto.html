@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v1.3 · 2026-08-04
+  Fix reportado por Daniel: el selector de avión se quedaba pegado en
+  "Cargando..." sin nunca poblarse. Causa probable: el chequeo de aviones
+  habilitados (poblarAviones(), v1.2) esperaba get(ref(db,'config')) sin
+  ningún límite de tiempo — si la conexión a Firebase Realtime Database
+  tarda o directamente se cuelga (pasa en ciertas redes móviles que
+  bloquean WebSocket), la promesa queda pendiente para siempre: nunca
+  resuelve NI rechaza, así que el try/catch no la atrapaba y sel.innerHTML
+  nunca se llegaba a ejecutar. Fix: Promise.race con un timeout de 5
+  segundos — pasado ese tiempo sin respuesta, se da por perdido el chequeo
+  y se muestran los 3 aviones de la flota igual (mismo criterio fail-open
+  que ya tenía para errores explícitos).
+  Ver anterior:
   v1.2 · 2026-08-04
   Pedido de Daniel: dejar elegir CUALQUIER avión de la flota, incluido
   LV-OAD (antes solo LV-ART/LV-MPH). Razonamiento explícito de Daniel: si
@@ -461,7 +474,7 @@ let tsInicio = null;
 let tsFin = null;
 let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
-const APP_VERSION = '1.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '1.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -585,11 +598,19 @@ async function poblarAviones(){
   const sel=$('p-avion');
   let habilitados=FLOTA;
   try{
-    const cfg=(await get(ref(db,'config'))).val()||{};
+    // Timeout de seguridad: si la conexión a Firebase tarda o se cuelga (pasa
+    // en algunas redes móviles que bloquean WebSocket), sin esto el <select>
+    // podía quedar pegado en "Cargando..." para siempre — el try/catch solo
+    // atrapa errores, no una promesa que nunca se resuelve ni rechaza.
+    const cfgSnap=await Promise.race([
+      get(ref(db,'config')),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de conexión')),5000))
+    ]);
+    const cfg=cfgSnap.val()||{};
     habilitados=FLOTA.filter(a=>cfg[a]?.activo!==false);
     if(!habilitados.length) habilitados=FLOTA; // fail-open: si por algún motivo queda vacío, mostrar todos antes que dejar al piloto sin nada
   }catch(e){
-    console.warn('No se pudo chequear aviones habilitados, se muestran todos:',e);
+    console.warn('No se pudo chequear aviones habilitados (o tardó demasiado), se muestran todos:',e);
   }
   sel.innerHTML=habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
   if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
