@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.10
+  FECHA   : 2026-08-05
+  CAMBIOS : Botón "⬇ Exportar GPS" (ámbar) en el Log de Vuelos del alumno/piloto,
+            al lado del "🗺 Ver recorrido GPS", en cada entrada con traza registrada.
+            Descarga el JSON de /vuelo_tracks/{key} con metadata (reserva_key, alumno,
+            avión, fecha, timestamp) y el array de puntos completo. Permite abrir la
+            traza en Flyahoy u otras herramientas de análisis 3D. Mismo comportamiento
+            que el botón equivalente de vuelo.html v4.8, pero usando fbGet() en lugar
+            de get(ref()) ya que turnos.html usa sus propios helpers de Firebase.
   VERSION : 7.09
   FECHA   : 2026-08-04
   CAMBIOS : Complemento de vuelo-piloto.html (app nueva, autoservicio de vuelo para
@@ -2030,6 +2039,8 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 #modal-mapa-vuelo .map-info .mv{color:var(--text)}
 .btn-ver-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.25);border-radius:4px;color:var(--cyan);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;transition:all .15s;letter-spacing:.05em}
 .btn-ver-mapa:hover{background:rgba(0,200,212,.18)}
+.btn-export-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);border-radius:4px;color:var(--amber);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;margin-left:6px;transition:all .15s;letter-spacing:.05em}
+.btn-export-mapa:hover{background:rgba(240,165,0,.18)}
 .modal-overlay.open{display:flex;}
 .modal{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:1.5rem;max-width:420px;width:100%;position:relative;overflow-x:hidden;overflow-y:auto;max-height:88vh;}
 .modal-tabs{display:flex;gap:6px;margin-bottom:1rem;flex-wrap:wrap;}
@@ -2178,7 +2189,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.09</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.10</div>
   </div>
 
 </div>
@@ -5293,14 +5304,19 @@ function renderObsPublicasAlumno(){
       cuerpo.textContent=obsTexto;
       div.appendChild(cuerpo);
     }
-    // Botón de mapa GPS (solo si el turno tiene traza)
+    // Botones GPS (solo si el turno tiene traza)
     if(r.tiene_traza_gps&&r.key){
+      const rKey=r.key, rNombre=r.nombre||'', rAvion=r.avion||'LV-OAD', rHora=r.hora||'', rFecha=r.fecha||'';
       const btnMapa=document.createElement('button');
       btnMapa.className='btn-ver-mapa';
       btnMapa.textContent='🗺 Ver recorrido GPS';
-      const rKey=r.key, rNombre=r.nombre||'', rAvion=r.avion||'LV-OAD', rHora=r.hora||'';
       btnMapa.addEventListener('click',()=>abrirMapaVuelo(rKey,rNombre,rAvion,rHora));
       div.appendChild(btnMapa);
+      const btnExp=document.createElement('button');
+      btnExp.className='btn-export-mapa';
+      btnExp.textContent='⬇ Exportar GPS';
+      btnExp.addEventListener('click',()=>exportarTrazaTurnos(rKey,rNombre,rAvion,rFecha));
+      div.appendChild(btnExp);
     }
     cont.appendChild(div);
   });
@@ -8247,6 +8263,35 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
 window.cerrarMapaVuelo = function() {
   document.getElementById('modal-mapa-vuelo').classList.remove('open');
   if (_mapaVueloLeaflet) { _mapaVueloLeaflet.remove(); _mapaVueloLeaflet = null; }
+};
+
+window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
+  try {
+    const data = await fbGet('vuelo_tracks/' + key);
+    if (!data) { alert('No hay datos de traza para este vuelo.'); return; }
+    const exportData = {
+      meta: {
+        reserva_key: key,
+        alumno: nombre || '',
+        avion:  avion  || '',
+        fecha:  fecha  || '',
+        exportado: new Date().toISOString(),
+        app: 'Aeroclub Río Grande — turnos.html',
+      },
+      puntos: data.puntos || [],
+      total_puntos: (data.puntos||[]).length,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.json`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al exportar: ' + e.message);
+  }
 };
 </script>
 <!-- Modal mapa GPS del vuelo (alumno) -->
