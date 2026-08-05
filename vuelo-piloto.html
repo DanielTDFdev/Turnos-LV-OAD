@@ -268,7 +268,7 @@ select:disabled{opacity:.55}
 
 #screen-login{align-items:center;justify-content:center;gap:0}
 .login-hero{text-align:center;margin-bottom:36px}
-.login-hero .ico{width:88px;height:88px;border-radius:20px;margin:0 auto 14px;display:block;object-fit:cover;box-shadow:0 0 24px rgba(0,200,212,.25)}
+.login-hero .ico{max-width:180px;max-height:120px;width:auto;height:auto;margin:0 auto 16px;display:block;object-fit:contain;filter:drop-shadow(0 0 12px rgba(0,200,212,.3))}
 .login-hero h1{font-family:var(--disp);font-size:24px;color:var(--cyan);letter-spacing:.12em}
 .login-hero h2{font-family:var(--mono);font-size:13px;color:var(--white);letter-spacing:.2em;margin-top:4px;text-transform:uppercase}
 .login-hero p{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:4px;letter-spacing:.08em}
@@ -552,7 +552,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '1.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '1.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
