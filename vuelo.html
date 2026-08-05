@@ -2,6 +2,39 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.7 · 2026-08-04
+  Pedido de Daniel: "hagamos todo lo posible para protegernos ante la
+  eventual pérdida temporal de conectividad" (mismo pedido que originó
+  vuelo-piloto.html v1.5, ver ese changelog para el razonamiento completo
+  — acá el mismo rediseño, adaptado a que vuelo.html tiene dos casos:
+  turno in-situ (esInSitu, sin key todavía) y turno real (ya con key)).
+  Rediseño de fondo del guardado — antes CONFIRMAR intentaba escribir a
+  Firebase directo (con timeout desde v4.6, pero igual bloqueaba
+  esperando esa escritura). Ahora:
+  - CONFIRMAR guarda el vuelo PRIMERO en una cola en localStorage
+    (LS_PENDIENTES) — instantáneo, siempre funciona — y libera la
+    pantalla al toque para el próximo turno. La escritura real a Firebase
+    (misma lógica de siempre: crea la reserva si es in-situ, o hace
+    update si ya existía, más traza GPS y auditoría) pasa en segundo
+    plano vía escribirPendiente(item), reintentada por
+    intentarSincronizarPendientes(). El ítem de la cola guarda un
+    snapshot mínimo del turno in-situ (nombre/email/fecha/hora/avion/rol)
+    para poder recrear el objeto `nuevo` al sincronizar, sin depender de
+    que turnoActual siga existiendo en memoria en ese momento.
+  - Reintentos automáticos: evento 'online' del navegador, setInterval
+    cada 30s de respaldo, y también al abrir la app (init(), antes de
+    loguearse). Cola FIFO, se corta ante el primer fallo y se reintenta
+    todo junto después.
+  - Banner fijo nuevo (banner-pendientes, cian, debajo del de versión
+    vieja si ambos están visibles) con botón "REINTENTAR AHORA" manual.
+  - Aviso no bloqueante en logout si quedan pendientes.
+  - Mismo límite explícito que en vuelo-piloto.html: reintenta mientras
+    la app está ABIERTA, no es sync en segundo plano con la app cerrada.
+  Bug encontrado y corregido en el camino: al reescribir guardar(), un
+  bloque `finally` del código viejo quedó huérfano (sin su `try`
+  correspondiente, que ahora cierra antes) — error de sintaxis que
+  hubiera roto todo el script. Detectado y sacado antes de esta entrega.
+  Ver anterior:
   v4.6 · 2026-08-04
   Mismo fix que se aplicó en vuelo-piloto.html v1.4, a pedido de Daniel
   ("¿y lo mismo para vuelo.html?"). Pregunta original: si el instructor
@@ -601,6 +634,11 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   <button id="btn-recargar-version" style="font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:8px;cursor:pointer">ACTUALIZAR AHORA</button>
 </div>
 
+<div id="banner-pendientes" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9998;background:var(--cyan);color:#0a0a0a;font-family:var(--mono);font-size:12px;letter-spacing:.05em;padding:10px 16px;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.45)">
+  <span id="pendientes-texto">⏳ Vuelos pendientes de guardar...</span>
+  <button id="btn-reintentar-pendientes" style="font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 16px;background:#0a0a0a;color:var(--cyan);border:1px solid #0a0a0a;border-radius:8px;cursor:pointer">REINTENTAR AHORA</button>
+</div>
+
 <div id="screen-login" class="screen active">
   <div class="login-hero">
     <div class="ico">✈</div>
@@ -812,7 +850,9 @@ let guardadoExitoso = false; // true una vez confirmado y guardado — evita el 
 let _cierreRestaurado = null; // borrador del formulario de cierre restaurado de localStorage, se aplica en mostrarCierre()
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '4.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
+let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
+const APP_VERSION = '4.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -857,6 +897,12 @@ function init(){
   } else {
     $('screen-login').classList.add('active');
   }
+
+  // Chequea la cola de sincronización pendiente de entrada, sesión iniciada
+  // o no — si quedó algo sin sincronizar de una vez anterior, esto lo
+  // intenta apenas haya conexión, sin depender de que alguien se loguee primero.
+  actualizarBannerPendientes();
+  intentarSincronizarPendientes();
 }
 
 // ── LOGIN ─────────────────────────────────────────────────
@@ -1416,6 +1462,12 @@ $('btn-edit-t').addEventListener('click',()=>{
 });
 
 // CONFIRMAR Y GUARDAR
+// Pedido de Daniel: protección máxima ante pérdida de conectividad. En vez
+// de escribir a Firebase directo y bloquear al instructor si no hay señal,
+// el vuelo se guarda PRIMERO en localStorage (siempre funciona, instantáneo)
+// y la app queda libre para el próximo turno de inmediato. La sincronización
+// real a Firebase pasa en segundo plano (intentarSincronizarPendientes) y se
+// reintenta sola. Ver esa función y escribirPendiente() más abajo.
 $('btn-confirmar').addEventListener('click',guardar);
 
 async function guardar(){
@@ -1430,96 +1482,168 @@ async function guardar(){
 
   if(!horas||horas<=0){$('c-err').textContent='El tiempo de vuelo no puede ser 0.';return;}
 
-  $('btn-confirmar').disabled=true;
-  $('btn-confirmar').textContent='Guardando...';
-
-  const datos={
-    obs_privada_tiempo_vuelo: horas,
-    obs_privada_aterrizajes:  aterr||null,
-    obs_privada:              obs||null,
-    obs_privada_autor:        session.nombre,
-    obs_privada_ts:           new Date().toISOString(),
-    ts_despegue:              tsInicio,
-    ts_aterrizaje:            tsFin,
+  const item={
+    id: 'v'+Date.now()+Math.random().toString(36).slice(2),
+    esInSitu: !!turnoActual?.esInSitu,
+    key: turnoActual?.key||null,
+    // Solo hace falta el snapshot completo si todavía no existe en Firebase —
+    // si ya tiene .key, escribirPendiente() solo necesita ese key para el update.
+    turnoSnapshot: turnoActual?.esInSitu ? {
+      nombre:turnoActual.nombre, email:turnoActual.email, fecha:turnoActual.fecha,
+      hora:turnoActual.hora, avion:turnoActual.avion, rol:turnoActual.rol
+    } : null,
+    nombreMostrado: turnoActual?.nombre||'Vuelo manual',
+    instructorNombre: session.nombre,
+    horas, aterr, obs,
+    tsInicio, tsFin,
+    gpsPoints: [...gpsPoints],
+    creadoTs: new Date().toISOString()
   };
-  // Limpiar nulls
-  Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
 
   try{
-    if(turnoActual?.esInSitu){
-      // Turno in-situ: recién ACÁ se crea la reserva en Firebase — hasta este
-      // punto no se escribió absolutamente nada (por eso "Cancelar" en cualquier
-      // momento anterior no deja rastro ni requiere borrar nada a mano).
-      const tieneTraza=gpsPoints.length>1;
-      const nuevo={
-        nombre:      turnoActual.nombre,
-        email:       turnoActual.email,
-        fecha:       turnoActual.fecha,
-        hora:        turnoActual.hora,
-        avion:       turnoActual.avion,
-        tipo_vuelo:  'instruccion',
-        estado:      'aprobado',
-        rol:         turnoActual.rol,
-        instructor:  session.nombre,
-        aprobado_por:session.nombre,
-        cargado_por: session.nombre,
-        ts:          new Date().toISOString(),
-        ...datos,
-        ...(tieneTraza?{tiene_traza_gps:true}:{})
-      };
-      const nuevaRef=push(ref(db,'reservas'));
-      await conTimeout(set(nuevaRef,nuevo));
-      turnoActual={...nuevo,key:nuevaRef.key};
-      if(tieneTraza){
-        await conTimeout(set(ref(db,`vuelo_tracks/${nuevaRef.key}`),{
-          puntos: gpsPoints,
-          autor: session.nombre,
-          ts_guardado: new Date().toISOString()
-        }));
-      }
-      // Misma acción de auditoría que usa "+ CARGAR TURNO" en turnos.html
-      // (alta_turno_manual), para que aparezca igual en Seguimiento/Consultas.
-      await conTimeout(set(push(ref(db,'auditoria')),{
-        accion:'alta_turno_manual',
-        rol:'instructor',
-        resultado:'exito',
-        detalle:`${session.nombre} cargó turno — ${nuevo.avion} — ${nuevo.fecha} ${nuevo.hora} hs — alumno: ${nuevo.nombre} — aprobado por ${session.nombre} — in situ desde vuelo.html`,
-        ts:new Date().toISOString()
-      }));
-    } else if(turnoActual?.key){
-      // Traza GPS: nodo aparte de /reservas para no engordar el payload que
-      // turnos.html escucha en tiempo real con onValue — solo se pide bajo
-      // demanda cuando alguien quiere ver el recorrido de un vuelo puntual.
-      if(gpsPoints.length>1){
-        await conTimeout(set(ref(db,`vuelo_tracks/${turnoActual.key}`),{
-          puntos: gpsPoints,
-          autor: session.nombre,
-          ts_guardado: new Date().toISOString()
-        }));
-        datos.tiene_traza_gps=true; // flag liviano en la reserva, para mostrar el ícono sin bajar la traza completa
-      }
-      await conTimeout(update(ref(db,`reservas/${turnoActual.key}`),datos));
-    }
-    localStorage.removeItem(LS);
-    localStorage.removeItem(LS_GPS_PUNTOS);
-    gpsPoints=[];
-    liberarWakeLock();
-    guardadoExitoso=true;
-    $('v-cierre').style.display='none';
-    $('btn-cancelar-vuelo').style.display='none';
-    $('v-guardado').style.display='block';
-    $('btn-cambiar-turno').style.display='';
-    $('guardado-detalle').textContent=
-      `${turnoActual?.nombre||'Vuelo manual'} · ${horas} hs · ${aterr} aterrizajes`;
-    toast('✓ Guardado correctamente');
+    agregarPendiente(item);
   }catch(e){
-    $('c-err').textContent='Error al guardar: '+e.message;
+    // Extremadamente raro (ej: localStorage lleno) — acá sí no hay nada más
+    // que se pueda hacer automáticamente.
+    $('c-err').textContent='No se pudo guardar ni siquiera localmente: '+e.message+'. Anotá los datos a mano por las dudas.';
     console.error(e);
-  }finally{
-    $('btn-confirmar').disabled=false;
-    $('btn-confirmar').textContent='✓ CONFIRMAR Y GUARDAR';
+    return;
+  }
+
+  // El vuelo ya está seguro (encolado) — se libera la pantalla para el
+  // próximo turno sin esperar la escritura real a Firebase.
+  localStorage.removeItem(LS);
+  localStorage.removeItem(LS_GPS_PUNTOS);
+  gpsPoints=[];
+  liberarWakeLock();
+  guardadoExitoso=true;
+  $('v-cierre').style.display='none';
+  $('btn-cancelar-vuelo').style.display='none';
+  $('v-guardado').style.display='block';
+  $('btn-cambiar-turno').style.display='';
+  $('guardado-detalle').textContent=`${item.nombreMostrado} · ${horas} hs · ${aterr} aterrizajes`;
+  toast('✓ Vuelo guardado');
+
+  intentarSincronizarPendientes(); // en segundo plano, no bloquea
+}
+
+// ── Cola de sincronización ───────────────────────────────
+function leerPendientes(){
+  try{ return JSON.parse(localStorage.getItem(LS_PENDIENTES)||'[]'); }catch{ return []; }
+}
+function guardarListaPendientes(lista){
+  localStorage.setItem(LS_PENDIENTES,JSON.stringify(lista));
+  actualizarBannerPendientes();
+}
+function agregarPendiente(item){
+  const lista=leerPendientes();
+  lista.push(item);
+  guardarListaPendientes(lista);
+}
+
+async function escribirPendiente(item){
+  const datos={
+    obs_privada_tiempo_vuelo: item.horas,
+    obs_privada_aterrizajes:  item.aterr||null,
+    obs_privada:              item.obs||null,
+    obs_privada_autor:        item.instructorNombre,
+    obs_privada_ts:           new Date().toISOString(),
+    ts_despegue:              item.tsInicio,
+    ts_aterrizaje:            item.tsFin,
+  };
+  Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
+
+  if(item.esInSitu){
+    const t=item.turnoSnapshot;
+    const tieneTraza=item.gpsPoints&&item.gpsPoints.length>1;
+    const nuevo={
+      nombre:      t.nombre,
+      email:       t.email,
+      fecha:       t.fecha,
+      hora:        t.hora,
+      avion:       t.avion,
+      tipo_vuelo:  'instruccion',
+      estado:      'aprobado',
+      rol:         t.rol,
+      instructor:  item.instructorNombre,
+      aprobado_por:item.instructorNombre,
+      cargado_por: item.instructorNombre,
+      ts:          new Date().toISOString(),
+      ...datos,
+      ...(tieneTraza?{tiene_traza_gps:true}:{})
+    };
+    const nuevaRef=push(ref(db,'reservas'));
+    await conTimeout(set(nuevaRef,nuevo));
+    if(tieneTraza){
+      await conTimeout(set(ref(db,`vuelo_tracks/${nuevaRef.key}`),{
+        puntos: item.gpsPoints,
+        autor: item.instructorNombre,
+        ts_guardado: new Date().toISOString()
+      }));
+    }
+    await conTimeout(set(push(ref(db,'auditoria')),{
+      accion:'alta_turno_manual',
+      rol:'instructor',
+      resultado:'exito',
+      detalle:`${item.instructorNombre} cargó turno — ${nuevo.avion} — ${nuevo.fecha} ${nuevo.hora} hs — alumno: ${nuevo.nombre} — aprobado por ${item.instructorNombre} — in situ desde vuelo.html`,
+      ts:new Date().toISOString()
+    }));
+  } else if(item.key){
+    if(item.gpsPoints&&item.gpsPoints.length>1){
+      await conTimeout(set(ref(db,`vuelo_tracks/${item.key}`),{
+        puntos: item.gpsPoints,
+        autor: item.instructorNombre,
+        ts_guardado: new Date().toISOString()
+      }));
+      datos.tiene_traza_gps=true;
+    }
+    await conTimeout(update(ref(db,`reservas/${item.key}`),datos));
   }
 }
+
+async function intentarSincronizarPendientes(){
+  if(_sincronizando) return;
+  let lista=leerPendientes();
+  if(!lista.length){ actualizarBannerPendientes(); return; }
+  _sincronizando=true;
+  actualizarBannerPendientes('sincronizando');
+  while(lista.length){
+    const item=lista[0];
+    try{
+      await escribirPendiente(item);
+      lista=lista.slice(1);
+      guardarListaPendientes(lista); // persiste el progreso parcial en cada éxito
+    }catch(e){
+      console.warn('No se pudo sincronizar un vuelo pendiente, se reintenta después:',e);
+      break; // no sigue con los demás — probablemente sea un problema de conexión general
+    }
+  }
+  _sincronizando=false;
+  actualizarBannerPendientes();
+}
+
+function posicionarBannerPendientes(){
+  const vBanner=$('banner-version-nueva');
+  const pBanner=$('banner-pendientes');
+  if(!pBanner) return;
+  pBanner.style.top=(vBanner&&vBanner.style.display==='flex')?vBanner.offsetHeight+'px':'0';
+}
+
+function actualizarBannerPendientes(estado){
+  const lista=leerPendientes();
+  const b=$('banner-pendientes');
+  if(!b) return;
+  if(!lista.length){ b.style.display='none'; return; }
+  b.style.display='flex';
+  posicionarBannerPendientes();
+  const n=lista.length;
+  $('pendientes-texto').textContent = estado==='sincronizando'
+    ? `🔄 Sincronizando ${n} vuelo${n>1?'s':''} pendiente${n>1?'s':''}...`
+    : `⏳ ${n} vuelo${n>1?'s':''} guardado${n>1?'s':''} localmente, pendiente${n>1?'s':''} de sincronizar — reintenta solo mientras la app esté abierta, y también al volver a abrirla.`;
+}
+$('btn-reintentar-pendientes').addEventListener('click',()=>intentarSincronizarPendientes());
+window.addEventListener('online',()=>intentarSincronizarPendientes());
+setInterval(()=>intentarSincronizarPendientes(),30000);
 
 function resetVuelo(){
   detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
@@ -1741,11 +1865,16 @@ $('btn-map-close').addEventListener('click', () => {
 // ── LOGOUT ────────────────────────────────────────────────
 $('btn-logout').addEventListener('click',()=>{
   if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
+  const pendientesAlSalir=leerPendientes().length;
   session=null;sessionStorage.removeItem('lvoad-session');
   if(!tsInicio) localStorage.removeItem(LS);
   $('app-shell').classList.remove('active');
   $('screen-login').classList.add('active');
   $('l-pass').value='';$('l-err').textContent='';
+  // Los vuelos pendientes NO se pierden al salir (viven aparte de la sesión)
+  // y la sincronización sigue intentando sola mientras la pestaña siga
+  // abierta — solo se avisa para que quede claro, no bloquea el logout.
+  if(pendientesAlSalir) toast(`⏳ Quedan ${pendientesAlSalir} vuelo${pendientesAlSalir>1?'s':''} sincronizando en segundo plano`,4000);
 });
 
 // ── AUTO-REFRESH ──────────────────────────────────────────
@@ -1804,6 +1933,7 @@ async function chequearVersionNueva(){
       _versionDesactualizada=true;
       const b=document.getElementById('banner-version-nueva');
       if(b)b.style.display='flex';
+      posicionarBannerPendientes();
     }
   }catch(e){console.warn('No se pudo chequear si hay una version nueva:',e);}
 }
