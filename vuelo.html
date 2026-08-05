@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.9 · 2026-08-05
+  Exportación cambiada de JSON a GPX (estándar universal). El archivo descargado
+  es GPX 1.1 válido con <trkpt lat/lon>, <ele> (altitud) y <time> (timestamp ISO)
+  por punto. Compatible con CloudAhoy, Tacview, Google Earth, GpxOverlay y cualquier
+  herramienta que acepte GPX. Nombre de archivo: track_{avion}_{fecha}_{alumno}.gpx.
+  Ver anterior:
   v4.8 · 2026-08-05
   Botón "⬇ Exportar GPS" (ámbar) en el tab Libro, al lado del "🗺 Ver recorrido
   GPS", en cada vuelo con traza registrada. Descarga el JSON de /vuelo_tracks/{key}
@@ -862,7 +868,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1697,37 +1703,49 @@ function btnExportGPS(key, nombre, avion, fecha) {
   const n  = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const av = (avion||'LV-OAD').replace(/'/g,"\\'");
   const f  = (fecha||'').replace(/'/g,"\\'");
-  return `<button class="btn-export-gps" onclick="exportarTraza('${key}','${n}','${av}','${f}')">⬇ Exportar GPS</button>`;
+  return `<button class="btn-export-gps" onclick="exportarTraza('${key}','${n}','${av}','${f}')">⬇ GPX</button>`;
 }
 
 window.exportarTraza = async function(key, nombre, avion, fecha) {
   try {
     const snap = await get(ref(db, `vuelo_tracks/${key}`));
     const data = snap.val();
-    if (!data) { alert('No hay datos de traza para este vuelo.'); return; }
+    if (!data || !data.puntos || !data.puntos.length) {
+      alert('No hay datos de traza para este vuelo.'); return;
+    }
+    const puntos = data.puntos;
+    const ts0 = puntos[0].ts || new Date().toISOString();
 
-    // Construir el JSON de exportación con metadata útil
-    const exportData = {
-      meta: {
-        reserva_key: key,
-        alumno: nombre || '',
-        avion:  avion  || '',
-        fecha:  fecha  || '',
-        exportado: new Date().toISOString(),
-        app: 'Aeroclub Río Grande — vuelo.html',
-      },
-      puntos: data.puntos || [],
-      total_puntos: (data.puntos||[]).length,
-    };
+    // Construir GPX estándar
+    const trkpts = puntos.map(p => {
+      const alt = p.alt != null ? `\n        <ele>${p.alt.toFixed(1)}</ele>` : '';
+      const time = p.ts ? `\n        <time>${p.ts}</time>` : '';
+      return `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}">${alt}${time}\n      </trkpt>`;
+    }).join('\n');
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Aeroclub Río Grande — vuelo.html"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${avion} — ${nombre} — ${fecha}</name>
+    <time>${ts0}</time>
+  </metadata>
+  <trk>
+    <name>${avion} ${fecha} ${nombre}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.json`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
-    a.href = url;
-    a.download = nombreArchivo;
-    document.body.appendChild(a);
-    a.click();
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.gpx`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch(e) {
