@@ -2,6 +2,39 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v4.6 · 2026-08-04
+  Mismo fix que se aplicó en vuelo-piloto.html v1.4, a pedido de Daniel
+  ("¿y lo mismo para vuelo.html?"). Pregunta original: si el instructor
+  se queda sin conexión después de loguearse, ¿puede volar todo el vuelo
+  igual y que se guarde recién al recuperar señal? Iniciar/volar/GPS/
+  completar el cierre ya funcionaba offline (todo local); el problema
+  estaba en CONFIRMAR Y GUARDAR, que puede quedar colgado sin aviso si la
+  conexión se cuelga en vez de dar error (no había timeout en ninguna de
+  las escrituras a Firebase), y el borrador del formulario de cierre
+  (aterrizajes/observación/tiempo editado a mano) no se guardaba en
+  localStorage — si había que recargar en ese estado colgado, se perdía
+  lo tipeado.
+  Dos fixes, idénticos en espíritu a vuelo-piloto.html:
+  (1) Nuevo helper conTimeout() (Promise.race, 10s) envolviendo TODAS las
+  escrituras de guardar() — el set() de la reserva in-situ, el set() de
+  vuelo_tracks, el set() de auditoría, y el update() del turno existente.
+  Si cualquiera tarda más de 10s, muestra un error claro pidiendo
+  reintentar en vez de quedar pegado en "Guardando...".
+  (2) persistir() ahora también guarda el borrador del cierre (c-aterr,
+  c-obs, si t-manual está visible y su valor) — nuevos listeners de input,
+  restauración en mostrarCierre() vía _cierreRestaurado (mismo patrón
+  diferido que ya usa _avionRestaurado en vuelo-piloto.html, acá nuevo).
+  Alcance: solo se tocó guardar() — las pantallas de solo lectura
+  (cargarTabVuelo/cargarPendientes/cargarLibro) ya muestran su propio
+  error en el catch si algo falla; el riesgo real de quedar colgado sin
+  ningún aviso estaba específicamente en el camino de guardado.
+  Ver anterior:
+  v4.5 · 2026-08-04
+  Pedido de Daniel: texto de la info bar del visor de mapa (puntos,
+  duración, distancia, altitud máxima) se veía muy chico. .map-info-bar
+  span 11→14px, .mv (los valores) 14→15px + negrita para que resalten más
+  contra las etiquetas.
+  Ver anterior:
   v4.4 · 2026-08-04
   Pedido de Daniel: el visor de mapa mostraba distancia y altitud en
   unidades métricas (km/m) — ahora se muestran en unidades aeronáuticas:
@@ -552,9 +585,9 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
 #map-container{flex:1;min-height:0;position:relative}
 #map-leaflet{width:100%;height:100%}
-.map-info-bar{padding:10px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:20px;flex-wrap:wrap;flex:none}
-.map-info-bar span{font-family:var(--mono);font-size:11px;color:var(--gray)}
-.map-info-bar .mv{color:var(--white)}
+.map-info-bar{padding:12px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:22px;flex-wrap:wrap;flex:none}
+.map-info-bar span{font-family:var(--mono);font-size:14px;color:var(--gray)}
+.map-info-bar .mv{color:var(--white);font-weight:700;font-size:15px}
 .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
 .btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;transition:all .15s}
 .btn-traza:active{background:rgba(0,200,212,.2)}
@@ -755,6 +788,19 @@ const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); retu
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
 
 function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
+
+// Sin conexión, una escritura a Firebase puede quedar pendiente para siempre
+// sin resolver NI rechazar — el try/catch de guardar() no la atrapa porque no
+// hay ningún error que atrapar. Este helper le pone un límite: pasado ese
+// tiempo sin respuesta, se da por perdida y se avisa (nada se pierde
+// mientras tanto — turnoActual/tsInicio/tsFin/el borrador de cierre siguen
+// en memoria y en localStorage, ver persistir()).
+function conTimeout(promesa,ms=10000){
+  return Promise.race([
+    promesa,
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('Sin conexión — no se pudo guardar. Revisá tu señal y volvé a tocar CONFIRMAR.')),ms))
+  ]);
+}
 function showEl(id,show=true){ $(id).style.display=show?($(id).tagName==='BUTTON'||$(id).classList.contains('btn')?'block':'block'):'none'; }
 
 // ── Estado ────────────────────────────────────────────────
@@ -763,9 +809,10 @@ let turnoActual = null;   // reserva seleccionada (o null)
 let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
+let _cierreRestaurado = null; // borrador del formulario de cierre restaurado de localStorage, se aplica en mostrarCierre()
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
-const APP_VERSION = '4.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '4.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -794,6 +841,7 @@ function init(){
       turnoActual=est.turno||null;
       tsInicio=est.tsInicio||null;
       tsFin=est.tsFin||null;
+      if(est.cAterr||est.cObs||est.tManualValor) _cierreRestaurado={cAterr:est.cAterr,cObs:est.cObs,tManualVisible:est.tManualVisible,tManualValor:est.tManualValor};
       // Si el vuelo seguía en curso con GPS activo, retoma el muestreo
       // (watchPosition se corta solo con la recarga de página).
       if(tsInicio&&!tsFin&&est.gpsHabilitado){
@@ -1332,7 +1380,23 @@ function mostrarCierre(){
   $('v-cierre').style.display='block';
   $('v-guardado').style.display='none';
   $('btn-start-stop').style.display='none';
+  // Restaurar borrador si venía de una recarga a mitad de cierre (ver
+  // persistir()/init()) — se aplica una sola vez y se descarta.
+  if(_cierreRestaurado){
+    if(_cierreRestaurado.cAterr) $('c-aterr').value=_cierreRestaurado.cAterr;
+    if(_cierreRestaurado.cObs) $('c-obs').value=_cierreRestaurado.cObs;
+    if(_cierreRestaurado.tManualVisible&&_cierreRestaurado.tManualValor){
+      $('t-manual').value=_cierreRestaurado.tManualValor;
+      $('t-manual').style.display='block';
+      $('btn-edit-t').textContent='✓ ok';
+      const v=parseFloat(_cierreRestaurado.tManualValor);
+      if(!isNaN(v)&&v>0) $('t-calculado').textContent=`${Math.round(v*10)/10} hs`;
+    }
+    _cierreRestaurado=null;
+  }
 }
+$('c-aterr').addEventListener('input',persistir);
+$('c-obs').addEventListener('input',persistir);
 
 // Editar tiempo
 $('btn-edit-t').addEventListener('click',()=>{
@@ -1348,6 +1412,7 @@ $('btn-edit-t').addEventListener('click',()=>{
     inp.style.display='none';
     $('btn-edit-t').textContent='✎ editar';
   }
+  persistir();
 });
 
 // CONFIRMAR Y GUARDAR
@@ -1403,37 +1468,37 @@ async function guardar(){
         ...(tieneTraza?{tiene_traza_gps:true}:{})
       };
       const nuevaRef=push(ref(db,'reservas'));
-      await set(nuevaRef,nuevo);
+      await conTimeout(set(nuevaRef,nuevo));
       turnoActual={...nuevo,key:nuevaRef.key};
       if(tieneTraza){
-        await set(ref(db,`vuelo_tracks/${nuevaRef.key}`),{
+        await conTimeout(set(ref(db,`vuelo_tracks/${nuevaRef.key}`),{
           puntos: gpsPoints,
           autor: session.nombre,
           ts_guardado: new Date().toISOString()
-        });
+        }));
       }
       // Misma acción de auditoría que usa "+ CARGAR TURNO" en turnos.html
       // (alta_turno_manual), para que aparezca igual en Seguimiento/Consultas.
-      await set(push(ref(db,'auditoria')),{
+      await conTimeout(set(push(ref(db,'auditoria')),{
         accion:'alta_turno_manual',
         rol:'instructor',
         resultado:'exito',
         detalle:`${session.nombre} cargó turno — ${nuevo.avion} — ${nuevo.fecha} ${nuevo.hora} hs — alumno: ${nuevo.nombre} — aprobado por ${session.nombre} — in situ desde vuelo.html`,
         ts:new Date().toISOString()
-      });
+      }));
     } else if(turnoActual?.key){
       // Traza GPS: nodo aparte de /reservas para no engordar el payload que
       // turnos.html escucha en tiempo real con onValue — solo se pide bajo
       // demanda cuando alguien quiere ver el recorrido de un vuelo puntual.
       if(gpsPoints.length>1){
-        await set(ref(db,`vuelo_tracks/${turnoActual.key}`),{
+        await conTimeout(set(ref(db,`vuelo_tracks/${turnoActual.key}`),{
           puntos: gpsPoints,
           autor: session.nombre,
           ts_guardado: new Date().toISOString()
-        });
+        }));
         datos.tiene_traza_gps=true; // flag liviano en la reserva, para mostrar el ícono sin bajar la traza completa
       }
-      await update(ref(db,`reservas/${turnoActual.key}`),datos);
+      await conTimeout(update(ref(db,`reservas/${turnoActual.key}`),datos));
     }
     localStorage.removeItem(LS);
     localStorage.removeItem(LS_GPS_PUNTOS);
@@ -1473,7 +1538,16 @@ function resetVuelo(){
 }
 
 function persistir(){
-  localStorage.setItem(LS,JSON.stringify({turno:turnoActual,tsInicio,tsFin,gpsHabilitado}));
+  localStorage.setItem(LS,JSON.stringify({
+    turno:turnoActual,tsInicio,tsFin,gpsHabilitado,
+    // Borrador del formulario de cierre — así, si la app se cuelga esperando
+    // conexión en CONFIRMAR (ver guardar()) y hay que recargarla, no se
+    // pierde lo ya tipeado (antes solo se guardaban los timestamps).
+    cAterr:$('c-aterr')?.value||'',
+    cObs:$('c-obs')?.value||'',
+    tManualVisible:$('t-manual')?.style.display!=='none',
+    tManualValor:$('t-manual')?.value||''
+  }));
 }
 
 // ── TAB LIBRO ─────────────────────────────────────────────
