@@ -2,6 +2,30 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v1.2 · 2026-08-04
+  Pedido de Daniel: dejar elegir CUALQUIER avión de la flota, incluido
+  LV-OAD (antes solo LV-ART/LV-MPH). Razonamiento explícito de Daniel: si
+  el piloto ya está adentro del avión activando la app, es porque está
+  autorizado a usarlo — no tiene sentido que la app le restrinja más de
+  lo que el club ya decidió al dejarlo volar. Nota: esto relaja a
+  propósito la regla general de "LV-OAD es instrucción exclusiva" (§6 de
+  la doc de turnos.html) — acá es una decisión consciente de Daniel para
+  este flujo puntual, no un descuido; tipo_vuelo sigue siendo 'particular'
+  siempre, sea cual sea el avión.
+  Lo único que sigue filtrando es que el avión esté HABILITADO en este
+  momento: nuevo poblarAviones(), chequea /config/{avion}.activo (mismo
+  flag que usa turnos.html en "Habilitación de aviones" del panel de
+  instructor/admin) contra los 3 aviones de la flota — solo se listan los
+  que no estén explícitamente deshabilitados (activo!==false). Si falla
+  el chequeo (sin conexión, etc.) cae "fail-open": muestra los 3 antes que
+  dejar al piloto sin ninguna opción. El <select> ahora se puebla
+  dinámicamente (antes tenía las opciones hardcodeadas en el HTML) —
+  abrirApp() pasó a ser async para poder esperar el chequeo antes de
+  mostrar la pantalla. La restauración del avión guardado en localStorage
+  (por si se recarga la app a mitad de vuelo) se movió de init() a
+  poblarAviones(), porque antes intentaba setear el <select> antes de que
+  tuviera opciones cargadas — quedaba en blanco silenciosamente.
+  Ver anterior:
   v1.1 · 2026-08-04
   Pedido de Daniel: pestaña "📋 Libro" con todos los vuelos registrados
   para el usuario logueado, con detalle y mapa — antes esta app no tenía
@@ -322,10 +346,7 @@ select:disabled{opacity:.55}
     <!-- Avión (editable solo antes de iniciar) -->
     <div id="v-avion-wrap">
       <span class="label">Avión</span>
-      <select id="p-avion">
-        <option value="LV-ART">LV-ART — Archer II</option>
-        <option value="LV-MPH">LV-MPH — Lance II</option>
-      </select>
+      <select id="p-avion"><option value="">Cargando...</option></select>
     </div>
 
     <!-- Estado del vuelo -->
@@ -440,7 +461,7 @@ let tsInicio = null;
 let tsFin = null;
 let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
-const APP_VERSION = '1.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '1.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -454,6 +475,8 @@ let gpsUltimoPunto = 0;
 
 // ── Init ─────────────────────────────────────────────────
 init();
+
+let _avionRestaurado=null; // valor guardado en localStorage, se aplica recién cuando el <select> ya tiene opciones
 
 function init(){
   // Restaurar sesión de turnos.html (mismo mecanismo que vuelo.html usa con
@@ -469,7 +492,7 @@ function init(){
     if(est){
       tsInicio=est.tsInicio||null;
       tsFin=est.tsFin||null;
-      if(est.avion) $('p-avion').value=est.avion;
+      if(est.avion) _avionRestaurado=est.avion; // se aplica en poblarAviones(), el <select> todavía no tiene opciones acá
       if(tsInicio&&!tsFin&&est.gpsHabilitado){
         gpsHabilitado=true;
         try{ gpsPoints=JSON.parse(localStorage.getItem(LS_GPS_PUNTOS)||'[]'); }catch{ gpsPoints=[]; }
@@ -538,13 +561,39 @@ async function login(){
 }
 
 // ── APP SHELL ─────────────────────────────────────────────
-function abrirApp(){
+async function abrirApp(){
   $('screen-login').classList.remove('active');
   $('app-shell').classList.add('active');
   $('sh-nombre').textContent=session.nombre.split(' ')[0];
   $('sh-fecha').textContent=fmtFecha(hoy());
   $('libro-fecha').value=hoy();
+  await poblarAviones();
   renderPantalla();
+}
+
+// Pedido de Daniel: dejar elegir cualquier avión de la flota, INCLUIDO
+// LV-OAD — el criterio ya no es "solo particular en LV-ART/LV-MPH" sino
+// "cualquier avión actualmente habilitado". Razonamiento: si el piloto ya
+// está adentro del avión activando la app, es porque está autorizado a
+// usarlo — la app no tiene por qué restringir de más. Lo único que sí
+// chequea es que el avión no esté deshabilitado por el club en ese
+// momento (/config/{avion}.activo — mismo flag que usa turnos.html para
+// "Habilitación de aviones" en el panel de instructor/admin).
+const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
+const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
+async function poblarAviones(){
+  const sel=$('p-avion');
+  let habilitados=FLOTA;
+  try{
+    const cfg=(await get(ref(db,'config'))).val()||{};
+    habilitados=FLOTA.filter(a=>cfg[a]?.activo!==false);
+    if(!habilitados.length) habilitados=FLOTA; // fail-open: si por algún motivo queda vacío, mostrar todos antes que dejar al piloto sin nada
+  }catch(e){
+    console.warn('No se pudo chequear aviones habilitados, se muestran todos:',e);
+  }
+  sel.innerHTML=habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
+  if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
+  _avionRestaurado=null;
 }
 
 // Tabs
