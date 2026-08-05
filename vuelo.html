@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.6 · 2026-08-05
+  FIX v5.5: el div de "(c) 2026 by DAC" tenía class="ver", la misma clase que
+  usa document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION)
+  para pisar el número de versión — el copyright quedaba sobreescrito con
+  "v5.5" en vez de mostrar el texto. Ahora el div no lleva class="ver", tiene
+  el mismo estilo inline sin engancharse a ese querySelectorAll.
   v5.5 · 2026-08-05
   Pie de página "(c) 2026 by DAC" agregado debajo del login-card en la
   pantalla de login (pedido de Daniel).
@@ -696,7 +702,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     <div class="err" id="l-err"></div>
     <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
   </div>
-  <div class="ver" style="text-align:center;margin-top:18px;opacity:.6">(c) 2026 by DAC</div>
+  <div style="text-align:center;margin-top:18px;opacity:.6;font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em">(c) 2026 by DAC</div>
 </div>
 
 <!-- APP SHELL -->
@@ -906,7 +912,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.5'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
