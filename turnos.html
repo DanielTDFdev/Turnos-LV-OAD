@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.16
+  FECHA   : 2026-08-06
+  CAMBIOS : Combo de búsqueda "like" para Alumno/Piloto en el modal "+ CARGAR
+            TURNO". El <select> nativo (ct-alumno) queda oculto como storage de
+            valor — sel.value y sel._datos siguen usándose igual en el resto
+            del código (ctActualizarCampos, guardarVueloHistorico,
+            guardarTurnoManual). Encima se agrega un input de texto
+            (ct-alumno-search) + dropdown filtrado (ct-alumno-dropdown) que
+            busca por substring en nombre O email (ctAlumnoLista), no solo por
+            el comienzo del nombre como el <select> nativo. Al elegir una
+            opción se setea sel.value y se dispara un evento 'change' manual
+            para no tocar el resto de la lógica existente.
   VERSION : 7.15
   FECHA   : 2026-08-06
   CAMBIOS : Carga de vuelos históricos en el modal "+ CARGAR TURNO". Toggle
@@ -2240,7 +2252,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.15</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.16</div>
   </div>
 
 </div>
@@ -3013,7 +3025,13 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <!-- Campos comunes -->
     <div class="field">
       <label>Alumno / Piloto</label>
-      <select id="ct-alumno" onchange="ctActualizarCampos()"><option value="">— Seleccionar —</option></select>
+      <div id="ct-alumno-combo" style="position:relative">
+        <input type="text" id="ct-alumno-search" autocomplete="off" placeholder="Escribí nombre o email…"
+          style="width:100%;box-sizing:border-box;padding:9px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--font-mono);font-size:13px"
+          oninput="ctFiltrarAlumno(this.value)" onfocus="ctFiltrarAlumno(this.value)">
+        <div id="ct-alumno-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:50;max-height:200px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border2);border-top:none;border-radius:0 0 var(--radius) var(--radius)"></div>
+        <select id="ct-alumno" onchange="ctActualizarCampos()" style="display:none"><option value="">— Seleccionar —</option></select>
+      </div>
     </div>
     <div class="row">
       <div class="field" style="margin:0;min-width:110px">
@@ -6974,9 +6992,16 @@ async function abrirModalCargarTurno(){
     selHistInst.innerHTML+=opts;
   }
   const sel=document.getElementById('ct-alumno');
+  const buscador=document.getElementById('ct-alumno-search');
+  buscador.value='';
+  document.getElementById('ct-alumno-dropdown').style.display='none';
   sel.innerHTML='<option value="">— Cargando… —</option>';
   const data=await fbGet('alumnos');
-  if(!data){ sel.innerHTML='<option value="">— Sin usuarios registrados —</option>'; }
+  if(!data){
+    sel.innerHTML='<option value="">— Sin usuarios registrados —</option>';
+    window.ctAlumnoLista=[];
+    buscador.placeholder='Sin usuarios registrados';
+  }
   else{
     const items=Object.entries(data)
       .filter(([,a])=>a.estado_login!=='suspendido'&&a.estado!=='pendiente_aprobacion')
@@ -6984,10 +7009,54 @@ async function abrirModalCargarTurno(){
     sel.innerHTML='<option value="">— Seleccionar —</option>'+
       items.map(([k,a])=>`<option value="${k}">${a.nombre||a.email||k} — ${a.rol==='piloto'?'Piloto':'Alumno'}</option>`).join('');
     sel._datos=data;   // guardado en el propio elemento, sin tocar _alumnosCache (que es de otra pantalla)
+    // Lista para el combo con búsqueda "like" (v7.16) — filtra por nombre O email,
+    // no solo por el comienzo del nombre como hacía el <select> nativo.
+    window.ctAlumnoLista=items.map(([k,a])=>({
+      key:k,
+      label:`${a.nombre||a.email||k} — ${a.rol==='piloto'?'Piloto':'Alumno'}`,
+      buscar:`${a.nombre||''} ${a.email||''}`.toLowerCase()
+    }));
+    buscador.placeholder='Escribí nombre o email…';
   }
   document.getElementById('modal-cargar-turno').classList.add('open');
 }
 window.abrirModalCargarTurno=abrirModalCargarTurno;
+
+// Combo con búsqueda "like" para ct-alumno (v7.16) — el <select> nativo queda oculto
+// como storage de valor (sel.value / sel._datos siguen usándose igual en el resto del
+// código); el input de texto + dropdown filtrado son solo capa visual encima.
+window.ctFiltrarAlumno=function(q){
+  const dd=document.getElementById('ct-alumno-dropdown');
+  const query=(q||'').trim().toLowerCase();
+  const lista=window.ctAlumnoLista||[];
+  const filtrados=query?lista.filter(it=>it.buscar.includes(query)):lista;
+  if(!filtrados.length){
+    dd.innerHTML='<div style="padding:9px 12px;color:var(--text3);font-family:var(--font-mono);font-size:12px">Sin resultados</div>';
+  }else{
+    dd.innerHTML=filtrados.slice(0,60).map(it=>
+      `<div class="ct-alumno-opt" onclick="ctSeleccionarAlumno('${it.key}')" style="padding:8px 12px;cursor:pointer;font-family:var(--font-mono);font-size:12.5px;border-bottom:1px solid var(--border2)" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">${it.label}</div>`
+    ).join('');
+  }
+  dd.style.display='block';
+};
+
+window.ctSeleccionarAlumno=function(key){
+  const it=(window.ctAlumnoLista||[]).find(x=>x.key===key);
+  if(!it) return;
+  document.getElementById('ct-alumno-search').value=it.label;
+  const sel=document.getElementById('ct-alumno');
+  sel.value=key;
+  sel.dispatchEvent(new Event('change'));
+  document.getElementById('ct-alumno-dropdown').style.display='none';
+};
+
+document.addEventListener('click',e=>{
+  const wrap=document.getElementById('ct-alumno-combo');
+  if(wrap&&!wrap.contains(e.target)){
+    const dd=document.getElementById('ct-alumno-dropdown');
+    if(dd) dd.style.display='none';
+  }
+});
 
 window.cerrarModalCargarTurno=function(){
   document.getElementById('modal-cargar-turno').classList.remove('open');
