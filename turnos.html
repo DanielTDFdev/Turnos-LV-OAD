@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.15
+  FECHA   : 2026-08-06
+  CAMBIOS : Carga de vuelos históricos en el modal "+ CARGAR TURNO". Toggle
+            "TURNO FUTURO / VUELO HISTÓRICO" en el header del modal. En modo
+            histórico aparecen campos adicionales: tiempo de vuelo (hs decimales),
+            aterrizajes, instructor que voló, tipo de vuelo e instrucción privada.
+            El registro se crea como estado:'vencido' + aprobado_por seteado —
+            el mismo esquema que usa el sistema para clasificar vuelos realizados
+            (v6.52). Flag es_historico:true para distinguirlos de vuelos reales.
+            No chequea conflictos de horario (pueden haber volado más de una vez
+            ese día). Auditoría 'carga_historico' en /auditoria. El tiempo de
+            vuelo y aterrizajes van en obs_privada_tiempo_vuelo/aterrizajes
+            (mismo esquema que la app vuelo.html) — así aparecen en el Log del
+            Alumno y en los reportes de actividad automáticamente.
   VERSION : 7.14
   FECHA   : 2026-08-05
   CAMBIOS : chequearVersionNueva() ahora también corre una vez a los 5s de cargar
@@ -2226,7 +2240,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.14</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.15</div>
   </div>
 
 </div>
@@ -2982,7 +2996,21 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 <div class="modal-overlay" id="modal-cargar-turno">
   <div class="modal">
     <button class="modal-close" onclick="cerrarModalCargarTurno()">✕</button>
-    <div class="modal-title">◈ Cargar Turno</div>
+    <div class="modal-title">◈ Cargar Turno / Vuelo</div>
+
+    <!-- Toggle modo: Turno futuro / Vuelo histórico -->
+    <div style="display:flex;gap:0;margin-bottom:14px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border2)">
+      <button id="ct-modo-turno" onclick="ctSetModo('turno')"
+        style="flex:1;padding:8px;font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;border:none;cursor:pointer;transition:all .15s;background:var(--cyan);color:var(--navy);font-weight:700">
+        📅 TURNO FUTURO
+      </button>
+      <button id="ct-modo-hist" onclick="ctSetModo('historico')"
+        style="flex:1;padding:8px;font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;border:none;cursor:pointer;transition:all .15s;background:var(--bg3);color:var(--text3)">
+        📋 VUELO HISTÓRICO
+      </button>
+    </div>
+
+    <!-- Campos comunes -->
     <div class="field">
       <label>Alumno / Piloto</label>
       <select id="ct-alumno" onchange="ctActualizarCampos()"><option value="">— Seleccionar —</option></select>
@@ -2997,7 +3025,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         </select>
       </div>
       <div class="field" style="margin:0;min-width:130px">
-        <label>Fecha</label>
+        <label id="ct-fecha-label">Fecha</label>
         <input type="date" id="ct-fecha">
       </div>
     </div>
@@ -3019,18 +3047,55 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <input type="time" id="ct-horafin">
       </div>
     </div>
-    <div class="field">
-      <label>Observaciones <span style="font-size:10px;color:var(--text3)">(opcional)</span></label>
-      <textarea id="ct-obs" rows="2" placeholder="Ej: turno coordinado por teléfono"></textarea>
+
+    <!-- Campos solo modo TURNO FUTURO -->
+    <div id="ct-campos-turno">
+      <div class="field">
+        <label>Observaciones <span style="font-size:10px;color:var(--text3)">(opcional)</span></label>
+        <textarea id="ct-obs" rows="2" placeholder="Ej: turno coordinado por teléfono"></textarea>
+      </div>
+      <div class="field" id="ct-aprobado-wrap">
+        <label>Aprobado por</label>
+        <select id="ct-instructor"><option value="">— Sin aprobación (queda pendiente) —</option></select>
+      </div>
     </div>
-    <div class="field" id="ct-aprobado-wrap">
-      <label>Aprobado por</label>
-      <select id="ct-instructor"><option value="">— Sin aprobación (queda pendiente) —</option></select>
+
+    <!-- Campos solo modo HISTÓRICO -->
+    <div id="ct-campos-hist" style="display:none">
+      <div class="row">
+        <div class="field" style="margin:0;flex:1">
+          <label>Tiempo de vuelo <span style="font-size:10px;color:var(--text3)">(hs decimales)</span></label>
+          <input type="number" id="ct-hist-tiempo" step="0.1" min="0" max="12" placeholder="ej: 1.5">
+        </div>
+        <div class="field" style="margin:0;min-width:100px">
+          <label>Aterrizajes</label>
+          <input type="number" id="ct-hist-aterr" min="0" max="99" placeholder="ej: 3">
+        </div>
+      </div>
+      <div class="field">
+        <label>Instructor que voló <span style="font-size:10px;color:var(--text3)">(opcional)</span></label>
+        <select id="ct-hist-instructor"><option value="">— Sin instructor (particular) —</option></select>
+      </div>
+      <div class="field">
+        <label>Tipo de vuelo</label>
+        <select id="ct-hist-tipovuelo">
+          <option value="instruccion">Instrucción</option>
+          <option value="particular">Particular</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Observación <span style="font-size:10px;color:var(--text3)">(privada · opcional)</span></label>
+        <textarea id="ct-hist-obs" rows="2" placeholder="Maniobras practicadas, notas del vuelo..."></textarea>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-bottom:8px;line-height:1.5">
+        ⚡ El vuelo se cargará como <strong style="color:var(--green)">REALIZADO</strong> — aparecerá en el log del alumno/piloto y en los reportes de actividad.
+      </div>
     </div>
+
     <div id="ct-err" class="error"></div>
     <div id="ct-ok" class="success-msg"></div>
     <div class="modal-actions">
-      <button class="primary" onclick="guardarTurnoManual()">GUARDAR TURNO</button>
+      <button class="primary" id="ct-btn-guardar" onclick="_ctModo==='historico'?guardarVueloHistorico():guardarTurnoManual()">GUARDAR TURNO</button>
       <button onclick="cerrarModalCargarTurno()">Cancelar</button>
     </div>
   </div>
@@ -6885,16 +6950,28 @@ async function abrirModalCargarTurno(){
   document.getElementById('ct-obs').value='';
   document.getElementById('ct-avion').value='LV-OAD';
   document.getElementById('ct-tipovuelo').value='';
+  // Resetear campos históricos
+  document.getElementById('ct-hist-tiempo').value='';
+  document.getElementById('ct-hist-aterr').value='';
+  document.getElementById('ct-hist-obs').value='';
+  document.getElementById('ct-hist-tipovuelo').value='instruccion';
+  // Resetear modo a turno
+  _ctModo='turno';
+  ctSetModo('turno');
   ctActualizarCampos();
   const selInst=document.getElementById('ct-instructor');
+  const selHistInst=document.getElementById('ct-hist-instructor');
   selInst.innerHTML='<option value="">— Sin aprobación (queda pendiente) —</option>';
+  selHistInst.innerHTML='<option value="">— Sin instructor (particular) —</option>';
   const instData=await fbGet('instructores');
   if(instData){
     const lista=Object.entries(instData)
       .filter(([k,v])=>k!=='admin'&&k!=='administrador'&&v.vacaciones!==true)
       .map(([,v])=>v.nombre||v.user)
       .sort((a,b)=>a.localeCompare(b));
-    selInst.innerHTML+=lista.map(n=>`<option value="${n}">${n}</option>`).join('');
+    const opts=lista.map(n=>`<option value="${n}">${n}</option>`).join('');
+    selInst.innerHTML+=opts;
+    selHistInst.innerHTML+=opts;
   }
   const sel=document.getElementById('ct-alumno');
   sel.innerHTML='<option value="">— Cargando… —</option>';
@@ -6944,6 +7021,81 @@ window.ctActualizarCampos=function(){
 
   const esParticular=mostrarTV&&selTV.value==='particular';
   document.getElementById('ct-aprobado-wrap').style.display=esParticular?'none':'';
+};
+
+// ── MODO DEL MODAL: Turno futuro / Vuelo histórico ──────────
+let _ctModo = 'turno'; // 'turno' | 'historico'
+
+window.ctSetModo = function(modo) {
+  _ctModo = modo;
+  const esTurno = modo === 'turno';
+  // Estilos del toggle
+  document.getElementById('ct-modo-turno').style.cssText +=
+    esTurno ? ';background:var(--cyan);color:var(--navy);font-weight:700'
+            : ';background:var(--bg3);color:var(--text3);font-weight:400';
+  document.getElementById('ct-modo-hist').style.cssText +=
+    !esTurno ? ';background:var(--cyan);color:var(--navy);font-weight:700'
+             : ';background:var(--bg3);color:var(--text3);font-weight:400';
+  // Mostrar/ocultar secciones
+  document.getElementById('ct-campos-turno').style.display = esTurno ? '' : 'none';
+  document.getElementById('ct-campos-hist').style.display  = esTurno ? 'none' : '';
+  document.getElementById('ct-horafin-wrap').style.display = esTurno ? '' : 'none';
+  document.getElementById('ct-fecha-label').textContent    = esTurno ? 'Fecha' : 'Fecha del vuelo';
+  // Botón y título
+  document.getElementById('ct-btn-guardar').textContent    = esTurno ? 'GUARDAR TURNO' : 'CARGAR VUELO HISTÓRICO';
+  // Hora es opcional en histórico (puede no recordarse)
+  document.getElementById('ct-hora').required = esTurno;
+  hideEl('ct-err'); hideEl('ct-ok');
+};
+
+window.guardarVueloHistorico = async function() {
+  hideEl('ct-err'); hideEl('ct-ok');
+  const sel = document.getElementById('ct-alumno');
+  const key = sel.value;
+  if (!key) { showErr('ct-err','Seleccioná un alumno o piloto.'); return; }
+  const alumno = (sel._datos || {})[key];
+  if (!alumno) { showErr('ct-err','No se pudo leer los datos del usuario.'); return; }
+  const avion    = document.getElementById('ct-avion').value;
+  const fecha    = document.getElementById('ct-fecha').value;
+  const hora     = document.getElementById('ct-hora').value || '00:00';
+  const tiempo   = parseFloat(document.getElementById('ct-hist-tiempo').value);
+  const aterr    = parseInt(document.getElementById('ct-hist-aterr').value || '0') || 0;
+  const instSel  = document.getElementById('ct-hist-instructor').value;
+  const tipoV    = document.getElementById('ct-hist-tipovuelo').value;
+  const obs      = document.getElementById('ct-hist-obs').value.trim();
+  if (!fecha)             { showErr('ct-err','Completá la fecha del vuelo.'); return; }
+  if (isNaN(tiempo)||tiempo<=0) { showErr('ct-err','Ingresá el tiempo de vuelo en horas decimales.'); return; }
+  // No chequeamos conflictos en históricos — pueden haber volado más de una vez ese día
+  const nuevo = {
+    nombre:    alumno.nombre || alumno.email || key,
+    email:     alumno.email || '',
+    fecha, hora, avion,
+    tipo_vuelo: tipoV,
+    estado:    'vencido',      // clasificado como vuelo realizado
+    aprobado_por: instSel || (session.nombre || session.user || ''),
+    instructor:   instSel || '',
+    obs_privada_tiempo_vuelo: tiempo,
+    obs_privada_aterrizajes:  aterr || null,
+    obs_privada:              obs || null,
+    obs_privada_autor:        session.nombre || session.user || '',
+    obs_privada_ts:           new Date().toISOString(),
+    rol:       alumno.rol || 'alumno',
+    cargado_por: session.nombre || session.user || '',
+    es_historico: true,        // flag para distinguir de vuelos reales del sistema
+    ts:        new Date().toISOString(),
+  };
+  // Limpiar nulls
+  Object.keys(nuevo).forEach(k => { if (nuevo[k] === null) delete nuevo[k]; });
+  try {
+    await fbPush('reservas', nuevo);
+    await registrarAuditoria('carga_historico', session.rol || 'instructor', 'exito',
+      `${session.nombre||session.user} cargó vuelo histórico — ${avion} — ${fecha} — ${nuevo.nombre} — ${tiempo} hs — ${aterr} aterrizajes`);
+    showOk('ct-ok', '// VUELO HISTÓRICO CARGADO ✓');
+    setTimeout(() => cerrarModalCargarTurno(), 1400);
+  } catch(e) {
+    console.error(e);
+    showErr('ct-err', 'Error al guardar. Volvé a intentar.');
+  }
 };
 
 window.guardarTurnoManual=async function(){
