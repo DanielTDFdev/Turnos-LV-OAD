@@ -1,5 +1,20 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.26
+  FECHA   : 2026-08-07
+  CAMBIOS : Pedido de Daniel: botón "🗑" para borrar un vuelo directo desde cada fila
+            del listado "Historial para instructores" (modal LOG DEL ALUMNO) —
+            "para limpiar de basura y/o pruebas". Mismo criterio que la zona de
+            administrador ya existente en el modal de detalle del turno: restringido a
+            session.user==='admin' (no 'administrador', no instructores reales), sin
+            registro en /auditoria a propósito, confirm() antes de borrar, no se puede
+            deshacer. Nueva función window.borrarVueloLogAlumno(key): fbRemove del
+            registro completo de /reservas/{key} (borra el vuelo entero, no solo los
+            campos obs_privada_*/piloto_*), actualiza _reservasCache local y
+            re-renderiza la lista. No se restringió por cargado_por (como sí hace la
+            zona de instructor real en el modal de turno) porque la mayoría de las
+            filas de este listado son vuelos normales, no cargados manualmente — se
+            mantiene simple: solo admin, para limpieza rápida.
   VERSION : 7.25
   FECHA   : 2026-08-07
   CAMBIOS : Pedido de Daniel: botón "⬇ EXPORTAR XLS" también en "Mi Perfil/Vuelos"
@@ -2355,7 +2370,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.25</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.26</div>
   </div>
 
 </div>
@@ -5771,6 +5786,22 @@ function renderNotasPrivadasAlumno(){
     const izq=document.createElement('span'); izq.textContent=(autorVal||'—')+(esPiloto?' (autorregistrado)':'')+' — '+(tsVal?fmtTsLindo(tsVal):'');
     const der=document.createElement('span'); der.style.color='var(--amber)'; der.textContent='✈ '+ref;
     head.appendChild(izq); head.appendChild(der);
+    // v7.26: pedido de Daniel — botón para borrar el vuelo directo desde este listado,
+    // "para limpiar basura y/o pruebas". Mismo criterio que la "Zona de administrador —
+    // borrado definitivo, sin auditoría" que ya existe en el modal de detalle del turno
+    // (ver abrirModal): restringido a session.user==='admin', sin registro en
+    // /auditoria a propósito, confirm() antes de ejecutar. No usa el mismo criterio
+    // restringido a "cargado_por===session.nombre" que tienen los instructores reales
+    // en el modal de turno, porque acá la mayoría de las filas son vuelos normales
+    // (no cargados manualmente) — se mantiene simple: solo admin, para limpieza.
+    if(session?.user==='admin'&&r.key){
+      const btnDel=document.createElement('button');
+      btnDel.title='Borra este vuelo de la base. Sin auditoría — para limpiar pruebas.';
+      btnDel.style.cssText='font-family:var(--font-mono);font-size:10px;padding:2px 8px;background:var(--red);color:#0a0a0a;border:1px solid var(--red);border-radius:var(--radius);cursor:pointer;font-weight:700;flex-shrink:0';
+      btnDel.textContent='🗑';
+      btnDel.onclick=(e)=>{ e.stopPropagation(); borrarVueloLogAlumno(r.key); };
+      head.appendChild(btnDel);
+    }
     div.appendChild(head);
     if(horasVal!=null||aterrVal!=null){
       const datos=document.createElement('div');
@@ -5807,6 +5838,26 @@ function renderNotasPrivadasAlumno(){
     cont.appendChild(div);
   });
 }
+
+// v7.26: borrado directo de un vuelo desde el listado "Historial para instructores"
+// (Log del Alumno) — pedido de Daniel: "para limpiar de basura y/o pruebas". Mismo
+// criterio que la zona de administrador del modal de turno: solo session.user==='admin',
+// sin registro en /auditoria a propósito, no se puede deshacer. Borra el registro
+// completo de /reservas/{key} (no solo los campos obs_privada_*/piloto_*) porque la
+// fila representa un vuelo entero, no solo la nota.
+window.borrarVueloLogAlumno=async function(key){
+  if(session?.user!=='admin')return;
+  if(!confirm('¿BORRAR este vuelo definitivamente?\n\nSe elimina de la base sin dejar registro en auditoría. No se puede deshacer.'))return;
+  try{
+    await fbRemove('reservas/'+key);
+  }catch(e){
+    console.error(e);
+    alert('No se pudo borrar (error de conexión).');
+    return;
+  }
+  if(_reservasCache[key])delete _reservasCache[key];
+  renderNotasPrivadasAlumno();
+};
 
 // v7.22/v7.24: exporta el log de vuelos del alumno (mismos datos que
 // renderNotasPrivadasAlumno, arriba) a un archivo .xlsx descargable. Librería SheetJS
