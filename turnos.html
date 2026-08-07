@@ -1,5 +1,12 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.20
+  FECHA   : 2026-08-07
+  CAMBIOS : En modo histórico, el modal no se cierra al guardar. Después de
+            1.4s muestra "VUELO HISTÓRICO CARGADO ✓ — Podés cargar el siguiente"
+            y resetea solo los campos que cambian entre vuelos (hora, tiempo,
+            aterrizajes, observación). Mantiene alumno, avión, fecha, instructor
+            y tipo de vuelo para agilizar la carga de un listado largo.
   VERSION : 7.19
   FECHA   : 2026-08-07
   CAMBIOS : FIX dos bugs en modal histórico:
@@ -2276,7 +2283,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.19</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.20</div>
   </div>
 
 </div>
@@ -7197,8 +7204,16 @@ window.guardarVueloHistorico = async function() {
     await fbPush('reservas', nuevo);
     await registrarAuditoria('carga_historico', session.rol || 'instructor', 'exito',
       `${session.nombre||session.user} cargó vuelo histórico — ${avion} — ${fecha} — ${nuevo.nombre} — ${tiempo} hs — ${aterr} aterrizajes`);
-    showOk('ct-ok', '// VUELO HISTÓRICO CARGADO ✓');
-    setTimeout(() => cerrarModalCargarTurno(), 1400);
+    showOk('ct-ok', '// VUELO HISTÓRICO CARGADO ✓ — Podés cargar el siguiente');
+    // No cerrar el modal — resetear solo los campos variables para cargar el próximo vuelo
+    setTimeout(() => {
+      hideEl('ct-ok');
+      document.getElementById('ct-hist-tiempo').value='';
+      document.getElementById('ct-hist-aterr').value='';
+      document.getElementById('ct-hist-obs').value='';
+      document.getElementById('ct-hora').value='';
+      // Mantener: alumno, avión, fecha, instructor, tipo de vuelo
+    }, 1400);
   } catch(e) {
     console.error(e);
     showErr('ct-err', 'Error al guardar. Volvé a intentar.');
