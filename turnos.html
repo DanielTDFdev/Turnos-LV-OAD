@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.19
+  FECHA   : 2026-08-07
+  CAMBIOS : FIX dos bugs en modal histórico:
+            (1) "Tipo de vuelo" aparecía dos veces: ctActualizarCampos() siempre
+            mostraba ct-tipovuelo-wrap y ct-horafin-wrap sin considerar el modo
+            activo, pisando lo que ctSetModo había ocultado. Fix: ctActualizarCampos
+            sale inmediatamente en modo histórico, dejando ambos campos ocultos.
+            (2) Botón "CARGAR VUELO HISTÓRICO" no hacía nada: _ctModo era una
+            variable let dentro del módulo ES6, invisible al onclick inline del
+            botón (mismo bug recurrente de módulo vs scope global, §15 del doc).
+            Fix: cambiada a window._ctModo para que el onclick pueda leerla.
   VERSION : 7.18
   FECHA   : 2026-08-07
   CAMBIOS : Hora obligatoria en modo histórico (todos los campos deben completarse
@@ -2265,7 +2276,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.18</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.19</div>
   </div>
 
 </div>
@@ -7088,6 +7099,13 @@ document.addEventListener('click',e=>{if(e.target.id==='modal-cargar-turno')cerr
 // un vuelo particular de piloto se aprueba automático, igual que en el autoservicio
 // (confirmarTurno no escribe aprobado_por/instructor para ese caso — ver v6.94).
 window.ctActualizarCampos=function(){
+  // En modo histórico: horafin y tipovuelo del modo turno no aplican
+  if (_ctModo === 'historico') {
+    document.getElementById('ct-horafin-wrap').style.display='none';
+    document.getElementById('ct-tipovuelo-wrap').style.display='none';
+    return;
+  }
+
   document.getElementById('ct-horafin-wrap').style.display='';
 
   const avion=document.getElementById('ct-avion').value;
@@ -7106,7 +7124,7 @@ window.ctActualizarCampos=function(){
 };
 
 // ── MODO DEL MODAL: Turno futuro / Vuelo histórico ──────────
-let _ctModo = 'turno'; // 'turno' | 'historico'
+window._ctModo = 'turno'; // expuesto a window para que el onclick inline pueda leerlo
 
 window.ctSetModo = function(modo) {
   _ctModo = modo;
