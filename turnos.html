@@ -1,5 +1,21 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.24
+  FECHA   : 2026-08-07
+  CAMBIOS : Pedido de Daniel: mover el botón "⬇ EXPORTAR XLS" (v7.22/7.23) de la
+            pestaña "Log de Instructores" del modal LOG DEL ALUMNO, a la pantalla
+            EDITAR USUARIO (tab LOG), al lado de "VER LOG DEL ALUMNO" — sin necesidad
+            de abrir el modal siguiente para exportar. Se sacó el botón #mla-export-xls
+            del modal Log del Alumno (y las 3 líneas que lo mostraban/ocultaban en
+            abrirLogAlumno/abrirMiLogVuelos/abrirLogAlumnoDesdeUsuario). La función de
+            generación se extrajo a _generarYDescargarLogXLS(btn), que ahora recibe el
+            botón como parámetro en vez de buscarlo por id fijo. Nueva función pública
+            exportarLogUsuarioXLS(), invocada por el nuevo botón #eal-export-xls: arma
+            un _logAlumnoCtx mínimo directo desde _editAlumnoKey y los campos del form
+            de edición (mismo patrón que abrirLogAlumnoDesdeUsuario, pero sin abrir el
+            modal), y llama al generador compartido. _reservasCache es global y ya
+            está poblado por suscribirReservas() desde el login, independiente de la
+            tab activa, así que el export funciona igual parado en Config→Usuarios.
   VERSION : 7.23
   FECHA   : 2026-08-07
   CAMBIOS : FIX CRÍTICO del botón "⬇ EXPORTAR XLS" agregado en v7.22 — error mío:
@@ -2325,7 +2341,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.23</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.24</div>
   </div>
 
 </div>
@@ -2734,7 +2750,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         </div>
 
         <div class="obspriv-box" id="mla-hist-box">
-          <div class="section-title" style="margin-bottom:.5rem;display:flex;align-items:center;gap:8px" id="mla-lista-titulo-wrap"><span id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)</span><button class="hist-sort-btn" id="mla-export-xls" onclick="exportarLogAlumnoXLS()">⬇ EXPORTAR XLS</button></div>
+          <div class="section-title" style="margin-bottom:.5rem" id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)</div>
           <div id="mla-lista" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:.6rem"></div>
           <div id="mla-vacio" style="display:none;font-family:var(--font-mono);font-size:12px;color:var(--text3);text-align:center;padding:1.5rem 0">// Sin observaciones privadas cargadas todavía</div>
         </div>
@@ -3065,7 +3081,10 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 
         <div id="eal-panel-log" style="display:none">
           <div style="font-family:var(--font-mono);font-size:12px;color:var(--text3);margin-bottom:.85rem;line-height:1.5">Observaciones privadas de instructores y horas/aterrizajes cargados vuelo por vuelo para este usuario — mismo log accesible desde el detalle de cada turno, sin necesidad de encontrar uno puntual en Reservas.</div>
-          <button onclick="abrirLogAlumnoDesdeUsuario()" style="font-family:var(--font-mono);font-size:11px;padding:6px 14px;background:rgba(0,200,212,.08);border:1px solid var(--cyan);color:var(--cyan);border-radius:var(--radius);cursor:pointer">◈ VER LOG DEL ALUMNO</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="abrirLogAlumnoDesdeUsuario()" style="font-family:var(--font-mono);font-size:11px;padding:6px 14px;background:rgba(0,200,212,.08);border:1px solid var(--cyan);color:var(--cyan);border-radius:var(--radius);cursor:pointer">◈ VER LOG DEL ALUMNO</button>
+            <button id="eal-export-xls" onclick="exportarLogUsuarioXLS()" style="font-family:var(--font-mono);font-size:11px;padding:6px 14px;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius);cursor:pointer">⬇ EXPORTAR XLS</button>
+          </div>
         </div>
 
         <div id="edit-al-err" class="error"></div>
@@ -5570,7 +5589,6 @@ window.abrirLogAlumno=async function(){
   document.getElementById('mla-hist-box').classList.add('obspriv-box');
   document.getElementById('mla-lista-titulo').textContent='🔒 Historial para instructores (más nuevo primero)';
   document.getElementById('mla-tabbtn-log').textContent='🔒 Log de Instructores';
-  document.getElementById('mla-export-xls').style.display='inline-block';
   showLogAlumnoTab('obs');
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
   document.getElementById('mla-email').textContent=_logAlumnoCtx.email;
@@ -5602,7 +5620,6 @@ window.abrirMiLogVuelos=async function(){
   document.getElementById('mla-hist-box').classList.remove('obspriv-box');
   document.getElementById('mla-lista-titulo').textContent='▸ Horas y aterrizajes registrados (más nuevo primero)';
   document.getElementById('mla-tabbtn-log').textContent='▸ Horas y Aterrizajes';
-  document.getElementById('mla-export-xls').style.display='none';
   showLogAlumnoTab('obs');
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
   document.getElementById('mla-email').textContent=_logAlumnoCtx.email;
@@ -5637,7 +5654,6 @@ window.abrirLogAlumnoDesdeUsuario=async function(){
   document.getElementById('mla-hist-box').classList.add('obspriv-box');
   document.getElementById('mla-lista-titulo').textContent='🔒 Historial para instructores (más nuevo primero)';
   document.getElementById('mla-tabbtn-log').textContent='🔒 Log de Instructores';
-  document.getElementById('mla-export-xls').style.display='inline-block';
   showLogAlumnoTab('log');
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
   document.getElementById('mla-email').textContent=_logAlumnoCtx.email;
@@ -5775,13 +5791,16 @@ function renderNotasPrivadasAlumno(){
   });
 }
 
-// v7.22: exporta el log de vuelos del alumno (mismos datos que renderNotasPrivadasAlumno,
-// arriba) a un archivo .xlsx descargable. Librería SheetJS cargada en diferido por CDN
-// (mismo patrón que Google Charts en este archivo, ver §Consultas) — solo se baja si el
-// instructor efectivamente hace click en exportar, no en cada apertura del modal.
-window.exportarLogAlumnoXLS=async function(){
+// v7.22/v7.24: exporta el log de vuelos del alumno (mismos datos que
+// renderNotasPrivadasAlumno, arriba) a un archivo .xlsx descargable. Librería SheetJS
+// cargada en diferido por CDN (mismo patrón que Google Charts en este archivo, ver
+// §Consultas) — solo se baja si el instructor efectivamente hace click en exportar.
+// v7.24: el botón se movió a la pantalla EDITAR USUARIO (pedido de Daniel, no vivía más
+// en el modal siguiente Log del Alumno) — por eso recibe el <button> como parámetro en
+// vez de buscarlo por un id fijo, ya que ahora lo invoca exportarLogUsuarioXLS() con un
+// botón distinto (#eal-export-xls) en vez del viejo #mla-export-xls (removido).
+async function _generarYDescargarLogXLS(btn){
   if(!_logAlumnoCtx)return;
-  const btn=document.getElementById('mla-export-xls');
   const email=_logAlumnoCtx.email;
   const nombre=_logAlumnoCtx.nombre||email;
   const textoOriginal=btn.textContent;
@@ -5856,6 +5875,28 @@ window.exportarLogAlumnoXLS=async function(){
   }finally{
     btn.disabled=false; btn.textContent=textoOriginal;
   }
+}
+
+// v7.24: entrada al export directo desde EDITAR USUARIO (Config→Usuarios), sin pasar
+// por el modal "Log del Alumno" — pedido de Daniel: el botón vivía ahí antes (v7.22/23)
+// y lo pidió al lado de "VER LOG DEL ALUMNO" en esta pantalla. Arma un _logAlumnoCtx
+// mínimo desde los datos ya cargados en el form de edición (mismo patrón que
+// abrirLogAlumnoDesdeUsuario, sin abrir el modal siguiente) y llama al generador
+// compartido con el botón de ESTA pantalla (#eal-export-xls).
+window.exportarLogUsuarioXLS=async function(){
+  if(!_editAlumnoKey)return;
+  const btn=document.getElementById('eal-export-xls');
+  _logAlumnoCtx={
+    emailKey:_editAlumnoKey,
+    nombre:document.getElementById('edit-al-nombre').value||'',
+    email:document.getElementById('edit-al-email').value||'',
+    reservaKey:null,
+    reservaRef:null
+  };
+  const al=await fbGet('alumnos/'+_editAlumnoKey);
+  _logAlumnoCtx.horasIniciales=al?.horas_iniciales||0;
+  _logAlumnoCtx.aterrizajesIniciales=al?.aterrizajes_iniciales||0;
+  await _generarYDescargarLogXLS(btn);
 };
 
 window.guardarObsPrivada=async function(){
