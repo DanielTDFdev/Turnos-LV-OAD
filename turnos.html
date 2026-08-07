@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.18
+  FECHA   : 2026-08-07
+  CAMBIOS : Hora obligatoria en modo histórico (todos los campos deben completarse
+            para mantener datos fieles). El chequeo de conflicto ahora aplica
+            siempre — se eliminó la excepción para hora '00:00'.
+  VERSION : 7.17
+  FECHA   : 2026-08-07
+  CAMBIOS : FIX guardarVueloHistorico: agrega chequeo de conflicto de horario.
+            Un avión no puede tener dos vuelos a la misma hora el mismo día,
+            aunque el modo histórico permita múltiples vuelos por día.
+            Si la hora ingresada coincide con un slot ya ocupado (slotsTomados),
+            muestra error y no guarda. El chequeo se omite cuando la hora es
+            '00:00' (valor default cuando el instructor no recuerda la hora exacta).
   VERSION : 7.16 
   FECHA   : 2026-08-06
   CAMBIOS : Combo de búsqueda "like" para Alumno/Piloto en el modal "+ CARGAR
@@ -2252,7 +2265,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.16</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.18</div>
   </div>
 
 </div>
@@ -7133,8 +7146,15 @@ window.guardarVueloHistorico = async function() {
   const tipoV    = document.getElementById('ct-hist-tipovuelo').value;
   const obs      = document.getElementById('ct-hist-obs').value.trim();
   if (!fecha)             { showErr('ct-err','Completá la fecha del vuelo.'); return; }
+  if (!hora||hora==='00:00') { showErr('ct-err','Completá la hora del vuelo.'); return; }
   if (isNaN(tiempo)||tiempo<=0) { showErr('ct-err','Ingresá el tiempo de vuelo en horas decimales.'); return; }
-  // No chequeamos conflictos en históricos — pueden haber volado más de una vez ese día
+  // Chequeo de conflicto: mismo avión + misma hora
+  const snapH = await get(ref(db,'reservas'));
+  const taken = slotsTomados(fecha, avion, snapH.val());
+  if (taken.includes(hora)) {
+    showErr('ct-err', `El ${avion} ya tiene un vuelo registrado a las ${hora} el ${fecha}. Elegí otro horario.`);
+    return;
+  }
   const nuevo = {
     nombre:    alumno.nombre || alumno.email || key,
     email:     alumno.email || '',
