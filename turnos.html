@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.21
+  FECHA   : 2026-08-07
+  CAMBIOS : FIX en guardarVueloHistorico() (reportado por Daniel: cargó 3 vuelos con
+            misma fecha/hora/avión y no protestó por duplicidad). Causa: el chequeo de
+            conflicto reutilizaba slotsTomados(), que excluye a propósito los turnos en
+            estado 'vencido' (correcto para el calendario normal: un turno vencido sin
+            confirmar libera el horario). Pero un vuelo histórico SIEMPRE se guarda como
+            'vencido', así que slotsTomados() nunca veía el propio histórico ni otro ya
+            cargado antes en ese avión+fecha+hora. Se reemplazó por un chequeo directo
+            contra /reservas (cualquier estado salvo 'cancelado') que no pasa por
+            slotsTomados(). No se tocó slotsTomados() — su exclusión de 'vencido' sigue
+            siendo correcta para la disponibilidad del calendario normal.
   VERSION : 7.20
   FECHA   : 2026-08-07
   CAMBIOS : En modo histórico, el modal no se cierra al guardar. Después de
@@ -2283,7 +2295,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.20</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.21</div>
   </div>
 
 </div>
@@ -7173,10 +7185,18 @@ window.guardarVueloHistorico = async function() {
   if (!fecha)             { showErr('ct-err','Completá la fecha del vuelo.'); return; }
   if (!hora||hora==='00:00') { showErr('ct-err','Completá la hora del vuelo.'); return; }
   if (isNaN(tiempo)||tiempo<=0) { showErr('ct-err','Ingresá el tiempo de vuelo en horas decimales.'); return; }
-  // Chequeo de conflicto: mismo avión + misma hora
+  // Chequeo de conflicto: mismo avión + misma hora.
+  // v7.21 FIX: no se puede usar slotsTomados() acá — esa función excluye a propósito los
+  // turnos 'vencido' (correcto para el calendario normal: un turno vencido sin confirmar
+  // libera el horario). Pero un vuelo histórico SIEMPRE se guarda como 'vencido', así que
+  // slotsTomados() nunca detectaba el propio histórico ni otro ya cargado antes, permitiendo
+  // cargar el mismo avión+fecha+hora varias veces sin aviso. Chequeo directo contra /reservas
+  // sin pasar por slotsTomados(), incluyendo cualquier estado salvo 'cancelado'.
   const snapH = await get(ref(db,'reservas'));
-  const taken = slotsTomados(fecha, avion, snapH.val());
-  if (taken.includes(hora)) {
+  const yaExiste = rArr(snapH.val()).some(r =>
+    r.fecha===fecha && (r.avion||'LV-OAD')===avion && r.hora===hora && r.estado!=='cancelado'
+  );
+  if (yaExiste) {
     showErr('ct-err', `El ${avion} ya tiene un vuelo registrado a las ${hora} el ${fecha}. Elegí otro horario.`);
     return;
   }
