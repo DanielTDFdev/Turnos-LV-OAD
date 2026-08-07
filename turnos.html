@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.25
+  FECHA   : 2026-08-07
+  CAMBIOS : Pedido de Daniel: botón "⬇ EXPORTAR XLS" también en "Mi Perfil/Vuelos"
+            del alumno/piloto (pantalla propia, no la vista de instructor), al lado de
+            "VER DETALLE COMPLETO". A diferencia del export de instructor (v7.24), este
+            NUNCA incluye el texto de obs_privada (nota privada del instructor sobre el
+            alumno — nunca visible para el alumno, mismo criterio que
+            _logAlumnoModoAlumno en pantalla). piloto_obs sí se incluye siempre: no es
+            privada, es autorreporte del propio piloto. _generarYDescargarLogXLS(btn)
+            ahora recibe un segundo parámetro soloPublico (default false); nueva
+            función exportarMiLogVuelosXLS() arma el contexto desde session
+            (session.email/nombre/emailKey) y llama al generador con soloPublico=true.
+            Resto del archivo exportado (fecha, hora, avión, tiempo, aterrizajes,
+            cargado por, origen, total) igual al de instructor.
   VERSION : 7.24
   FECHA   : 2026-08-07
   CAMBIOS : Pedido de Daniel: mover el botón "⬇ EXPORTAR XLS" (v7.22/7.23) de la
@@ -2341,7 +2355,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.24</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.25</div>
   </div>
 
 </div>
@@ -2516,7 +2530,10 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <div id="ap-log-totales" style="display:none;font-family:var(--font-mono);font-size:12px;color:var(--cyan);margin-bottom:.6rem"></div>
         <div id="ap-log-lista" style="display:flex;flex-direction:column;gap:.5rem;margin-bottom:.75rem"></div>
         <div id="ap-log-vacio" style="display:none;font-family:var(--font-mono);font-size:11px;color:var(--text3);padding:.5rem 0 .75rem">Todavía no tenés vuelos registrados.</div>
-        <button class="primary" onclick="abrirMiLogVuelos()">◈ VER DETALLE COMPLETO</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="primary" onclick="abrirMiLogVuelos()">◈ VER DETALLE COMPLETO</button>
+          <button id="ap-export-xls" onclick="exportarMiLogVuelosXLS()" style="font-family:var(--font-mono);font-size:11px;padding:8px 16px;background:var(--bg2);border:1px solid var(--border2);color:var(--text2);border-radius:var(--radius);cursor:pointer">⬇ EXPORTAR XLS</button>
+        </div>
       </div>
     </div>
     <div id="ap-panel-datos" style="display:none">
@@ -5799,7 +5816,12 @@ function renderNotasPrivadasAlumno(){
 // en el modal siguiente Log del Alumno) — por eso recibe el <button> como parámetro en
 // vez de buscarlo por un id fijo, ya que ahora lo invoca exportarLogUsuarioXLS() con un
 // botón distinto (#eal-export-xls) en vez del viejo #mla-export-xls (removido).
-async function _generarYDescargarLogXLS(btn){
+// v7.25: parámetro soloPublico — cuando es true (export desde la vista del propio
+// alumno/piloto, "Mi Perfil/Vuelos"), NUNCA incluye el texto de obs_privada (nota del
+// instructor, privada por diseño — nunca visible para el alumno, mismo criterio que
+// renderNotasPrivadasAlumno/_logAlumnoModoAlumno). piloto_obs SÍ se incluye siempre,
+// en ambos modos, porque no es privada — es autorreporte del propio piloto.
+async function _generarYDescargarLogXLS(btn,soloPublico=false){
   if(!_logAlumnoCtx)return;
   const email=_logAlumnoCtx.email;
   const nombre=_logAlumnoCtx.nombre||email;
@@ -5826,7 +5848,7 @@ async function _generarYDescargarLogXLS(btn){
       const esPiloto=r.obs_privada_tiempo_vuelo==null&&r.obs_privada_aterrizajes==null&&r.obs_privada==null&&(r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.piloto_obs);
       const horasVal=esPiloto?r.piloto_tiempo_vuelo:r.obs_privada_tiempo_vuelo;
       const aterrVal=esPiloto?r.piloto_aterrizajes:r.obs_privada_aterrizajes;
-      const obsVal=esPiloto?r.piloto_obs:r.obs_privada;
+      const obsVal=esPiloto?r.piloto_obs:(soloPublico?'':r.obs_privada);
       const autorVal=esPiloto?r.piloto_autor:r.obs_privada_autor;
       return {
         'Fecha': r.fecha||'',
@@ -5897,6 +5919,27 @@ window.exportarLogUsuarioXLS=async function(){
   _logAlumnoCtx.horasIniciales=al?.horas_iniciales||0;
   _logAlumnoCtx.aterrizajesIniciales=al?.aterrizajes_iniciales||0;
   await _generarYDescargarLogXLS(btn);
+};
+
+// v7.25: entrada al export desde "Mi Perfil/Vuelos" — pedido de Daniel: mismo botón
+// pero para el propio alumno/piloto exportando SU log. soloPublico=true en
+// _generarYDescargarLogXLS: nunca incluye obs_privada (nota del instructor, privada
+// por diseño), solo piloto_obs (autorregistrado, público) y los datos numéricos —
+// mismo criterio de visibilidad que ya aplica en pantalla vía _logAlumnoModoAlumno.
+window.exportarMiLogVuelosXLS=async function(){
+  if(session?.tipo!=='alumno')return;
+  const btn=document.getElementById('ap-export-xls');
+  _logAlumnoCtx={
+    emailKey:session.emailKey||ek(session.email),
+    nombre:session.nombre||session.email,
+    email:session.email,
+    reservaKey:null,
+    reservaRef:null
+  };
+  const al=await fbGet('alumnos/'+_logAlumnoCtx.emailKey);
+  _logAlumnoCtx.horasIniciales=al?.horas_iniciales||0;
+  _logAlumnoCtx.aterrizajesIniciales=al?.aterrizajes_iniciales||0;
+  await _generarYDescargarLogXLS(btn,true);
 };
 
 window.guardarObsPrivada=async function(){
