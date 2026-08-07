@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.22
+  FECHA   : 2026-08-07
+  CAMBIOS : Pedido de Daniel: botón "⬇ EXPORTAR XLS" en el modal LOG DEL ALUMNO,
+            pestaña "Log de Instructores" (solo visible para instructor/admin, oculto
+            en modo alumno vía _logAlumnoModoAlumno). Exporta a .xlsx todos los vuelos
+            del alumno/piloto con obs_privada u obs de piloto cargada: fecha, hora,
+            avión, tiempo de vuelo, aterrizajes, autor, origen (instructor vs.
+            autorregistrado) y observación — mismo filtro/orden base que
+            renderNotasPrivadasAlumno, pero cronológico ascendente para exportar.
+            Incluye fila de carga inicial (horas_iniciales/aterrizajes_iniciales) si
+            existe, y fila de TOTAL al final. Librería SheetJS (xlsx.full.min.js)
+            cargada en diferido desde CDN cdnjs solo al hacer click en exportar, mismo
+            patrón que Google Charts (loader.js) ya usado en Consultas — no agrega peso
+            a la carga inicial de la página. Nueva función exportarLogAlumnoXLS().
   VERSION : 7.21
   FECHA   : 2026-08-07
   CAMBIOS : FIX en guardarVueloHistorico() (reportado por Daniel: cargó 3 vuelos con
@@ -2295,7 +2309,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.21</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.22</div>
   </div>
 
 </div>
@@ -2704,7 +2718,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         </div>
 
         <div class="obspriv-box" id="mla-hist-box">
-          <div class="section-title" style="margin-bottom:.5rem" id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)</div>
+          <div class="section-title" style="margin-bottom:.5rem" id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)<button class="hist-sort-btn" id="mla-export-xls" onclick="exportarLogAlumnoXLS()">⬇ EXPORTAR XLS</button></div>
           <div id="mla-lista" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:.6rem"></div>
           <div id="mla-vacio" style="display:none;font-family:var(--font-mono);font-size:12px;color:var(--text3);text-align:center;padding:1.5rem 0">// Sin observaciones privadas cargadas todavía</div>
         </div>
@@ -5540,6 +5554,7 @@ window.abrirLogAlumno=async function(){
   document.getElementById('mla-hist-box').classList.add('obspriv-box');
   document.getElementById('mla-lista-titulo').textContent='🔒 Historial para instructores (más nuevo primero)';
   document.getElementById('mla-tabbtn-log').textContent='🔒 Log de Instructores';
+  document.getElementById('mla-export-xls').style.display='inline-block';
   showLogAlumnoTab('obs');
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
   document.getElementById('mla-email').textContent=_logAlumnoCtx.email;
@@ -5571,6 +5586,7 @@ window.abrirMiLogVuelos=async function(){
   document.getElementById('mla-hist-box').classList.remove('obspriv-box');
   document.getElementById('mla-lista-titulo').textContent='▸ Horas y aterrizajes registrados (más nuevo primero)';
   document.getElementById('mla-tabbtn-log').textContent='▸ Horas y Aterrizajes';
+  document.getElementById('mla-export-xls').style.display='none';
   showLogAlumnoTab('obs');
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
   document.getElementById('mla-email').textContent=_logAlumnoCtx.email;
@@ -5605,6 +5621,7 @@ window.abrirLogAlumnoDesdeUsuario=async function(){
   document.getElementById('mla-hist-box').classList.add('obspriv-box');
   document.getElementById('mla-lista-titulo').textContent='🔒 Historial para instructores (más nuevo primero)';
   document.getElementById('mla-tabbtn-log').textContent='🔒 Log de Instructores';
+  document.getElementById('mla-export-xls').style.display='inline-block';
   showLogAlumnoTab('log');
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
   document.getElementById('mla-email').textContent=_logAlumnoCtx.email;
@@ -5741,6 +5758,89 @@ function renderNotasPrivadasAlumno(){
     cont.appendChild(div);
   });
 }
+
+// v7.22: exporta el log de vuelos del alumno (mismos datos que renderNotasPrivadasAlumno,
+// arriba) a un archivo .xlsx descargable. Librería SheetJS cargada en diferido por CDN
+// (mismo patrón que Google Charts en este archivo, ver §Consultas) — solo se baja si el
+// instructor efectivamente hace click en exportar, no en cada apertura del modal.
+window.exportarLogAlumnoXLS=async function(){
+  if(!_logAlumnoCtx)return;
+  const btn=document.getElementById('mla-export-xls');
+  const email=_logAlumnoCtx.email;
+  const nombre=_logAlumnoCtx.nombre||email;
+  const textoOriginal=btn.textContent;
+  btn.disabled=true; btn.textContent='Generando…';
+  try{
+    if(typeof XLSX==='undefined'){
+      await new Promise((res,rej)=>{
+        const s=document.createElement('script');
+        s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload=res;
+        s.onerror=()=>rej(new Error('No se pudo cargar la librería de exportación.'));
+        document.head.appendChild(s);
+      });
+    }
+    // Mismo filtro que renderNotasPrivadasAlumno (única fuente de verdad de qué vuelos
+    // entran en el log), pero orden cronológico ascendente para exportar (más viejo
+    // primero) — al revés que en pantalla, que muestra más nuevo primero.
+    const turnos=Object.values(_reservasCache)
+      .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null))
+      .sort((a,b)=>(a.fecha+' '+a.hora).localeCompare(b.fecha+' '+b.hora));
+
+    const filas=turnos.map(r=>{
+      const esPiloto=r.obs_privada_tiempo_vuelo==null&&r.obs_privada_aterrizajes==null&&r.obs_privada==null&&(r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.piloto_obs);
+      const horasVal=esPiloto?r.piloto_tiempo_vuelo:r.obs_privada_tiempo_vuelo;
+      const aterrVal=esPiloto?r.piloto_aterrizajes:r.obs_privada_aterrizajes;
+      const obsVal=esPiloto?r.piloto_obs:r.obs_privada;
+      const autorVal=esPiloto?r.piloto_autor:r.obs_privada_autor;
+      return {
+        'Fecha': r.fecha||'',
+        'Hora': r.hora||'',
+        'Avión': r.avion||'LV-OAD',
+        'Tiempo de vuelo (hs)': horasVal!=null?Number(horasVal):'',
+        'Aterrizajes': aterrVal!=null?Number(aterrVal):'',
+        'Cargado por': autorVal||'',
+        'Origen': esPiloto?'Autorregistrado (piloto)':'Instructor',
+        'Observación': obsVal||''
+      };
+    });
+
+    let totalHs=_logAlumnoCtx.horasIniciales||0, totalAter=_logAlumnoCtx.aterrizajesIniciales||0;
+    turnos.forEach(r=>{
+      if(r.obs_privada_tiempo_vuelo!=null)totalHs+=Number(r.obs_privada_tiempo_vuelo);
+      else if(r.piloto_tiempo_vuelo!=null)totalHs+=Number(r.piloto_tiempo_vuelo);
+      if(r.obs_privada_aterrizajes!=null)totalAter+=Number(r.obs_privada_aterrizajes);
+      else if(r.piloto_aterrizajes!=null)totalAter+=Number(r.piloto_aterrizajes);
+    });
+    if(_logAlumnoCtx.horasIniciales||_logAlumnoCtx.aterrizajesIniciales){
+      filas.unshift({
+        'Fecha':'(inicial)','Hora':'','Avión':'',
+        'Tiempo de vuelo (hs)':Number(_logAlumnoCtx.horasIniciales||0),
+        'Aterrizajes':Number(_logAlumnoCtx.aterrizajesIniciales||0),
+        'Cargado por':'','Origen':'Carga inicial (histórico pre-sistema)','Observación':''
+      });
+    }
+    filas.push({'Fecha':'','Hora':'','Avión':'','Tiempo de vuelo (hs)':'','Aterrizajes':'','Cargado por':'','Origen':'','Observación':''});
+    filas.push({
+      'Fecha':'TOTAL','Hora':'','Avión':'',
+      'Tiempo de vuelo (hs)':Number(totalHs.toFixed(1)),'Aterrizajes':totalAter,
+      'Cargado por':'','Origen':'','Observación':''
+    });
+
+    const ws=XLSX.utils.json_to_sheet(filas);
+    ws['!cols']=[{wch:12},{wch:7},{wch:9},{wch:18},{wch:12},{wch:16},{wch:24},{wch:40}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Log de vuelos');
+    const fechaHoy=ahoraServidor().toISOString().slice(0,10);
+    const nombreArchivo=`Log_${nombre.replace(/[^a-zA-Z0-9]+/g,'_')}_${fechaHoy}.xlsx`;
+    XLSX.writeFile(wb,nombreArchivo);
+  }catch(e){
+    console.error(e);
+    alert('Error al exportar: '+e.message);
+  }finally{
+    btn.disabled=false; btn.textContent=textoOriginal;
+  }
+};
 
 window.guardarObsPrivada=async function(){
   if(!_logAlumnoCtx)return;
