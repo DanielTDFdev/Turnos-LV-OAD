@@ -1,5 +1,21 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.23
+  FECHA   : 2026-08-07
+  CAMBIOS : FIX CRÍTICO del botón "⬇ EXPORTAR XLS" agregado en v7.22 — error mío:
+            metí el botón id="mla-export-xls" ANIDADO dentro del div
+            id="mla-lista-titulo". Ese div ya se reescribe con
+            .textContent='...' en tres lugares (abrirLogAlumno, abrirMiLogVuelos,
+            abrirLogAlumnoDesdeUsuario) — asignar .textContent borra TODOS los hijos
+            del elemento, así que la propia apertura del modal eliminaba el botón
+            antes de llegar a la línea que lo mostraba (.style.display=...), tirando
+            "Cannot read properties of null" y dejando "VER LOG DEL ALUMNO" sin
+            reaccionar (reportado por Daniel: click sin efecto, TypeError en consola
+            línea 5624). Fix: el título ahora vive en un <span id="mla-lista-titulo">
+            separado, hermano del botón, ambos dentro de un wrapper
+            #mla-lista-titulo-wrap con display:flex. El id mla-lista-titulo se
+            mantiene (ahora en el span) así que las tres líneas .textContent=
+            existentes siguen funcionando sin cambios, sin tocar más al botón.
   VERSION : 7.22
   FECHA   : 2026-08-07
   CAMBIOS : Pedido de Daniel: botón "⬇ EXPORTAR XLS" en el modal LOG DEL ALUMNO,
@@ -2309,7 +2325,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.22</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.23</div>
   </div>
 
 </div>
@@ -2718,7 +2734,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         </div>
 
         <div class="obspriv-box" id="mla-hist-box">
-          <div class="section-title" style="margin-bottom:.5rem" id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)<button class="hist-sort-btn" id="mla-export-xls" onclick="exportarLogAlumnoXLS()">⬇ EXPORTAR XLS</button></div>
+          <div class="section-title" style="margin-bottom:.5rem;display:flex;align-items:center;gap:8px" id="mla-lista-titulo-wrap"><span id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)</span><button class="hist-sort-btn" id="mla-export-xls" onclick="exportarLogAlumnoXLS()">⬇ EXPORTAR XLS</button></div>
           <div id="mla-lista" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:.6rem"></div>
           <div id="mla-vacio" style="display:none;font-family:var(--font-mono);font-size:12px;color:var(--text3);text-align:center;padding:1.5rem 0">// Sin observaciones privadas cargadas todavía</div>
         </div>
