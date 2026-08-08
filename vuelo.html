@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.9 · 2026-08-08
+  FIX v5.8: exportarTraza() generaba KML con <LineString> plano (sin tiempo por
+  punto). Funcionaba en Google Earth (solo dibuja la línea) pero CloudAhoy
+  necesita timestamp por punto para calcular vel/rumbo/fases y tiraba error.
+  Cambiado a <gx:Track> con <when> (usa p.ts, ya en ISO) + <gx:coord> por punto,
+  agregado xmlns:gx. Mismo fix en paralelo en turnos.html (exportarTrazaTurnos).
+  vuelo-piloto.html no exporta KML, no aplica.
   v5.8 · 2026-08-08
   Pedido de Daniel: exportación de traza GPS cambiada de GPX a KML (formato nativo
   de Google Earth, Pro y web). Reemplaza GPX por completo. exportarTraza() ahora
@@ -926,7 +933,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1788,14 +1795,18 @@ window.exportarTraza = async function(key, nombre, avion, fecha) {
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
 
-    // Construir KML estándar (formato nativo de Google Earth)
-    const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
+    // Construir KML con gx:Track (lleva timestamp por punto).
+    // CloudAhoy necesita <when>/<gx:coord> por punto para calcular vel/rumbo/fases;
+    // un LineString plano no tiene tiempo y por eso fallaba ahí (en Google Earth
+    // no importa porque solo dibuja la línea).
+    const whens  = puntos.map(p => `        <when>${esc(p.ts)}</when>`).join('\n');
+    const coords = puntos.map(p => `        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`).join('\n');
     const p0 = puntos[0], pN = puntos[puntos.length-1];
     const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
     const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
 
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
   <Document>
     <name>${esc(nombreDoc)}</name>
     <Style id="trazaVuelo">
@@ -1804,10 +1815,11 @@ window.exportarTraza = async function(key, nombre, avion, fecha) {
     <Placemark>
       <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
       <styleUrl>#trazaVuelo</styleUrl>
-      <LineString>
+      <gx:Track>
         <altitudeMode>absolute</altitudeMode>
-        <coordinates>${coordsLinea}</coordinates>
-      </LineString>
+${whens}
+${coords}
+      </gx:Track>
     </Placemark>
     <Placemark>
       <name>▶ Despegue</name>
