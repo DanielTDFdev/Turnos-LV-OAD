@@ -1,489 +1,224 @@
 <!DOCTYPE html>
 <!--
 ==================================================================================
-  VUELO — App de registro de vuelo · Aeroclub Río Grande
-  v5.14 · 2026-08-08
-  GPS_MUESTREO_MS 5000→3000 (pedido de Daniel, pensando en vuelo típico de
-  instrucción de 1h): a 5s un circuito/pattern corto de 20-30min quedaba al
-  límite de los 300 puntos mínimos de CloudAhoy. A 3s, ~15min ya da margen
-  cómodo (500pts a 25min, 1200pts a 1h). Mismo cambio en vuelo-piloto.html.
-  v5.13 · 2026-08-08
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v2.7 · 2026-08-08
+  GPS_MUESTREO_MS 5000→3000 (pedido de Daniel). Mismo cambio en vuelo.html v5.14.
+  v2.6 · 2026-08-08
   Causa raíz real del problema CloudAhoy encontrada: "not enough flight data:
   flights must have at least 300 GPS locations". Con muestreo cada 10s, vuelos
-  cortos (40-50min) quedaban por debajo de 300 puntos. GPS_MUESTREO_MS
-  10000→5000. Export GPX/KML ahora avisa si el vuelo tiene <300 puntos. Mismo
-  cambio en paralelo en vuelo-piloto.html; turnos.html solo suma el aviso
-  (no graba GPS, solo exporta).
-  v5.12 · 2026-08-08
-  FIX v5.11: exportarTrazaGPX generaba GPX sin xsi:schemaLocation ni bloque
-  <metadata>. Comparado contra un GPX viejo que sí había andado en CloudAhoy
-  (pre-refactor a KML), esa era la diferencia real. Restaurados ambos.
-  Mismo fix en paralelo en turnos.html y vuelo-piloto.html.
-  v5.11 · 2026-08-08
-  gx:Track (v5.9/5.10) se descartó: no anda ni en Google Earth Web ni en CloudAhoy
-  (confirmado por Daniel con archivo real). Vuelto a dos botones separados:
-  ⬇ GPX (exportarTrazaGPX, formato que sí anda en CloudAhoy) y ⬇ KML
-  (exportarTrazaKML, LineString plano sin tiempo, solo para Google Earth).
-  Mismo cambio en paralelo en turnos.html. vuelo-piloto.html suma export
-  GPS por primera vez (antes no tenía).
-  v5.10 · 2026-08-08
-  FIX v5.9: el fix anterior armaba <gx:Track> con todos los <when> agrupados y
-  después todos los <gx:coord> agrupados. CloudAhoy no tiraba error pero no
-  mostraba el vuelo (from/to "????", sin air/total time, sin botón Debrief)
-  porque no lograba correlacionar tiempo↔posición así. Según la doc oficial de
-  CloudAhoy, <when>/<gx:coord> van INTERCALADOS punto a punto. Corregido.
-  v5.9 · 2026-08-08
-  FIX v5.8: exportarTraza() generaba KML con <LineString> plano (sin tiempo por
-  punto). Funcionaba en Google Earth (solo dibuja la línea) pero CloudAhoy
-  necesita timestamp por punto para calcular vel/rumbo/fases y tiraba error.
-  Cambiado a <gx:Track> con <when> (usa p.ts, ya en ISO) + <gx:coord> por punto,
-  agregado xmlns:gx. Mismo fix en paralelo en turnos.html (exportarTrazaTurnos).
-  vuelo-piloto.html no exporta KML, no aplica.
-  v5.8 · 2026-08-08
-  Pedido de Daniel: exportación de traza GPS cambiada de GPX a KML (formato nativo
-  de Google Earth, Pro y web). Reemplaza GPX por completo. exportarTraza() ahora
-  arma un <kml> con Placemark <LineString> (traza completa, altitudeMode=absolute,
-  alt en metros) más dos Placemark <Point> para despegue/aterrizaje. Botón "⬇ GPX"
-  renombrado a "⬇ KML". Nombre de archivo: track_{avion}_{fecha}_{alumno}.kml.
-  Mismo cambio en paralelo en turnos.html y vuelo-piloto.html.
-  Ver anterior:
-  v5.7 · 2026-08-05
+  cortos quedaban por debajo de 300 puntos. GPS_MUESTREO_MS 10000→5000.
+  Export GPX/KML ahora avisa si el vuelo tiene <300 puntos. Mismo cambio en
+  paralelo en vuelo.html/turnos.html.
+  v2.5 · 2026-08-08
+  FIX v2.4: exportarTrazaGPX generaba GPX sin xsi:schemaLocation ni bloque
+  <metadata>. Comparado contra un GPX viejo que sí había andado en CloudAhoy,
+  esa era la diferencia real. Restaurados ambos. Mismo fix en paralelo en
+  vuelo.html/turnos.html.
+  v2.4 · 2026-08-08
+  Export de traza GPS agregado (antes solo tenía "Ver recorrido GPS", sin
+  descarga). Dos botones en tab Libro: ⬇ GPX (exportarTrazaGPX, formato que
+  anda en CloudAhoy) y ⬇ KML (exportarTrazaKML, LineString plano sin tiempo,
+  solo Google Earth) — mismo código que vuelo.html v5.11/turnos.html v7.31.
+  v2.3 · 2026-08-05
   chequearVersionNueva() ahora también corre una vez a los 5s de cargar
   (setTimeout), no solo cada VERSION_POLL_MS (5 min) o al volver a la pestaña.
-  Antes, si alguien abría la página con una versión vieja cacheada y probaba
-  algo en el primer minuto, el aviso de "versión desactualizada" nunca
-  alcanzaba a dispararse. Reportado por Daniel.
-  v5.6 · 2026-08-05
-  FIX v5.5: el div de "(c) 2026 by DAC" tenía class="ver", la misma clase que
-  usa document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION)
-  para pisar el número de versión — el copyright quedaba sobreescrito con
-  "v5.5" en vez de mostrar el texto. Ahora el div no lleva class="ver", tiene
-  el mismo estilo inline sin engancharse a ese querySelectorAll.
-  v5.5 · 2026-08-05
+  Mismo fix que vuelo.html v5.7.
+  v2.2 · 2026-08-05
+  FIX v2.1: mismo bug que vuelo.html v5.6 — el div de copyright tenía
+  class="ver" y el querySelectorAll('.ver') que pisa el número de versión
+  lo sobreescribía. Sacada la clase.
+  v2.1 · 2026-08-05
   Pie de página "(c) 2026 by DAC" agregado debajo del login-card en la
   pantalla de login (pedido de Daniel).
-  ⚠ NOTA: el log de este header saltó de v5.0 directo a v5.4 (bumps 5.1-5.3
-  quedaron sin documentar acá aunque APP_VERSION sí se actualizó en cada uno
-  — revisar si hace falta reconstruir esas entradas).
-  Ver anterior:
-  v5.0 · 2026-08-05
-  Estética login: logo del aeroclub (icon-vuelo-192.png, ícono propio de esta
-  app) en lugar del emoji ✈. Título "AEROCLUB RÍO GRANDE" + subtítulo
-  "INSTRUCTORES" para diferenciar visualmente de vuelo-piloto.html.
-  Ver anterior:
-  v4.9 · 2026-08-05
-  Exportación cambiada de JSON a GPX (estándar universal). El archivo descargado
-  es GPX 1.1 válido con <trkpt lat/lon>, <ele> (altitud) y <time> (timestamp ISO)
-  por punto. Compatible con CloudAhoy, Tacview, Google Earth, GpxOverlay y cualquier
-  herramienta que acepte GPX. Nombre de archivo: track_{avion}_{fecha}_{alumno}.gpx.
-  Ver anterior:
-  v4.8 · 2026-08-05
-  Botón "⬇ Exportar GPS" (ámbar) en el tab Libro, al lado del "🗺 Ver recorrido
-  GPS", en cada vuelo con traza registrada. Descarga el JSON de /vuelo_tracks/{key}
-  con metadata (reserva_key, alumno, avión, fecha, timestamp de exportación) y el
-  array de puntos completo. Nombre de archivo: track_{avion}_{fecha}_{alumno}.json.
-  Permite abrir la traza en herramientas externas de análisis 3D como Flyahoy u otras
-  que acepten JSON con coordenadas GPS.
-  Ver anterior:
-  v4.7 · 2026-08-04
+  ⚠ NOTA: mismo salto de header sin documentar que en vuelo.html — este
+  header venía de v1.6 pero APP_VERSION ya estaba en 2.0 (bumps 1.7-1.9 sin
+  entrada acá).
+  v1.6 · 2026-08-05
+  Estética login: logo del aeroclub (icon-piloto-192.png, ícono propio de esta
+  app) en lugar del emoji ✈. Título "AEROCLUB RÍO GRANDE" + subtítulo "PILOTOS".
+  v1.5 · 2026-08-04
   Pedido de Daniel: "hagamos todo lo posible para protegernos ante la
-  eventual pérdida temporal de conectividad" (mismo pedido que originó
-  vuelo-piloto.html v1.5, ver ese changelog para el razonamiento completo
-  — acá el mismo rediseño, adaptado a que vuelo.html tiene dos casos:
-  turno in-situ (esInSitu, sin key todavía) y turno real (ya con key)).
-  Rediseño de fondo del guardado — antes CONFIRMAR intentaba escribir a
-  Firebase directo (con timeout desde v4.6, pero igual bloqueaba
-  esperando esa escritura). Ahora:
+  eventual pérdida temporal de conectividad". Rediseño de fondo del
+  guardado — antes CONFIRMAR intentaba escribir a Firebase directo (con
+  timeout desde v1.4, pero igual bloqueaba esperando esa escritura). Ahora:
   - CONFIRMAR guarda el vuelo PRIMERO en una cola en localStorage
-    (LS_PENDIENTES) — instantáneo, siempre funciona — y libera la
-    pantalla al toque para el próximo turno. La escritura real a Firebase
-    (misma lógica de siempre: crea la reserva si es in-situ, o hace
-    update si ya existía, más traza GPS y auditoría) pasa en segundo
-    plano vía escribirPendiente(item), reintentada por
-    intentarSincronizarPendientes(). El ítem de la cola guarda un
-    snapshot mínimo del turno in-situ (nombre/email/fecha/hora/avion/rol)
-    para poder recrear el objeto `nuevo` al sincronizar, sin depender de
-    que turnoActual siga existiendo en memoria en ese momento.
-  - Reintentos automáticos: evento 'online' del navegador, setInterval
-    cada 30s de respaldo, y también al abrir la app (init(), antes de
-    loguearse). Cola FIFO, se corta ante el primer fallo y se reintenta
-    todo junto después.
+    (LS_PENDIENTES) — instantáneo, siempre funciona, no depende de
+    conexión — y libera la pantalla al toque para el próximo vuelo. La
+    escritura real a Firebase (matching ±20min + insert/update + traza +
+    auditoría, misma lógica de siempre) pasa en segundo plano vía
+    escribirPendiente(item), reintentada por intentarSincronizarPendientes().
+  - Reintentos automáticos: evento 'online' del navegador, un
+    setInterval cada 30s de respaldo (por si 'online' no dispara — pasa
+    en algunos PWA de iOS), y también al abrir la app (init(), corre
+    ANTES de loguearse — si quedó algo pendiente de la sesión anterior, ni
+    hace falta loguearse para que intente sincronizar). Cola FIFO: si hay
+    varios vuelos pendientes, se sincronizan en orden, uno por uno; si
+    alguno falla (sin señal), se corta ahí y se reintenta todo después —
+    no tiene sentido seguir intentando los demás con el mismo problema.
   - Banner fijo nuevo (banner-pendientes, cian, debajo del de versión
-    vieja si ambos están visibles) con botón "REINTENTAR AHORA" manual.
-  - Aviso no bloqueante en logout si quedan pendientes.
-  - Mismo límite explícito que en vuelo-piloto.html: reintenta mientras
-    la app está ABIERTA, no es sync en segundo plano con la app cerrada.
-  Bug encontrado y corregido en el camino: al reescribir guardar(), un
-  bloque `finally` del código viejo quedó huérfano (sin su `try`
-  correspondiente, que ahora cierra antes) — error de sintaxis que
-  hubiera roto todo el script. Detectado y sacado antes de esta entrega.
+    vieja si ambos están visibles) mostrando cuántos vuelos quedan sin
+    sincronizar, con botón "REINTENTAR AHORA" manual además del
+    automático. Se actualiza solo con cada intento (éxito parcial incluido
+    — si sincroniza 2 de 3, el banner baja a "1 pendiente").
+  - Aviso (no bloqueante) al cerrar sesión si quedan pendientes — la cola
+    no depende de la sesión, sigue sincronizando igual mientras la pestaña
+    siga abierta.
+  - Límite real, dicho explícitamente en el propio texto del banner: esto
+    reintenta mientras la app está ABIERTA (evento online + intervalo +
+    apertura de la app), NO es sync en segundo plano con la app cerrada
+    — eso necesitaría Background Sync API, que no anda en iOS/Safari, así
+    que no serviría para este club de todos modos.
   Ver anterior:
-  v4.6 · 2026-08-04
-  Mismo fix que se aplicó en vuelo-piloto.html v1.4, a pedido de Daniel
-  ("¿y lo mismo para vuelo.html?"). Pregunta original: si el instructor
-  se queda sin conexión después de loguearse, ¿puede volar todo el vuelo
-  igual y que se guarde recién al recuperar señal? Iniciar/volar/GPS/
-  completar el cierre ya funcionaba offline (todo local); el problema
-  estaba en CONFIRMAR Y GUARDAR, que puede quedar colgado sin aviso si la
-  conexión se cuelga en vez de dar error (no había timeout en ninguna de
-  las escrituras a Firebase), y el borrador del formulario de cierre
-  (aterrizajes/observación/tiempo editado a mano) no se guardaba en
-  localStorage — si había que recargar en ese estado colgado, se perdía
-  lo tipeado.
-  Dos fixes, idénticos en espíritu a vuelo-piloto.html:
-  (1) Nuevo helper conTimeout() (Promise.race, 10s) envolviendo TODAS las
-  escrituras de guardar() — el set() de la reserva in-situ, el set() de
-  vuelo_tracks, el set() de auditoría, y el update() del turno existente.
-  Si cualquiera tarda más de 10s, muestra un error claro pidiendo
-  reintentar en vez de quedar pegado en "Guardando...".
-  (2) persistir() ahora también guarda el borrador del cierre (c-aterr,
-  c-obs, si t-manual está visible y su valor) — nuevos listeners de input,
-  restauración en mostrarCierre() vía _cierreRestaurado (mismo patrón
-  diferido que ya usa _avionRestaurado en vuelo-piloto.html, acá nuevo).
-  Alcance: solo se tocó guardar() — las pantallas de solo lectura
-  (cargarTabVuelo/cargarPendientes/cargarLibro) ya muestran su propio
-  error en el catch si algo falla; el riesgo real de quedar colgado sin
-  ningún aviso estaba específicamente en el camino de guardado.
+  v1.4 · 2026-08-04
+  Pregunta de Daniel: ¿qué pasa si te quedás sin conexión después de
+  loguearte, hacés todo el vuelo, y recién cuando termina se guarda al
+  recuperar señal? Respuesta antes de este cambio: iniciar/volar/GPS/
+  completar el cierre funcionaba todo offline (es todo local), pero
+  CONFIRMAR Y GUARDAR necesita conexión (hace un get() de reservas para
+  el matching ±20min antes de escribir) — y si la conexión se colgaba en
+  vez de dar error (mismo problema que ya arreglamos en poblarAviones,
+  v1.3), quedaba pegado en "Guardando..." sin aviso. Encima, el borrador
+  del formulario de cierre (aterrizajes/observación/tiempo editado a
+  mano) no se guardaba en localStorage — si en ese estado colgado había
+  que recargar la app, se perdía lo tipeado (aunque el despegue/
+  aterrizaje SÍ se recuperaban).
+  Dos fixes:
+  (1) Mismo Promise.race con timeout que en poblarAviones() (acá 10s) en
+  el get() de guardar() — si no hay señal, muestra un error claro
+  pidiendo reintentar, en vez de quedar colgado sin aviso. Nada se pierde
+  mientras tanto: todo sigue en memoria/localStorage.
+  (2) persistir() ahora también guarda el borrador del formulario de
+  cierre (c-aterr, c-obs, si t-manual está visible y su valor) — nuevos
+  listeners de input en esos campos, más una restauración en
+  mostrarCierre() vía la variable _cierreRestaurado (mismo patrón diferido
+  que _avionRestaurado, v1.2 — el formulario recién existe en el DOM
+  cuando se llega a la pantalla de cierre).
   Ver anterior:
-  v4.5 · 2026-08-04
-  Pedido de Daniel: texto de la info bar del visor de mapa (puntos,
-  duración, distancia, altitud máxima) se veía muy chico. .map-info-bar
-  span 11→14px, .mv (los valores) 14→15px + negrita para que resalten más
-  contra las etiquetas.
+  v1.3 · 2026-08-04
+  Fix reportado por Daniel: el selector de avión se quedaba pegado en
+  "Cargando..." sin nunca poblarse. Causa probable: el chequeo de aviones
+  habilitados (poblarAviones(), v1.2) esperaba get(ref(db,'config')) sin
+  ningún límite de tiempo — si la conexión a Firebase Realtime Database
+  tarda o directamente se cuelga (pasa en ciertas redes móviles que
+  bloquean WebSocket), la promesa queda pendiente para siempre: nunca
+  resuelve NI rechaza, así que el try/catch no la atrapaba y sel.innerHTML
+  nunca se llegaba a ejecutar. Fix: Promise.race con un timeout de 5
+  segundos — pasado ese tiempo sin respuesta, se da por perdido el chequeo
+  y se muestran los 3 aviones de la flota igual (mismo criterio fail-open
+  que ya tenía para errores explícitos).
   Ver anterior:
-  v4.4 · 2026-08-04
-  Pedido de Daniel: el visor de mapa mostraba distancia y altitud en
-  unidades métricas (km/m) — ahora se muestran en unidades aeronáuticas:
-  distancia en millas náuticas (nm) y altitud máxima en pies (ft). El
-  cálculo interno se mantiene en km/metros (calcDistanciaKm, altitud
-  cruda del GPS del navegador — siempre en metros por spec) — la
-  conversión (1 km = 0.539957 nm, 1 m = 3.28084 ft) es solo al armar el
-  texto de la info bar (mi-distancia/mi-alt), sin tocar el guardado en
-  Firebase ni el resto de los cálculos.
+  v1.2 · 2026-08-04
+  Pedido de Daniel: dejar elegir CUALQUIER avión de la flota, incluido
+  LV-OAD (antes solo LV-ART/LV-MPH). Razonamiento explícito de Daniel: si
+  el piloto ya está adentro del avión activando la app, es porque está
+  autorizado a usarlo — no tiene sentido que la app le restrinja más de
+  lo que el club ya decidió al dejarlo volar. Nota: esto relaja a
+  propósito la regla general de "LV-OAD es instrucción exclusiva" (§6 de
+  la doc de turnos.html) — acá es una decisión consciente de Daniel para
+  este flujo puntual, no un descuido; tipo_vuelo sigue siendo 'particular'
+  siempre, sea cual sea el avión.
+  Lo único que sigue filtrando es que el avión esté HABILITADO en este
+  momento: nuevo poblarAviones(), chequea /config/{avion}.activo (mismo
+  flag que usa turnos.html en "Habilitación de aviones" del panel de
+  instructor/admin) contra los 3 aviones de la flota — solo se listan los
+  que no estén explícitamente deshabilitados (activo!==false). Si falla
+  el chequeo (sin conexión, etc.) cae "fail-open": muestra los 3 antes que
+  dejar al piloto sin ninguna opción. El <select> ahora se puebla
+  dinámicamente (antes tenía las opciones hardcodeadas en el HTML) —
+  abrirApp() pasó a ser async para poder esperar el chequeo antes de
+  mostrar la pantalla. La restauración del avión guardado en localStorage
+  (por si se recarga la app a mitad de vuelo) se movió de init() a
+  poblarAviones(), porque antes intentaba setear el <select> antes de que
+  tuviera opciones cargadas — quedaba en blanco silenciosamente.
   Ver anterior:
-  v4.3 · 2026-08-04
-  Fix de fondo pedido por Daniel tras un caso real: creó un turno in-situ
-  (v4.2) con el alumno equivocado, y no tenía forma de corregirlo sin
-  entrar a turnos.html como admin a borrarlo a mano. Dos cambios:
-  (1) La reserva de un turno in-situ ya NO se crea al elegir a la persona
-  — se crea recién dentro de guardar(), en el mismo momento en que se
-  confirma el vuelo (mismos datos que antes: tipo_vuelo 'instruccion',
-  aprobado por el instructor logueado, cargado_por = ese instructor,
-  auditoría 'alta_turno_manual'). Hasta ese punto, todo vive en memoria +
-  localStorage (turnoActual con esInSitu:true, sin `.key` — mismo campo
-  que ya usaba persistir()) — si te equivocás de persona o cancelás, no
-  queda absolutamente nada escrito en Firebase. crearTurnoInSitu() pasa de
-  async con push+set+auditoría a una función síncrona que solo arma el
-  objeto local.
-  (2) Botón nuevo "✕ Cancelar" (btn-cancelar-vuelo), visible desde que se
-  toca INICIAR VUELO hasta CONFIRMAR (en vuelo y en la pantalla de cierre)
-  — pedido explícito para la fase de pruebas, por si se activa el timer
-  por error. Con confirm() previo, no graba nada: si el turno es real
-  (ya existía en Firebase) no se toca, queda como estaba; si es in-situ,
-  no se crea nada (ver punto 1). Vuelve a la pantalla "Listo para
-  iniciar" con la MISMA persona/avión — no manda de vuelta a elegir turno.
-  Nueva función cancelarVuelo(), reusa detenerTrackGPS/liberarWakeLock ya
-  existentes. Fix menor de robustez: cargarTabVuelo() ahora también
-  protege una selección in-situ pendiente (persona elegida, timer sin
-  arrancar) de perderse si se recarga la app en ese punto exacto — antes
-  solo protegía tsInicio/tsFin.
+  v1.1 · 2026-08-04
+  Pedido de Daniel: pestaña "📋 Libro" con todos los vuelos registrados
+  para el usuario logueado, con detalle y mapa — antes esta app no tenía
+  ningún lugar propio para ver el historial (solo quedaba visible desde
+  turnos.html → Mi Perfil → Log de Vuelos, v7.09).
+  - Dos pestañas ahora: ✈ Vuelo | 📋 Libro (mismo patrón visual que
+    vuelo.html, adaptado — acá no hace falta una pestaña "Pendientes"
+    porque no hay concepto de turno a elegir).
+  - Libro: selector de fecha (default hoy), totalizador (vuelos/horas/
+    aterrizajes), lista de vuelos ordenada por hora. Filtra por
+    r.email===session.email y (piloto_tiempo_vuelo!=null O
+    obs_privada_tiempo_vuelo!=null) — incluye tanto los autorregistrados
+    desde esta app como cualquier vuelo acompañado (ej. un chequeo con
+    instructor en LV-OAD) que haya quedado a nombre de este piloto.
+  - Privacidad respetada: el texto de obs_privada NUNCA se muestra acá
+    (sigue siendo nota privada del instructor, mismo criterio que
+    turnos.html) — solo se muestran horas/aterrizajes de esos vuelos.
+    piloto_obs sí se muestra siempre — es autorreporte propio, no hay
+    nada que ocultar.
+  - Horas de despegue/aterrizaje en UTC (Zulu), mismo criterio que
+    vuelo.html (bitácora aeronáutica).
+  - Visor de mapa GPS (Leaflet + satélite ESRI, distancia en nm, altitud
+    en ft) — copiado tal cual de vuelo.html, funciona igual. Botón
+    "🗺 Ver recorrido GPS" en cada vuelo con tiene_traza_gps=true.
   Ver anterior:
-  v4.2 · 2026-08-04
-  Nueva feature pedida por Daniel: "Iniciar turno sin reserva previa". Caso
-  real: nadie tenía turno cargado, un alumno/piloto se presenta igual a
-  volar. Reemplaza a "+ Sin turno asignado" (que era 100% local — un vuelo
-  "fantasma" que no escribía nada en Firebase). Ahora, en la pantalla
-  vacía de la pestaña Vuelo (sin turnos vigentes), aparece un selector de
-  avión + buscador de alumno/piloto con matching tipo "like" (nombre y
-  email, sobre /alumnos, cacheado en memoria tras la primera búsqueda de
-  la sesión). Al elegir una persona: se crea la reserva en Firebase
-  (avion elegido, fecha/hora de ahora, tipo_vuelo:'instruccion' siempre,
-  estado:'aprobado' con instructor/aprobado_por = el instructor logueado
-  — está presente arrancando el vuelo, no tiene sentido pedir aprobación
-  — y cargado_por = mismo instructor, por lo que NO afecta la cuota
-  semanal del alumno en turnos.html, mismo criterio que "+ CARGAR
-  TURNO"), se escribe un registro de auditoría con accion
-  'alta_turno_manual' (mismo que usa turnos.html, para que aparezca igual
-  en Seguimiento/Consultas — el detalle aclara "in situ desde vuelo.html"
-  para quien lea la auditoría a mano) y se entra directo a la pantalla de
-  vuelo normal con INICIAR VUELO — todo el resto del flujo (timer, GPS,
-  guardado) funciona sin cambios porque el turno creado tiene un `key`
-  real de Firebase, igual que cualquier otro. Si SÍ hay turnos reales
-  (uno o varios) tienen prioridad: la opción de iniciar in situ se oculta
-  en esos casos (`v-nuevo-wrap` solo visible cuando la lista de turnos
-  vigentes está vacía). Sin chequeo de conflicto de horario (a diferencia
-  de "+ CARGAR TURNO" en turnos.html) — decisión deliberada para no portar
-  la lógica de slots/horas de turnos.html a esta app por un caso de uso
-  de bajo riesgo (avión presente, vuelo en el momento). Nuevo import
-  `push` del SDK de Firebase.
-  Ver anterior:
-  v4.1 · 2026-08-04
-  Wake lock condicional: solo se activa si el instructor habilitó la traza GPS.
-  Sin GPS → sin wake lock → ahorra batería. Con GPS → wake lock activo para
-  que la pantalla no se apague y el muestreo GPS no se interrumpa.
-  Ver anterior:
-  v4.0 · 2026-08-04
-  Screen Wake Lock API: al tocar INICIAR VUELO la app le pide al sistema
-  operativo que mantenga la pantalla encendida durante todo el vuelo. Esto
-  resuelve el problema de que el tracking GPS se interrumpía cuando el celular
-  se bloqueaba (iOS suspende el JS en background). Soportado en iOS 16.4+ y
-  Chrome Android. En browsers que no lo soportan falla silenciosamente — la
-  app sigue funcionando, solo sin el wake lock. Si el usuario sale de la app
-  y vuelve (visibilitychange), el wake lock se re-adquiere automáticamente si
-  hay un vuelo en curso. Se libera al tocar STOP, al guardar, y al hacer logout.
-  Ver anterior:
-  v3.9 · 2026-08-04
-  FIX: mapa abría con zoom excesivo ("map data not yet available") cuando los
-  puntos GPS estaban muy juntos (vuelo corto o prueba estática). fitBounds
-  ahora limita maxZoom:15 — nivel donde ESRI World Imagery tiene cobertura
-  global garantizada y se ve suficiente detalle para un vuelo de instrucción.
-  Ver anterior:
-  v3.8 · 2026-08-04
-  FIX: "Can't find variable: fmtUTCFull" al abrir el mapa GPS. La función
-  fmtUTCFull fue renombrada a fmtLocalFull en v3.x (ver changelog v3.x) y
-  abrirMapa (window.*) la seguía llamando por el nombre viejo. Como abrirMapa
-  vive en window y fmtLocalFull en el scope del módulo, tampoco podría llamarla
-  directamente. Fix: formateador fmtTs definido inline dentro de abrirMapa,
-  sin depender del scope externo.
-  Ver anterior:
-  v3.7 · 2026-08-04
-  Visualizador de traza GPS en tab Libro: cada vuelo con tiene_traza_gps=true
-  muestra un botón "🗺 Ver recorrido GPS" que abre un modal a pantalla completa
-  con Leaflet.js + capa satélite ESRI (gratis, sin API key) + capa de etiquetas
-  encima. Dibuja la polilínea del recorrido en cyan, marcador verde en despegue
-  y rojo en aterrizaje con tooltip de hora local. Info bar al pie: cantidad de
-  puntos, duración (calculada de los timestamps de la traza), distancia total
-  (Haversine) y altitud máxima. Si la traza tiene <2 puntos, avisa sin romper
-  el flujo. Instancia de Leaflet se destruye al cerrar el modal para no acumular
-  mapas en memoria.
-  Ver anterior:
-  v3.6 · 2026-08-04
-  Traza GPS opcional, a pedido de Daniel — el instructor decide por vuelo si
-  la activa (toggle en la pantalla previa a INICIAR, se bloquea una vez
-  iniciado el vuelo; recuerda la última preferencia en localStorage). Si está
-  activa, navigator.geolocation.watchPosition() va guardando puntos
-  {lat,lng,alt,ts} en memoria, con muestreo cada 10s (GPS_MUESTREO_MS —
-  watchPosition puede disparar más seguido, se descartan los puntos de en
-  medio). Los puntos se van espejando a localStorage (LS_GPS_PUNTOS) por si
-  la app se recarga a mitad de vuelo — init() los restaura y retoma el
-  watchPosition si corresponde (tsInicio sin tsFin + gps activo). Al
-  CONFIRMAR Y GUARDAR: si hay 2+ puntos, se suben enteros a un nodo aparte
-  /vuelo_tracks/{key} (mismo key que la reserva) — NO se agregan a
-  /reservas/{key} para no engordar el payload que turnos.html escucha en
-  tiempo real con onValue; solo se van a pedir bajo demanda cuando alguien
-  quiera ver el recorrido de un vuelo puntual. Se agrega un flag liviano
-  tiene_traza_gps:true en la reserva para poder mostrar un ícono sin bajar
-  la traza completa. Si el dispositivo no tiene geolocalización o el
-  usuario no da permiso, el vuelo se sigue registrando normal — un toast
-  avisa que no hubo traza, nunca bloquea el flujo de INICIAR/FINALIZAR.
-  Vuelos manuales (sin turno asociado, turnoActual null) no guardan traza
-  por no tener /reservas/{key} donde anclarla — mismo límite preexistente
-  que ya tenían las horas/aterrizajes de un vuelo manual.
-  Visualización de la traza (mapa): pendiente, próxima entrega — la idea
-  de Daniel es usar Google Maps para plotearla.
-  Ver anterior:
-  v3.5 · 2026-08-03
-  Pedido de Daniel: totalizador del día en la pestaña Libro. Arriba de la
-  lista de vuelos aparece una tarjeta con 3 números: cantidad de vuelos,
-  horas totales (suma de obs_privada_tiempo_vuelo, redondeado a 1
-  decimal) y aterrizajes totales (suma de obs_privada_aterrizajes) de esa
-  fecha. Se calcula sobre el mismo array `mis` que ya arma cargarLibro()
-  (solo vuelos finalizados y guardados), sin pegarle a Firebase de nuevo.
-  Ver anterior:
-  v3.4 · 2026-08-03
-  Pedido de Daniel: confirmación antes de INICIAR y FINALIZAR el vuelo,
-  solo como precaución ante un toque accidental (confirm() nativo en cada
-  rama del handler de btn-start-stop). El timestamp se graba recién
-  después de confirmar, así que refleja el momento real del OK, no el del
-  primer toque.
-  Ver anterior:
-  v3.3 · 2026-08-03
-  Pedido de Daniel: mismo chequeo de versión que ya tiene turnos.html.
-  Como corre standalone (PWA) y la pestaña puede quedar abierta días sin
-  recargar, era fácil terminar usando una versión vieja del archivo sin
-  darse cuenta. Cada 5 min (VERSION_POLL_MS) y al volver a primer plano
-  (visibilitychange), se vuelve a bajar este mismo HTML sin caché
-  (?_v=timestamp, cache:'no-store') y se compara la constante APP_VERSION
-  ahí adentro contra la que quedó corriendo en esta pestaña — si difieren,
-  aparece un banner fijo ámbar arriba de todo (fuera de screen-login y
-  app-shell, visible siempre) con botón "ACTUALIZAR AHORA" que recarga la
-  página. Nuevo extraerVersionDeHTML() (regex sobre "const APP_VERSION =
-  'X.X'", equivalente al que usa turnos.html sobre .hero-sub pero
-  adaptado a que acá la versión vive en una constante JS, no en un div).
-  Ver anterior:
-  v3.2 · 2026-08-03
-  Ajuste pedido por Daniel: GRACIA_VENCIDO_MS bajado de 2 horas a 30
-  minutos. Criterio de Daniel: si el turno ya inició hace más de media
-  hora y no está activo (nadie tocó START), es un turno que nadie usó —
-  no corresponde seguir ofreciéndolo como "el de ahora". La lógica ya
-  contemplaba pasar al siguiente turno vigente más próximo automáticamente
-  al descartar el vencido (v3.1); acá solo cambia el número.
-  Ver anterior:
-  v3.1 · 2026-08-03
-  Fix reportado por Daniel: a las 19:30 la app ofrecía como "el turno de
-  ahora" uno de las 17:00, ya bien vencido. Causa: (1) el campo estado de
-  la reserva queda en 'aprobado' hasta que ALGUIEN abre turnos.html y
-  dispara vencerTurnosPendientes() del lado del cliente — no hay cron de
-  servidor para esto, así que si nadie tuvo la página abierta el turno
-  sigue figurando "aprobado" aunque ya pasó; (2) cargarTabVuelo() elegía
-  el turno con MENOR diferencia absoluta sin techo — 5 min o 5 horas para
-  atrás, daba igual.
-  Fix: nueva constante GRACIA_VENCIDO_MS (2 horas, ajustable). Para la
-  entrada automática (no forzada) se ignoran candidatos ya pasados por más
-  de ese margen — no se auto-ofrecen como "el de ahora". Si TODOS los
-  candidatos del día están más vencidos que el margen, se muestra "Ningún
-  turno para este momento" + botón "⚠ Ver turnos vencidos sin cerrar"
-  (nuevo btn-ver-vencidos) que fuerza la lista completa sin filtrar — así
-  quedan accesibles a mano, nunca se pierden. En esa lista forzada, los
-  turnos vencidos por más del margen se marcan con "⚠ VENCIDO" en ámbar
-  (nueva clase .turno-item.vencido/.tag-vencido, distinta de .actual/
-  .tag-actual que ya se usaba en cian para "en curso" en Pendientes).
-  Ver anterior:
-  v3.0 · 2026-08-03
-  Fix pedido por Daniel: el Libro mostraba la hora convertida a local
-  (America/Argentina/Ushuaia, UTC-3) en vez de UTC cruda — como esa zona
-  es exactamente la hora local del club, no se notaba a simple vista, pero
-  no es lo que se necesita para un libro de vuelo (convención aeronáutica:
-  registrar en UTC/Zulu). Ejemplo real: vuelo a las 18:10 hora local
-  (=21:10 UTC) se veía como "18:10" en vez de "21:10".
-  fmtUTC() ahora fuerza timeZone:'UTC' de verdad (antes decía UTC pero
-  convertía a Ushuaia — nombre engañoso, comportamiento incorrecto) y
-  agrega sufijo "Z" a lo mostrado. Se usa solo en el Libro (r.ts_despegue/
-  r.ts_aterrizaje). El timer EN VIVO mientras se vuela sigue en hora local
-  (tiene sentido operativo: mirar el reloj de pared mientras estás
-  volando) — esa función se renombró de fmtUTCFull a fmtLocalFull para
-  que el nombre ya no confunda. Agregado texto aclaratorio en la pestaña
-  Libro: "Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande".
-  No se tocó nada del guardado: ts_despegue/ts_aterrizaje ya se guardaban
-  en UTC crudo (.toISOString()) desde siempre — esto era solo un problema
-  de visualización.
-  Ver anterior:
-  v2.9 · 2026-08-03
-  Tipografía agrandada en toda la app, a pedido de Daniel — la app se usa
-  casi exclusivamente en celular. Foco especial en Libro (el que más se
-  quejaba de chico): vr-hora 14→19px, vr-alumno 16→19px, vr-avion 10→13px,
-  vr-datos 11→14px, más padding en las filas (14/16→16/18). También subido
-  en general: .label 10→12px, .card-title 12→14px, .err 11→13px, inputs
-  16→17px, botones 14→15px, btn-ghost 12→13px, tab-btn 11→13px, top-bar
-  nombre 13→15px / sub 10→12px, login h1 22→24px / p 10→12px, turno-hero
-  (avión 11→13px, hora 12→14px), estado-vuelo (label 11→13px, timestamp
-  28→30px, sub 10→12px), tiempo-calculado t-val 22→24px, turno-item (hora
-  20→22px, alumno 17→19px, avión 10→12px, flecha 18→22px), toast 12→14px,
-  badge-ok 10→12px, hints varios 10→12px. Sin tocar el layout ni la
-  lógica — solo tamaños y algo de padding/gap para que respire.
-  Ver anterior:
-  v2.8 · 2026-08-03
-  Fix pestaña Pendientes: mostraba turnos vencidos sin volar (heredado del
-  filtro de Vuelo, que sí necesita ver vencidos-con-aprobador para poder
-  cerrar un vuelo que ya pasó de hora). Pendientes es para adelantar turnos
-  FUTUROS, no para rescatar vencidos — ahora exige estado==='aprobado'
-  (nada de vencido) y hora del turno >= hora actual (evaluada en el
-  momento, no depende de que el cron ya haya marcado el estado).
-  Ver anterior:
-  v2.7 · 2026-08-03
-  Nueva pestaña "⏳ Pendientes", a pedido de Daniel — 3 pestañas ahora:
-  Vuelo | Pendientes | Libro.
-  - Vuelo: sin cambios de fondo — sigue mostrando el turno más cercano a
-    la hora actual y entrando directo (lógica de v2.6).
-  - Pendientes: lista TODOS los turnos aprobados/vencidos-con-aprobador
-    del día del instructor que todavía no tienen tiempo de vuelo cargado
-    (mismo filtro que Vuelo, sin el recorte al "más cercano"). Tocar un
-    ítem lo "activa" como turno actual y salta a la pestaña Vuelo — sirve
-    para adelantar un turno posterior si el de la hora no se presentó.
-    El turno actualmente en curso/con cierre sin guardar se marca con
-    "● EN CURSO" en la lista.
-  - Libro: sin cambios (vuelos ya finalizados y guardados, desde v2.3).
-  Nueva función activarTurno(turno): si hay un vuelo en curso sin guardar
-  (tsInicio sin tsFin) o un cierre sin guardar (tsFin sin haber tocado
-  CONFIRMAR), pide confirmación antes de descartarlo y activar el nuevo
-  turno — nueva variable guardadoExitoso distingue "ya guardado, listo
-  para saltar sin aviso" de "hay datos sin guardar, avisar". Nueva función
-  cambiarATab(nombre) centraliza el cambio de pestaña (la usan tanto el
-  click de las tabs como activarTurno).
-  Ver anterior:
-  v2.6 · 2026-08-03
-  Reescritura de la selección de turno, a pedido de Daniel: un instructor
-  no tiene dos turnos distintos a la misma fecha/hora (si eso pasara sería
-  un fallo de controles de turnos.html, no algo a resolver acá). Antes la
-  app juntaba todos los turnos aprobados del instructor en una ventana de
-  -1h/+4h respecto de ahora y mostraba una LISTA si había 2+, lo cual podía
-  incluir turnos de otro horario del mismo día (ej. uno a las 10 y otro a
-  las 13 apareciendo juntos a las 10:30) — mezclaba "el turno de ahora" con
-  "el próximo turno del día", y "Cambiar turno" no cambiaba nada en el caso
-  normal de un solo turno activo (volvía a auto-entrar al mismo).
-  Ahora: se descarta la ventana horaria, se calcula el turno con MENOR
-  diferencia absoluta respecto a la hora actual entre todos los aprobados/
-  vencidos-con-aprobador del día, y se entra directo a ese — "ahora te toca
-  volar con Juancito", sin elegir nada. Solo se arma lista si hay un empate
-  exacto de horario (anómalo) o si se fuerza con el nuevo parámetro
-  cargarTabVuelo(forzar=true), que ahora usa "Cambiar turno": lo convierte
-  en una pantalla de override real (ver la lista completa / elegir "Sin
-  turno asignado" aunque haya un turno asignado), en vez de un botón que no
-  hacía nada distinto al re-cargar.
-  Ver anterior:
-  v2.5 · 2026-08-03
-  Pedido de Daniel: el nombre que se ve al instalar en el celular pasa de
-  "ACRG Vuelo" a "Instructores". apple-mobile-web-app-title cambiado acá
-  (define el nombre en iOS) y short_name en manifest-vuelo.json cambiado
-  a "Instructores" (define el nombre en Android). Ícono también nuevo
-  (aporte de Daniel), mismo procesamiento de esquinas de siempre.
-  Ver anterior:
-  v2.4 · 2026-08-03
-  Versión de la app siempre visible en pantalla (antes solo estaba en este
-  comentario). Nueva constante APP_VERSION en el script, que puebla todos
-  los elementos .ver: uno en el top-bar (visible en todo momento dentro
-  de la app, ambas pestañas) y uno en la pantalla de login. A partir de
-  ahora hay DOS lugares para actualizar en cada bump: este comentario y
-  la constante APP_VERSION.
-  Ver anterior:
-  v2.3 · 2026-08-03
-  Fix pestaña Libro: mostraba todos los turnos aprobados/vencidos del
-  instructor para la fecha elegida, incluyendo los que todavía no se
-  volaron o no se guardaron (sin tiempo/aterrizajes cargados). Ahora
-  cargarLibro() exige obs_privada_tiempo_vuelo (mismo criterio que ya usa
-  el resto del sistema para "vuelo finalizado y registrado") — Libro pasa
-  a ser estrictamente el registro de vuelos ya cerrados con GUARDAR.
-  Ver anterior:
-  v2.2 · 2026-08-03
-  Auto-refresh: como corre standalone (PWA, sin botón de recarga), los
-  turnos nuevos/aprobados no se veían hasta cerrar y reabrir la app.
-  Ahora refresca solo: (1) cada 60s vía setInterval, (2) al volver a
-  primer plano (visibilitychange→visible), (3) al restaurar desde bfcache
-  en iOS standalone (pageshow con e.persisted). El refresh SOLO toca la
-  pantalla si vistaActual==='lista' (aún no se eligió turno) o si está en
-  la pestaña Libro (solo lectura) — nunca mientras hay un vuelo elegido,
-  iniciado (tsInicio) o recién terminado sin guardar (tsFin, form de
-  cierre): ese flujo sigue intacto hasta "Cambiar turno" o guardar.
-  Nueva variable vistaActual (seteada en mostrarVista) para saber qué
-  pantalla está activa sin tocar el DOM.
-  Ver anterior:
-  v2.1 · 2026-08-03
-  Soporte PWA (instalable como app): <link rel="manifest"> propio
-  (manifest-vuelo.json), apple-touch-icon e íconos propios (icon-vuelo-192,
-  icon-vuelo-512, icon-vuelo-512-maskable), apple-mobile-web-app-title
-  "ACRG Vuelo", registro de navigator.serviceWorker.register('/sw.js') al
-  final del script (mismo sw.js compartido de la raíz del repo, ya usado por
-  turnos/fpl/portal-alumno/peso-balance). Requiere subir manifest-vuelo.json
-  y los 3 íconos a la raíz del repo.
-  Ver anterior:
-  v2.0 · 2026-08-03
-  Flujo: login → turno del día → START (graba ts_despegue en Firebase) →
-         STOP (graba ts_aterrizaje) → confirmar con aterrizajes y obs →
-         guardar en reserva. Tab "Libro" para ver actividad por fecha.
-  Sin timer visual — solo timestamps UTC de inicio y fin.
+  v1.0 · 2026-08-04
+  Primera entrega. Pedido de Daniel: equivalente de vuelo.html pero para
+  PILOTOS (no instructores) — el piloto vuela solo, sin nadie supervisando en
+  vivo. Reusa gran parte de la infraestructura de vuelo.html (timer INICIAR/
+  FINALIZAR con confirmación, traza GPS opcional con wake lock condicional,
+  botón Cancelar sin grabar nada, creación diferida hasta CONFIRMAR, chequeo
+  de versión, PWA) pero con un flujo mucho más simple: SIN pantallas de
+  selección de turno — el piloto entra, elige avión, e inicia directo. Todo
+  el "¿a qué turno corresponde esto?" se resuelve recién al guardar.
+
+  Diferencias de fondo respecto a vuelo.html (todas confirmadas con Daniel):
+  - Avión: solo LV-ART / LV-MPH — nunca LV-OAD (instrucción exclusiva, no
+    tiene sentido para un piloto volando solo).
+  - tipo_vuelo siempre 'particular', estado siempre 'aprobado' — sin pedir
+    aprobación de nadie (mismo criterio que el autoservicio de piloto en
+    turnos.html, v6.94/v6.96: particular de piloto se autoaprueba).
+  - Sin instructor/aprobado_por/cargado_por en el turno creado — no es carga
+    de staff, es la propia reserva del piloto (no afecta cuota semanal de
+    todos modos: turnosRestantesSemana() en turnos.html ya excluye a los
+    pilotos por completo, `if(!esPiloto&&rol==='alumno')`).
+  - Sin campos obs_privada_* (ese modelo es "nota privada del instructor
+    sobre un alumno" — no aplica). Campos nuevos: piloto_tiempo_vuelo,
+    piloto_aterrizajes, piloto_obs (visible, no oculta — no es "privada"),
+    piloto_autor, piloto_ts. Ver turnos.html v7.09 para el cambio que hace
+    que estos vuelos también aparezcan en "Mi Perfil → Log de Vuelos".
+  - AL GUARDAR (no antes): busca una reserva propia del piloto para hoy,
+    mismo avión, estado 'aprobado', todavía sin volar, con horario dentro de
+    ±20 minutos del momento de INICIAR VUELO. Si la encuentra, la actualiza
+    (queda "volada"). Si no, crea una nueva in-situ (mismo patrón que
+    vuelo.html v4.3: nada se escribe en Firebase hasta CONFIRMAR).
+  - Auditoría: accion:'alta_turno' (NO 'alta_turno_manual' — ese es
+    específico de carga por staff; este es autoservicio del propio piloto,
+    mismo accion que usa confirmarTurno() en turnos.html) — solo se escribe
+    en el caso de inserción nueva, no al actualizar una reserva ya existente
+    (esa ya tiene su propio rastro de auditoría de cuando se pidió).
+  - Login: mismas credenciales que turnos.html (/alumnos, contraseña plana —
+    igual que ya hace vuelo.html con instructores; NO se replicó el flujo
+    de Firebase Auth más nuevo que ya tiene turnos.html para alumnos, dato
+    a tener en cuenta si algún día se completa la Fase 6 de la migración
+    de Auth — "eliminar contraseñas planas" — y esto deja de funcionar).
+    Restringido a rol==='piloto'. Comparte la misma sessionStorage
+    'lvoad-session' que turnos.html — si ya estás logueado ahí, entra
+    directo; y al loguearte acá, turnos.html también te reconoce.
+  - Sin pantalla "Libro": el historial del piloto vive en turnos.html →
+    Mi Perfil → Log de Vuelos (mismo lugar donde ya mira el alumno). No
+    tiene sentido duplicar esa pantalla acá.
+  - Sin visor de mapa GPS en este archivo — se ve desde turnos.html (que ya
+    tiene su propia copia del visor, reutilizada para alumnos desde v7.07).
+  - Ícono/manifest: placeholder (copia de los íconos de vuelo.html) hasta
+    que Daniel mande uno propio para esta app.
 ==================================================================================
 -->
-<html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Instructores">
+<meta name="apple-mobile-web-app-title" content="Piloto">
 <meta name="theme-color" content="#050d1a">
-<link rel="apple-touch-icon" href="/icon-vuelo-192.png">
-<link rel="manifest" href="/manifest-vuelo.json">
-<title>Vuelo · ACRG</title>
+<link rel="apple-touch-icon" href="/icon-piloto-192.png">
+<link rel="manifest" href="/manifest-piloto.json">
+<title>Vuelo Piloto · ACRG</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -510,11 +245,9 @@
 html,body{height:100%;overscroll-behavior:none;touch-action:manipulation}
 body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 
-/* ── Screens ── */
 .screen{display:none;min-height:100dvh;flex-direction:column;padding:20px}
 .screen.active{display:flex}
 
-/* ── App shell con tabs ── */
 #app-shell{display:none;flex-direction:column;min-height:100dvh}
 #app-shell.active{display:flex}
 
@@ -525,12 +258,8 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
   gap:12px;flex:none;
 }
 .top-bar .inst-info{flex:1}
-.top-bar .inst-info .nombre{
-  font-family:var(--disp);font-size:15px;color:var(--cyan);letter-spacing:.08em;
-}
-.top-bar .inst-info .sub{
-  font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px;
-}
+.top-bar .inst-info .nombre{font-family:var(--disp);font-size:15px;color:var(--cyan);letter-spacing:.08em}
+.top-bar .inst-info .sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px}
 .ver{font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em}
 .top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .btn-sm{
@@ -540,22 +269,8 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 }
 .btn-sm:active{background:rgba(255,255,255,.06)}
 
-/* Tab bar */
-.tab-bar{
-  display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;
-}
-.tab-btn{
-  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:13px;
-  letter-spacing:.08em;color:var(--gray);cursor:pointer;border:none;background:transparent;
-  text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
-}
-.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.contenido{flex:1;overflow-y:auto;padding:20px}
 
-/* Tab content */
-.tab-content{display:none;flex:1;overflow-y:auto;padding:20px}
-.tab-content.active{display:block}
-
-/* ── Elementos comunes ── */
 .label{font-family:var(--mono);font-size:12px;letter-spacing:.1em;color:var(--gray);text-transform:uppercase;margin-bottom:8px;display:block}
 .card{background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:18px;margin-bottom:12px}
 .card-title{font-family:var(--disp);font-size:14px;color:var(--cyan);letter-spacing:.08em;margin-bottom:12px;text-transform:uppercase}
@@ -568,6 +283,7 @@ input,textarea,select{
 }
 input:focus,textarea:focus,select:focus{border-color:var(--cyan)}
 textarea{resize:none;min-height:80px;line-height:1.5}
+select:disabled{opacity:.55}
 
 .btn{
   width:100%;padding:18px;border:none;border-radius:12px;
@@ -582,7 +298,6 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .btn-green{background:var(--green);color:var(--bg)}
 .btn-ghost{background:transparent;border:1px solid var(--gray2);color:var(--gray);font-size:13px;padding:14px}
 
-/* ── LOGIN ── */
 #screen-login{align-items:center;justify-content:center;gap:0}
 .login-hero{text-align:center;margin-bottom:36px}
 .login-hero .ico{max-width:180px;max-height:120px;width:auto;height:auto;margin:0 auto 16px;display:block;object-fit:contain;filter:drop-shadow(0 0 12px rgba(0,200,212,.3))}
@@ -592,31 +307,16 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .login-card{width:100%;max-width:380px;background:var(--bg2);border:1px solid rgba(0,200,212,.2);border-radius:16px;padding:28px 22px}
 .field{margin-bottom:16px}
 
-/* ── TAB VUELO ── */
-.turno-hero{
-  background:var(--bg3);border:1px solid rgba(0,200,212,.2);border-radius:var(--r);
-  padding:20px;margin-bottom:20px;text-align:center;
-}
-.turno-hero .avion{font-family:var(--mono);font-size:13px;color:var(--amber);letter-spacing:.12em;margin-bottom:6px}
-.turno-hero .alumno{font-family:var(--disp);font-size:25px;color:var(--white);letter-spacing:.04em;margin-bottom:4px}
-.turno-hero .hora-turno{font-family:var(--mono);font-size:14px;color:var(--gray)}
-
-/* Estado del vuelo */
-.estado-vuelo{
-  text-align:center;padding:24px 0;margin-bottom:16px;
-}
+.estado-vuelo{text-align:center;padding:24px 0;margin-bottom:16px}
 .estado-vuelo .estado-label{
   font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--gray);
   text-transform:uppercase;margin-bottom:8px;
 }
-.estado-vuelo .ts-display{
-  font-family:var(--disp);font-size:30px;color:var(--white);letter-spacing:.04em;
-}
+.estado-vuelo .ts-display{font-family:var(--disp);font-size:30px;color:var(--white);letter-spacing:.04em}
 .estado-vuelo .ts-display.en-vuelo{color:var(--cyan)}
 .estado-vuelo .ts-display.finalizado{color:var(--green)}
 .estado-vuelo .ts-sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px}
 
-/* Tiempo calculado */
 .tiempo-calculado{
   background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);
   border-radius:10px;padding:14px 16px;margin-bottom:12px;
@@ -629,24 +329,30 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   cursor:pointer;white-space:nowrap;
 }
 
-/* Lista de turnos (cuando hay más de uno) */
-.turno-item{
-  background:var(--bg2);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);
-  padding:16px 18px;margin-bottom:10px;cursor:pointer;
-  display:flex;align-items:center;gap:14px;transition:border-color .15s;
+.toast{
+  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+  left:50%;transform:translateX(-50%) translateY(70px);
+  background:var(--bg3);border:1px solid rgba(0,200,212,.3);border-radius:10px;
+  padding:12px 20px;font-family:var(--mono);font-size:14px;color:var(--white);
+  white-space:nowrap;transition:transform .25s;z-index:999;pointer-events:none;
 }
-.turno-item:active,.turno-item:hover{border-color:var(--cyan)}
-.turno-item .hora{font-family:var(--disp);font-size:22px;color:var(--cyan);min-width:62px}
-.turno-item .info{flex:1}
-.turno-item .alumno-n{font-family:var(--ui);font-size:19px;font-weight:700}
-.turno-item .avion-n{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px}
-.turno-item .arr{color:var(--gray);font-size:22px}
-.turno-item.actual{border-color:var(--cyan);background:rgba(0,200,212,.06)}
-.tag-actual{color:var(--cyan);font-weight:700}
-.turno-item.vencido{border-color:var(--amber);background:rgba(240,165,0,.06)}
-.tag-vencido{color:var(--amber);font-weight:700}
+.toast.show{transform:translateX(-50%) translateY(0)}
 
-/* ── TAB LIBRO ── */
+.spinner{width:28px;height:28px;border:3px solid rgba(0,200,212,.15);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Tab bar */
+.tab-bar{display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none}
+.tab-btn{
+  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:13px;
+  letter-spacing:.08em;color:var(--gray);cursor:pointer;border:none;background:transparent;
+  text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
+}
+.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Libro */
 .libro-total{
   display:flex;background:var(--bg3);border:1px solid rgba(0,200,212,.25);border-radius:var(--r);
   padding:16px 8px;margin-bottom:16px;
@@ -660,32 +366,22 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 }
 .vuelo-row .vr-top{display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap}
 .vuelo-row .vr-hora{font-family:var(--disp);font-size:19px;color:var(--cyan)}
-.vuelo-row .vr-alumno{font-family:var(--ui);font-size:19px;font-weight:700;flex:1}
-.vuelo-row .vr-avion{font-family:var(--mono);font-size:13px;color:var(--amber)}
+.vuelo-row .vr-avion{font-family:var(--ui);font-size:19px;font-weight:700;flex:1}
 .vuelo-row .vr-datos{
   display:flex;gap:16px;font-family:var(--mono);font-size:14px;color:var(--gray);
-  flex-wrap:wrap;row-gap:6px;
+  flex-wrap:wrap;row-gap:6px;margin-bottom:8px;
 }
 .vuelo-row .vr-datos span{display:flex;align-items:center;gap:5px}
 .vr-val{color:var(--white)}
+.vuelo-row .vr-obs{font-family:var(--mono);font-size:12px;color:var(--white);white-space:pre-wrap;line-height:1.5;margin-bottom:8px;opacity:.85}
 .empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
 
-/* Toast */
-.toast{
-  position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
-  left:50%;transform:translateX(-50%) translateY(70px);
-  background:var(--bg3);border:1px solid rgba(0,200,212,.3);border-radius:10px;
-  padding:12px 20px;font-family:var(--mono);font-size:14px;color:var(--white);
-  white-space:nowrap;transition:transform .25s;z-index:999;pointer-events:none;
-}
-.toast.show{transform:translateX(-50%) translateY(0)}
+.btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;transition:all .15s}
+.btn-traza:active{background:rgba(0,200,212,.2)}
+.btn-export-gps{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-left:6px;transition:all .15s}
+.btn-export-gps:active{background:rgba(240,165,0,.2)}
 
-.spinner{width:28px;height:28px;border:3px solid rgba(0,200,212,.15);border-top-color:var(--cyan);border-radius:50%;animation:spin .7s linear infinite;margin:40px auto}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-.badge-ok{display:inline-block;background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.3);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:12px;padding:3px 9px;letter-spacing:.05em}
-
-/* ── Modal mapa ── */
+/* Modal mapa */
 .map-modal-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:1000;
   display:none;flex-direction:column;
@@ -700,8 +396,6 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
 .map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
 .btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
-
-/* Spinner de aterrizajes */
 .spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
 .spinner-btn{width:56px;height:56px;border:none;border-radius:12px;font-size:28px;font-weight:700;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);-webkit-tap-highlight-color:transparent}
 .spinner-btn.minus{background:var(--gray2);border-radius:12px 0 0 12px}
@@ -715,15 +409,10 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .map-info-bar span{font-family:var(--mono);font-size:14px;color:var(--gray)}
 .map-info-bar .mv{color:var(--white);font-weight:700;font-size:15px}
 .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
-.btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;transition:all .15s}
-.btn-traza:active{background:rgba(0,200,212,.2)}
-.btn-export-gps{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;margin-left:6px;transition:all .15s}
-.btn-export-gps:active{background:rgba(240,165,0,.2)}
 </style>
 </head>
 <body>
 
-<!-- LOGIN -->
 <div id="banner-version-nueva" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--amber);color:#0a0a0a;font-family:var(--mono);font-size:12px;letter-spacing:.05em;padding:10px 16px;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.45)">
   <span>⚠ Esta pestaña está corriendo una <b>versión vieja</b> de la app — actualizá antes de seguir.</span>
   <button id="btn-recargar-version" style="font-family:var(--mono);font-size:12px;font-weight:700;padding:7px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:8px;cursor:pointer">ACTUALIZAR AHORA</button>
@@ -738,12 +427,12 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   <div class="login-hero">
     <img class="ico" src="logo_aeroclub.png" alt="Aeroclub Río Grande">
     <h1>AEROCLUB RÍO GRANDE</h1>
-    <h2>INSTRUCTORES</h2>
+    <h2>PILOTOS</h2>
     <div class="ver" id="login-ver" style="margin-top:6px">—</div>
   </div>
   <div class="login-card">
     <div class="field">
-      <span class="label">Usuario</span>
+      <span class="label">Usuario o email</span>
       <input id="l-user" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="tu_usuario">
     </div>
     <div class="field">
@@ -756,9 +445,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   <div style="text-align:center;margin-top:18px;opacity:.6;font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em">(c) 2026 by DAC</div>
 </div>
 
-<!-- APP SHELL -->
 <div id="app-shell">
-  <!-- Top bar -->
   <div class="top-bar">
     <div class="inst-info">
       <div class="nombre" id="sh-nombre">—</div>
@@ -770,135 +457,100 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     </div>
   </div>
 
-  <!-- Tab bar -->
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="vuelo">✈ Vuelo</button>
-    <button class="tab-btn" data-tab="pendientes">⏳ Pendientes</button>
     <button class="tab-btn" data-tab="libro">📋 Libro</button>
   </div>
 
-  <!-- Tab: VUELO -->
   <div id="tab-vuelo" class="tab-content active">
+  <div class="contenido">
 
-    <!-- Estado A: cargando -->
-    <div id="v-loading"><div class="spinner"></div></div>
+    <!-- Avión (editable solo antes de iniciar) -->
+    <div id="v-avion-wrap">
+      <span class="label">Avión</span>
+      <select id="p-avion"><option value="">Cargando...</option></select>
+    </div>
 
-    <!-- Estado B: elegir turno (múltiples) -->
-    <div id="v-lista" style="display:none">
-      <span class="label">Tus turnos aprobados de hoy</span>
-      <div id="v-lista-items"></div>
-      <button class="btn btn-ghost" id="btn-ver-vencidos" style="display:none;border-color:var(--amber);color:var(--amber)">⚠ Ver turnos vencidos sin cerrar</button>
+    <!-- Estado del vuelo -->
+    <div class="estado-vuelo" id="estado-vuelo">
+      <div class="estado-label" id="ev-label">Listo para iniciar</div>
+      <div class="ts-display" id="ev-ts">—</div>
+      <div class="ts-sub" id="ev-sub"></div>
+    </div>
 
-      <div id="v-nuevo-wrap" style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(0,200,212,.15)">
-        <span class="label">Iniciar turno sin reserva previa</span>
-        <select id="nt-avion" style="margin-bottom:10px">
-          <option value="LV-OAD">LV-OAD</option>
-          <option value="LV-ART">LV-ART</option>
-          <option value="LV-MPH">LV-MPH</option>
-        </select>
-        <input type="text" id="nt-buscar" placeholder="Buscar alumno o piloto por nombre..." autocomplete="off">
-        <div id="nt-resultados" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
+    <!-- Traza GPS (opcional) -->
+    <div class="card" id="gps-toggle-card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer">
+      <div>
+        <div class="card-title" style="margin-bottom:2px">📍 Traza GPS</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--gray)" id="gps-toggle-sub">Registra el recorrido del vuelo (opcional)</div>
+      </div>
+      <div id="gps-toggle-track" style="width:38px;height:20px;border-radius:10px;position:relative;transition:background .2s;flex:none">
+        <div id="gps-toggle-thumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
       </div>
     </div>
 
-    <!-- Estado C: vuelo en curso / finalizado -->
-    <div id="v-vuelo" style="display:none">
-
-      <!-- Info del turno -->
-      <div class="turno-hero" id="turno-hero">
-        <div class="avion" id="th-avion">—</div>
-        <div class="alumno" id="th-alumno">—</div>
-        <div class="hora-turno" id="th-hora">—</div>
+    <!-- Aviso de pantalla para GPS (visible solo cuando GPS activo) -->
+    <div id="gps-warning" style="display:none;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:12px;padding:12px 14px;margin-bottom:0">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:700;letter-spacing:.06em;margin-bottom:6px">⚠ MANTENÉ LA PANTALLA ENCENDIDA</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--amber);opacity:.85;line-height:1.6">
+        Si la pantalla se bloquea, el GPS deja de registrar.<br>
+        <span style="color:var(--white);opacity:.7">Samsung: Ajustes → Apps → Chrome → Batería → Sin restricciones</span>
       </div>
+    </div>
 
-      <!-- Estado timestamps -->
-      <div class="estado-vuelo" id="estado-vuelo">
-        <div class="estado-label" id="ev-label">Listo para iniciar</div>
-        <div class="ts-display" id="ev-ts">—</div>
-        <div class="ts-sub" id="ev-sub"></div>
-      </div>
+    <!-- Botón principal -->
+    <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
+    <button class="btn btn-ghost" id="btn-cancelar-vuelo" style="display:none;border-color:var(--red);color:var(--red)">✕ Cancelar</button>
 
-      <!-- Traza GPS (opcional, a criterio del instructor) -->
-      <div class="card" id="gps-toggle-card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer">
-        <div>
-          <div class="card-title" style="margin-bottom:2px">📍 Traza GPS</div>
-          <div style="font-family:var(--mono);font-size:11px;color:var(--gray)" id="gps-toggle-sub">Registra el recorrido del vuelo (opcional)</div>
+    <!-- Formulario cierre (oculto hasta STOP) -->
+    <div id="v-cierre" style="display:none">
+      <div class="card">
+        <div class="card-title">Tiempo de vuelo</div>
+        <div class="tiempo-calculado">
+          <div class="t-val" id="t-calculado">—</div>
+          <button class="btn-edit-t" id="btn-edit-t">✎ editar</button>
         </div>
-        <div id="gps-toggle-track" style="width:38px;height:20px;border-radius:10px;position:relative;transition:background .2s;flex:none">
-          <div id="gps-toggle-thumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
-        </div>
-      </div>
-
-      <!-- Aviso de pantalla para GPS (visible solo cuando GPS activo) -->
-      <div id="gps-warning" style="display:none;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:12px;padding:12px 14px;margin-bottom:0">
-        <div style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:700;letter-spacing:.06em;margin-bottom:6px">⚠ MANTENÉ LA PANTALLA ENCENDIDA</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--amber);opacity:.85;line-height:1.6">
-          Si la pantalla se bloquea, el GPS deja de registrar.<br>
-          <span style="color:var(--white);opacity:.7">Samsung: Ajustes → Apps → Chrome → Batería → Sin restricciones</span>
+        <input id="t-manual" type="number" step="0.1" min="0" max="12"
+          placeholder="ej: 1.3 (horas decimales)" style="display:none;margin-top:8px">
+        <div style="font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px">
+          En horas decimales · ej: 1.5 = 1h 30min
         </div>
       </div>
 
-      <!-- Botón principal -->
-      <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
-      <button class="btn btn-ghost" id="btn-cancelar-vuelo" style="display:none;border-color:var(--red);color:var(--red)">✕ Cancelar</button>
-
-      <!-- Formulario cierre (oculto hasta STOP) -->
-      <div id="v-cierre" style="display:none">
-        <div class="card">
-          <div class="card-title">Tiempo de vuelo</div>
-          <div class="tiempo-calculado">
-            <div class="t-val" id="t-calculado">—</div>
-            <button class="btn-edit-t" id="btn-edit-t">✎ editar</button>
-          </div>
-          <input id="t-manual" type="number" step="0.1" min="0" max="12"
-            placeholder="ej: 1.3 (horas decimales)" style="display:none;margin-top:8px">
-          <div style="font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:6px">
-            En horas decimales · ej: 1.5 = 1h 30min
-          </div>
+      <div class="card">
+        <div class="card-title">Aterrizajes</div>
+        <div class="spinner-wrap">
+          <button class="spinner-btn minus" onclick="stepAterr(-1)">−</button>
+          <div class="spinner-val" id="c-aterr-display">0</div>
+          <button class="spinner-btn plus" onclick="stepAterr(1)">+</button>
         </div>
-
-        <div class="card">
-          <div class="card-title">Aterrizajes</div>
-          <div class="spinner-wrap">
-            <button class="spinner-btn minus" onclick="stepAterr(-1)">−</button>
-            <div class="spinner-val" id="c-aterr-display">0</div>
-            <button class="spinner-btn plus" onclick="stepAterr(1)">+</button>
-          </div>
-          <div class="spinner-label">toque para sumar o restar</div>
-          <input type="hidden" id="c-aterr" value="0">
-        </div>
-
-        <div class="card">
-          <div class="card-title">Observación <span style="color:var(--gray);font-size:12px;font-family:var(--mono)">(privada · opcional)</span></div>
-          <textarea id="c-obs" placeholder="Maniobras practicadas, condiciones, notas..."></textarea>
-        </div>
-
-        <div class="err" id="c-err" style="margin-top:4px"></div>
-        <button class="btn btn-green" id="btn-confirmar">✓ CONFIRMAR Y GUARDAR</button>
-        <button class="btn btn-ghost" id="btn-nuevo-vuelo">Nuevo vuelo</button>
+        <div class="spinner-label">toque para sumar o restar</div>
+        <input type="hidden" id="c-aterr" value="0">
       </div>
 
-      <!-- Confirmación guardado -->
-      <div id="v-guardado" style="display:none;text-align:center;padding:20px 0">
-        <div style="font-size:40px;margin-bottom:12px">✓</div>
-        <div style="font-family:var(--disp);font-size:16px;color:var(--green);letter-spacing:.1em;margin-bottom:8px">GUARDADO</div>
-        <div style="font-family:var(--mono);font-size:13px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
-        <button class="btn btn-cyan" id="btn-otro-vuelo">Siguiente vuelo</button>
+      <div class="card">
+        <div class="card-title">Observación <span style="color:var(--gray);font-size:12px;font-family:var(--mono)">(opcional)</span></div>
+        <textarea id="c-obs" placeholder="Maniobras practicadas, condiciones, notas..."></textarea>
       </div>
 
-      <button class="btn btn-ghost" id="btn-cambiar-turno" style="margin-top:4px">← Cambiar turno</button>
+      <div class="err" id="c-err" style="margin-top:4px"></div>
+      <button class="btn btn-green" id="btn-confirmar">✓ CONFIRMAR Y GUARDAR</button>
+    </div>
+
+    <!-- Confirmación guardado -->
+    <div id="v-guardado" style="display:none;text-align:center;padding:20px 0">
+      <div style="font-size:40px;margin-bottom:12px">✓</div>
+      <div style="font-family:var(--disp);font-size:16px;color:var(--green);letter-spacing:.1em;margin-bottom:8px">GUARDADO</div>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
+      <button class="btn btn-cyan" id="btn-otro-vuelo">Volar de nuevo</button>
     </div>
 
   </div>
-
-  <!-- Tab: PENDIENTES -->
-  <div id="tab-pendientes" class="tab-content">
-    <span class="label">Turnos del día pendientes de volar</span>
-    <div id="p-items"><div class="spinner"></div></div>
-  </div>
+  </div><!-- /tab-vuelo -->
 
   <!-- Tab: LIBRO -->
   <div id="tab-libro" class="tab-content">
+  <div class="contenido">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
       <span class="label" style="margin:0;flex:none">Fecha</span>
       <input id="libro-fecha" type="date" style="flex:1;font-size:14px;padding:10px 12px">
@@ -908,6 +560,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     </div>
     <div id="libro-contenido"><div class="empty-libro">Seleccioná una fecha para ver tu actividad.</div></div>
   </div>
+  </div><!-- /tab-libro -->
 
 </div><!-- /app-shell -->
 
@@ -932,69 +585,64 @@ const $ = id => document.getElementById(id);
 const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
 const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
-const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
 const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
+const ek = email => (email||'').toLowerCase().replace(/\./g,'_').replace('@','__at__');
 
 function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
 
-// Sin conexión, una escritura a Firebase puede quedar pendiente para siempre
-// sin resolver NI rechazar — el try/catch de guardar() no la atrapa porque no
-// hay ningún error que atrapar. Este helper le pone un límite: pasado ese
-// tiempo sin respuesta, se da por perdida y se avisa (nada se pierde
-// mientras tanto — turnoActual/tsInicio/tsFin/el borrador de cierre siguen
-// en memoria y en localStorage, ver persistir()).
+// Sin conexión, una llamada a Firebase puede quedar pendiente para siempre
+// sin resolver NI rechazar. Este helper le pone un límite de tiempo.
 function conTimeout(promesa,ms=10000){
   return Promise.race([
     promesa,
-    new Promise((_,rej)=>setTimeout(()=>rej(new Error('Sin conexión — no se pudo guardar. Revisá tu señal y volvé a tocar CONFIRMAR.')),ms))
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de conexión')),ms))
   ]);
 }
-function showEl(id,show=true){ $(id).style.display=show?($(id).tagName==='BUTTON'||$(id).classList.contains('btn')?'block':'block'):'none'; }
 
 // ── Estado ────────────────────────────────────────────────
 let session = null;
-let turnoActual = null;   // reserva seleccionada (o null)
-let tsInicio = null;      // ISO string — momento de START
-let tsFin = null;         // ISO string — momento de STOP
-let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
-let _cierreRestaurado = null; // borrador del formulario de cierre restaurado de localStorage, se aplica en mostrarCierre()
-let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
-const LS = 'acrg-vuelo-v2';
-const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
+let tsInicio = null;
+let tsFin = null;
+let guardadoExitoso = false;
+const LS = 'acrg-piloto-v1';
+const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.14'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
-
-// ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
-const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
-const LS_GPS_PREF    = 'acrg-vuelo-gps-pref';      // preferencia recordada entre vuelos (on/off)
-const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v5.14 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
-let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1'; // toggle actual (editable solo antes de iniciar)
-let gpsWatchId     = null;   // id de navigator.geolocation.watchPosition, null si no está corriendo
-let gpsPoints      = [];     // [{lat,lng,alt,ts}] del vuelo en curso
-let gpsUltimoPunto = 0;      // Date.now() del último punto guardado, para el muestreo cada 10s
+const APP_VERSION = '2.7'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
+
+// ── Traza GPS (opcional) ─────────────────────────────────
+const LS_GPS_PUNTOS = 'acrg-piloto-v1-gps-puntos';
+const LS_GPS_PREF   = 'acrg-piloto-gps-pref';
+const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v2.7 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
+let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1';
+let gpsWatchId     = null;
+let gpsPoints      = [];
+let gpsUltimoPunto = 0;
 
 // ── Init ─────────────────────────────────────────────────
 init();
 
+let _avionRestaurado=null; // valor guardado en localStorage, se aplica recién cuando el <select> ya tiene opciones
+let _cierreRestaurado=null; // borrador del formulario de cierre, se aplica en mostrarCierre()
+
 function init(){
-  // Restaurar sesión de turnos.html
+  // Restaurar sesión de turnos.html (mismo mecanismo que vuelo.html usa con
+  // instructores, acá aplicado a la sesión de alumno/piloto)
   try{
     const s=JSON.parse(sessionStorage.getItem('lvoad-session')||'{}');
-    if(s&&s.tipo==='instructor'&&s.nombre) session={user:s.user,nombre:s.nombre,email:s.email||''};
+    if(s&&s.tipo==='alumno'&&s.rol==='piloto'&&s.nombre) session={nombre:s.nombre,email:s.email||'',emailKey:s.emailKey||''};
   }catch{}
 
   // Restaurar vuelo en curso desde localStorage
   try{
     const est=JSON.parse(localStorage.getItem(LS)||'null');
     if(est){
-      turnoActual=est.turno||null;
       tsInicio=est.tsInicio||null;
       tsFin=est.tsFin||null;
+      if(est.avion) _avionRestaurado=est.avion; // se aplica en poblarAviones(), el <select> todavía no tiene opciones acá
       if(est.cAterr||est.cObs||est.tManualValor) _cierreRestaurado={cAterr:est.cAterr,cObs:est.cObs,tManualVisible:est.tManualVisible,tManualValor:est.tManualValor};
-      // Si el vuelo seguía en curso con GPS activo, retoma el muestreo
-      // (watchPosition se corta solo con la recarga de página).
       if(tsInicio&&!tsFin&&est.gpsHabilitado){
         gpsHabilitado=true;
         try{ gpsPoints=JSON.parse(localStorage.getItem(LS_GPS_PUNTOS)||'[]'); }catch{ gpsPoints=[]; }
@@ -1010,47 +658,107 @@ function init(){
   }
 
   // Chequea la cola de sincronización pendiente de entrada, sesión iniciada
-  // o no — si quedó algo sin sincronizar de una vez anterior, esto lo
-  // intenta apenas haya conexión, sin depender de que alguien se loguee primero.
+  // o no — si quedó algo sin sincronizar de una vez anterior (ej: se cerró
+  // la app offline), esto lo intenta apenas haya conexión, sin depender de
+  // que alguien se loguee primero.
   actualizarBannerPendientes();
   intentarSincronizarPendientes();
 }
 
 // ── LOGIN ─────────────────────────────────────────────────
+// Mismas credenciales que turnos.html (/alumnos, contraseña plana — mismo
+// patrón simple que ya usa vuelo.html con instructores; ver nota en el
+// header sobre la Fase 6 pendiente de la migración a Firebase Auth).
+// Restringido a rol==='piloto'.
 $('btn-login').addEventListener('click',login);
 $('l-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
 
 async function login(){
-  const user=$('l-user').value.trim().toLowerCase();
+  const id=$('l-user').value.trim().toLowerCase();
   const pass=$('l-pass').value;
   $('l-err').textContent='';
-  if(!user||!pass){$('l-err').textContent='Completá los campos.';return;}
+  if(!id||!pass){$('l-err').textContent='Completá los campos.';return;}
   $('btn-login').disabled=true;$('btn-login').textContent='...';
   try{
-    const snap=await get(ref(db,'instructores'));
-    const inst=snap.val()||{};
-    let found=null;
-    Object.entries(inst).forEach(([k,v])=>{
-      if((v.user||k)===user&&v.pass===pass)
-        found={user:v.user||k,nombre:v.nombre||k,email:v.email||''};
-    });
-    if(!found){$('l-err').textContent='Usuario o contraseña incorrectos.';return;}
-    session=found;
-    sessionStorage.setItem('lvoad-session',JSON.stringify({tipo:'instructor',...session}));
+    let alumno=null,k=null;
+    if(id.includes('@')){
+      k=ek(id);
+      alumno=(await get(ref(db,'alumnos/'+k))).val();
+    } else {
+      const todos=(await get(ref(db,'alumnos'))).val()||{};
+      for(const [key,a] of Object.entries(todos)){
+        if((a.username||'').toLowerCase()===id){alumno=a;k=key;break;}
+      }
+    }
+    if(!alumno||alumno.pass!==pass){
+      $('l-err').textContent='Usuario/email o contraseña incorrectos.';
+      return;
+    }
+    if((alumno.rol||'alumno')!=='piloto'){
+      $('l-err').textContent='Esta app es solo para pilotos.';
+      return;
+    }
+    if(alumno.estado_login==='suspendido'){
+      $('l-err').textContent='⚠ Tu acceso está suspendido. Comunicate con administración.';
+      return;
+    }
+    session={nombre:alumno.nombre,email:alumno.email,emailKey:k};
+    // Misma sessionStorage que turnos.html — así quedás logueado en ambos lados
+    sessionStorage.setItem('lvoad-session',JSON.stringify({
+      tipo:'alumno',rol:'piloto',nombre:alumno.nombre,email:alumno.email,
+      emailKey:k,username:alumno.username||''
+    }));
     abrirApp();
-  }catch(e){$('l-err').textContent='Error de conexión.';}
-  finally{$('btn-login').disabled=false;$('btn-login').textContent='INGRESAR';}
+  }catch(e){
+    $('l-err').textContent='Error de conexión.';
+    console.error(e);
+  }finally{
+    $('btn-login').disabled=false;$('btn-login').textContent='INGRESAR';
+  }
 }
 
 // ── APP SHELL ─────────────────────────────────────────────
-function abrirApp(){
+async function abrirApp(){
   $('screen-login').classList.remove('active');
   $('app-shell').classList.add('active');
   $('sh-nombre').textContent=session.nombre.split(' ')[0];
   $('sh-fecha').textContent=fmtFecha(hoy());
-  // Libro: fecha default = hoy
   $('libro-fecha').value=hoy();
-  cargarTabVuelo();
+  await poblarAviones();
+  renderPantalla();
+}
+
+// Pedido de Daniel: dejar elegir cualquier avión de la flota, INCLUIDO
+// LV-OAD — el criterio ya no es "solo particular en LV-ART/LV-MPH" sino
+// "cualquier avión actualmente habilitado". Razonamiento: si el piloto ya
+// está adentro del avión activando la app, es porque está autorizado a
+// usarlo — la app no tiene por qué restringir de más. Lo único que sí
+// chequea es que el avión no esté deshabilitado por el club en ese
+// momento (/config/{avion}.activo — mismo flag que usa turnos.html para
+// "Habilitación de aviones" en el panel de instructor/admin).
+const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
+const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
+async function poblarAviones(){
+  const sel=$('p-avion');
+  let habilitados=FLOTA;
+  try{
+    // Timeout de seguridad: si la conexión a Firebase tarda o se cuelga (pasa
+    // en algunas redes móviles que bloquean WebSocket), sin esto el <select>
+    // podía quedar pegado en "Cargando..." para siempre — el try/catch solo
+    // atrapa errores, no una promesa que nunca se resuelve ni rechaza.
+    const cfgSnap=await Promise.race([
+      get(ref(db,'config')),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de conexión')),5000))
+    ]);
+    const cfg=cfgSnap.val()||{};
+    habilitados=FLOTA.filter(a=>cfg[a]?.activo!==false);
+    if(!habilitados.length) habilitados=FLOTA; // fail-open: si por algún motivo queda vacío, mostrar todos antes que dejar al piloto sin nada
+  }catch(e){
+    console.warn('No se pudo chequear aviones habilitados (o tardó demasiado), se muestran todos:',e);
+  }
+  sel.innerHTML=habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
+  if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
+  _avionRestaurado=null;
 }
 
 // Tabs
@@ -1062,321 +770,40 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
     cambiarATab(btn.dataset.tab);
     if(btn.dataset.tab==='libro') cargarLibro();
-    else if(btn.dataset.tab==='pendientes') cargarPendientes();
   });
 });
 
-// ── TAB VUELO ─────────────────────────────────────────────
-// Un instructor no tiene dos turnos distintos a la misma fecha/hora (si eso
-// pasara sería un fallo de los controles de turnos.html, no algo a resolver
-// acá). Por eso la app no arma una "lista de turnos posibles": calcula cuál
-// es el turno más cercano a la hora actual y entra directo a ese — la idea
-// es "ahora te toca volar con Juancito", sin que el instructor tenga que
-// elegir nada. Solo se muestra una lista si hay un empate exacto de horario
-// (caso anómalo) o si se fuerza la pantalla de selección con "Cambiar turno".
-async function cargarTabVuelo(forzar=false){
-  // Si hay un vuelo en curso/finalizado, o una persona in-situ ya elegida pero
-  // todavía sin iniciar (turnoActual.esInSitu, sobrevive a un cierre accidental
-  // de la app vía localStorage), mostrar directo — sin este último caso, un
-  // reload en el momento exacto de "elegí a la persona pero no arranqué
-  // todavía" perdía la selección en silencio.
-  if(!forzar&&(tsInicio||tsFin||turnoActual?.esInSitu)){
-    mostrarPantallaVuelo(turnoActual);
-    return;
-  }
-
-  mostrarVista('loading');
-  try{
-    const snap=await get(ref(db,'reservas'));
-    const todas=rArr(snap.val());
-    const fecha=hoy();
-    const ahora=new Date();
-    const misTurnos=todas.filter(r=>{
-      if(r.fecha!==fecha) return false;
-      const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
-                     r.instructor===session.user||r.aprobado_por===session.user;
-      if(!esDeEste) return false;
-      // Estado: aprobado, o vencido con aprobado_por (pasó la hora pero fue un vuelo real)
-      const estadoOk=r.estado==='aprobado'||(r.estado==='vencido'&&r.aprobado_por);
-      if(!estadoOk) return false;
-      // Excluir turnos que ya tienen tiempo de vuelo cargado — ya se voló y registró
-      if(r.obs_privada_tiempo_vuelo) return false;
-      return true;
-    }).map(r=>{
-      const horaT=r.hora||r.horaInicio||'00:00';
-      const [hh,mm]=horaT.split(':').map(Number);
-      const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
-      return {...r,_diffAbs:Math.abs(ahora-turnoTs),_pasado:turnoTs<ahora};
-    }).sort((a,b)=>a._diffAbs-b._diffAbs);
-
-    // Techo de "atraso razonable": el campo estado del turno queda en 'aprobado'
-    // hasta que alguien abre turnos.html y dispara vencerTurnosPendientes() del
-    // lado del cliente — no hay cron de servidor para esto. Si nadie tuvo la
-    // página abierta, un turno de hace 5 horas puede seguir figurando "aprobado"
-    // y sería absurdo ofrecerlo como "el de ahora". Por eso, para la entrada
-    // automática (no forzada), se ignoran candidatos ya pasados por más de
-    // GRACIA_VENCIDO_MS — pero siguen existiendo y son accesibles a mano.
-    const GRACIA_VENCIDO_MS=30*60000; // 30 minutos — ajustable
-    const vigentes=forzar?misTurnos:misTurnos.filter(r=>!(r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS));
-    const vencidosViejos=misTurnos.filter(r=>r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS);
-
-    if(vigentes.length===0){
-      // Sin turnos vigentes — mostrar lista vacía + opción de iniciar turno in situ
-      // (y, si hay turnos viejos sin cerrar, un acceso explícito para no perderlos)
-      $('v-lista-items').innerHTML =
-        misTurnos.length===0
-          ? '<div class="empty-libro" style="padding:24px 0">Sin turnos aprobados para hoy.</div>'
-          : `<div class="empty-libro" style="padding:24px 0">Ningún turno para este momento.<br>Tenés ${vencidosViejos.length} turno${vencidosViejos.length>1?'s':''} vencido${vencidosViejos.length>1?'s':''} sin cerrar de hoy.</div>`;
-      $('btn-ver-vencidos').style.display=vencidosViejos.length?'':'none';
-      $('v-nuevo-wrap').style.display='block';
-      mostrarVista('lista');
-    } else if(!forzar&&vigentes.filter(r=>r._diffAbs===vigentes[0]._diffAbs).length===1){
-      // Caso normal: un único turno es el más cercano a la hora actual — entrada directa
-      mostrarPantallaVuelo(vigentes[0]);
-    } else {
-      // Forzado ("Cambiar turno"/"Ver vencidos") o empate exacto de horario (anómalo) — mostrar
-      // para elegir. Hay turnos reales: tienen prioridad, se oculta la opción de iniciar in situ
-      // (no tiene sentido ofrecer crear un turno nuevo cuando ya hay uno real esperando).
-      $('btn-ver-vencidos').style.display='none';
-      $('v-nuevo-wrap').style.display='none';
-      $('v-lista-items').innerHTML=vigentes.map(r=>`
-        <div class="turno-item${r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS?' vencido':''}" data-key="${r.key}">
-          <div class="hora">${r.hora||r.horaInicio||'—'}</div>
-          <div class="info">
-            <div class="alumno-n">${r.nombre||'—'}</div>
-            <div class="avion-n">${r.avion||'LV-OAD'}${r._pasado&&r._diffAbs>GRACIA_VENCIDO_MS?' · <span class="tag-vencido">⚠ VENCIDO</span>':''}</div>
-          </div>
-          <div class="arr">›</div>
-        </div>`).join('');
-      document.querySelectorAll('#v-lista-items .turno-item').forEach(el=>{
-        el.addEventListener('click',()=>{
-          const t=vigentes.find(r=>r.key===el.dataset.key);
-          mostrarPantallaVuelo(t);
-        });
-      });
-      mostrarVista('lista');
-    }
-  }catch(e){
-    $('v-lista-items').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
-    mostrarVista('lista');
-  }
-}
-
-// ── TAB PENDIENTES ────────────────────────────────────────
-// Lista completa de turnos del día del instructor que todavía no se
-// volaron/registraron (los mismos criterios que usa Vuelo, sin el filtro
-// de "el más cercano"). Sirve para adelantar un turno posterior si el de
-// ahora no se presentó, tocando el ítem correspondiente.
-async function cargarPendientes(){
-  $('p-items').innerHTML='<div class="spinner"></div>';
-  try{
-    const snap=await get(ref(db,'reservas'));
-    const todas=rArr(snap.val());
-    const fecha=hoy();
-    const ahora=new Date();
-    const pend=todas.filter(r=>{
-      if(r.fecha!==fecha) return false;
-      const esDeEste=r.instructor===session.nombre||r.aprobado_por===session.nombre||
-                     r.instructor===session.user||r.aprobado_por===session.user;
-      if(!esDeEste) return false;
-      if(r.estado!=='aprobado') return false; // solo aprobados — nada vencido
-      if(r.obs_privada_tiempo_vuelo) return false; // ya volado y guardado
-      // Por venir: la hora del turno todavía no llegó
-      const horaT=r.hora||r.horaInicio||'00:00';
-      const [hh,mm]=horaT.split(':').map(Number);
-      const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
-      return turnoTs>=ahora;
-    }).sort((a,b)=>(a.hora||a.horaInicio||'').localeCompare(b.hora||b.horaInicio||''));
-
-    if(!pend.length){
-      $('p-items').innerHTML='<div class="empty-libro">Sin turnos pendientes para hoy.</div>';
-      return;
-    }
-
-    $('p-items').innerHTML=pend.map(r=>{
-      const esActual=!!(turnoActual&&r.key===turnoActual.key&&(tsInicio||tsFin));
-      return `<div class="turno-item${esActual?' actual':''}" data-key="${r.key}">
-        <div class="hora">${r.hora||r.horaInicio||'—'}</div>
-        <div class="info">
-          <div class="alumno-n">${r.nombre||'—'}</div>
-          <div class="avion-n">${r.avion||'LV-OAD'}${esActual?' · <span class="tag-actual">● EN CURSO</span>':''}</div>
-        </div>
-        <div class="arr">›</div>
-      </div>`;
-    }).join('');
-
-    document.querySelectorAll('#p-items .turno-item').forEach(el=>{
-      el.addEventListener('click',()=>{
-        const t=pend.find(r=>r.key===el.dataset.key);
-        if(t) activarTurno(t);
-      });
-    });
-  }catch(e){
-    $('p-items').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
-  }
-}
-
-// Activa desde Pendientes un turno como el actual en Vuelo, adelantándolo
-// aunque no sea el más cercano en horario (turno anterior no se presentó).
-function activarTurno(turno){
-  // Si ya es el turno activo, solo llevar a la pantalla de vuelo sin tocar nada
-  if(turnoActual&&turno.key===turnoActual.key&&(tsInicio||tsFin)){
-    cambiarATab('vuelo');
-    return;
-  }
-  // Evitar perder un vuelo en curso o un cierre sin guardar por accidente
-  if(tsInicio&&!tsFin){
-    if(!confirm('Hay un vuelo en curso sin guardar. ¿Descartarlo y activar este turno?')) return;
-  } else if(tsFin&&!guardadoExitoso){
-    if(!confirm('Hay un cierre de vuelo sin guardar. ¿Descartarlo y activar este turno?')) return;
-  }
-  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
-  turnoActual=turno;tsInicio=null;tsFin=null;guardadoExitoso=false;
-  localStorage.removeItem(LS);
-  mostrarPantallaVuelo(turno);
-  cambiarATab('vuelo');
-}
-
-// ── INICIAR TURNO SIN RESERVA PREVIA (in situ) ──────────────────────────
-// Reemplaza a "Sin turno asignado" (que era 100% local, no escribía nada en
-// Firebase — un vuelo "fantasma"). Pedido de Daniel: cuando nadie tenía
-// turno cargado y alguien se presenta a volar igual, se genera la reserva
-// ahí mismo eligiendo a la persona por búsqueda — el vuelo queda registrado
-// normal (tiempo, aterrizajes, track GPS) atado a esa persona en Firebase,
-// en vez de perderse. Reglas (confirmadas con Daniel):
-//  - Avión: se pregunta explícito (vuelo.html nunca lo pedía antes de esto,
-//    siempre lo heredaba del turno existente).
-//  - tipo_vuelo siempre 'instruccion' cuando se genera desde acá.
-//  - Aprobación automática por el instructor logueado — está presente y
-//    arrancando el vuelo ahora mismo, no tiene sentido pedir aprobación.
-//  - cargado_por = ese instructor ⇒ NO afecta la cuota semanal del alumno
-//    (turnosRestantesSemana en turnos.html ya excluye cualquier reserva
-//    con cargado_por seteado, mismo criterio que "+ CARGAR TURNO").
-//  - Auditoría: mismo accion 'alta_turno_manual' que usa turnos.html para
-//    que aparezca igual en Seguimiento/Consultas — el detalle aclara que
-//    vino de vuelo.html, in situ, para quien lea la auditoría a mano.
-//  - Sin chequeo de conflicto de horario (a diferencia de "+ CARGAR TURNO"
-//    en turnos.html): el caso de uso es "el avión está ahí, se está por
-//    volar ahora", el riesgo de choque es bajo y portar la lógica de
-//    slots/horas de turnos.html complicaba la feature sin necesidad real.
-let _alumnosCache=null; // se carga una sola vez por sesión de la app, se reusa entre búsquedas
-async function cargarAlumnosParaBusqueda(){
-  if(_alumnosCache) return _alumnosCache;
-  const snap=await get(ref(db,'alumnos'));
-  const val=snap.val();
-  _alumnosCache=val?Object.entries(val)
-    .filter(([,a])=>a.estado_login!=='suspendido'&&a.estado!=='pendiente_aprobacion')
-    .map(([k,a])=>({key:k,nombre:a.nombre||a.email||k,email:a.email||'',rol:a.rol||'alumno'}))
-    .sort((a,b)=>a.nombre.localeCompare(b.nombre)):[];
-  return _alumnosCache;
-}
-
-$('nt-buscar').addEventListener('input',async ()=>{
-  const q=$('nt-buscar').value.trim().toLowerCase();
-  const cont=$('nt-resultados');
-  if(!q){ cont.innerHTML=''; return; }
-  const lista=await cargarAlumnosParaBusqueda();
-  const match=lista.filter(p=>p.nombre.toLowerCase().includes(q)||p.email.toLowerCase().includes(q)).slice(0,25);
-  cont.innerHTML=match.length
-    ? match.map(p=>`
-      <div class="turno-item" data-key="${p.key}">
-        <div class="info">
-          <div class="alumno-n">${p.nombre}</div>
-          <div class="avion-n">${p.rol==='piloto'?'Piloto':'Alumno'}</div>
-        </div>
-        <div class="arr">›</div>
-      </div>`).join('')
-    : '<div class="empty-libro" style="padding:16px 0">Sin resultados.</div>';
-  cont.querySelectorAll('.turno-item').forEach(el=>{
-    el.addEventListener('click',()=>{
-      const p=match.find(x=>x.key===el.dataset.key);
-      if(p) crearTurnoInSitu(p);
-    });
-  });
-});
-
-// Ya NO escribe nada en Firebase acá — pedido de Daniel tras encontrarse con un
-// turno mal creado (alumno equivocado) sin forma de borrarlo desde la app. Ahora
-// arma un objeto local "pendiente de crear" (marcado con esInSitu:true, sin
-// `.key` todavía) y entra a la pantalla de vuelo normal. La reserva recién se
-// crea en Firebase dentro de guardar(), en el mismo momento en que se confirma
-// el vuelo — así, si te equivocás de persona o cancelás en el medio (botón
-// "Cancelar", ver más abajo), no queda absolutamente nada escrito.
-function crearTurnoInSitu(persona){
-  const avion=$('nt-avion').value;
-  const ahora=new Date();
-  const hora=String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
-  turnoActual={
-    nombre:persona.nombre,
-    email:persona.email,
-    fecha:hoy(),hora,avion,
-    rol:persona.rol,
-    esInSitu:true // sin `.key`: todavía no existe en Firebase
-  };
-  tsInicio=null;tsFin=null;guardadoExitoso=false;
-  $('nt-buscar').value='';
-  $('nt-resultados').innerHTML='';
-  persistir();
-  mostrarPantallaVuelo(turnoActual);
-  toast('Listo — iniciá el vuelo cuando quieras');
-}
-
-$('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
-$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];localStorage.removeItem(LS_GPS_PUNTOS);turnoActual=null;tsInicio=null;tsFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
-$('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
-$('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
-
-function mostrarVista(v){
-  vistaActual=v;
-  $('v-loading').style.display=v==='loading'?'block':'none';
-  $('v-lista').style.display=v==='lista'?'block':'none';
-  $('v-vuelo').style.display=v==='vuelo'?'block':'none';
-}
-
-function mostrarPantallaVuelo(turno){
-  turnoActual=turno;
-  mostrarVista('vuelo');
-
-  // Hero del turno
-  if(turno){
-    $('th-avion').textContent=turno.avion||'LV-OAD';
-    $('th-alumno').textContent=turno.nombre||'—';
-    $('th-hora').textContent=`Turno: ${turno.hora||turno.horaInicio||'—'} hs`;
-  } else {
-    $('th-avion').textContent='Vuelo manual';
-    $('th-alumno').textContent=session.nombre;
-    $('th-hora').textContent='Sin reserva asignada';
-  }
-
-  // Mostrar estado según lo que hay en memoria
+// ── Render de pantalla según estado en memoria ───────────
+function renderPantalla(){
   if(tsFin){
-    // Ya finalizó — mostrar formulario de cierre
     actualizarEstado('finalizado');
     $('gps-toggle-card').style.display='none';
+    $('v-avion-wrap').style.display='none';
     $('btn-cancelar-vuelo').style.display='';
     mostrarCierre();
   } else if(tsInicio){
-    // En vuelo
     actualizarEstado('en-vuelo');
     $('gps-toggle-card').style.display='flex';
     pintarToggleGPS();
+    $('v-avion-wrap').style.display='none';
+    $('btn-start-stop').style.display='';
     $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
     $('btn-start-stop').className='btn btn-red';
     $('btn-cancelar-vuelo').style.display='';
     $('v-cierre').style.display='none';
     $('v-guardado').style.display='none';
-    $('btn-cambiar-turno').style.display='none';
   } else {
-    // Sin iniciar
     actualizarEstado('idle');
     $('gps-toggle-card').style.display='flex';
     pintarToggleGPS();
+    $('v-avion-wrap').style.display='block';
+    $('p-avion').disabled=false;
+    $('btn-start-stop').style.display='';
     $('btn-start-stop').textContent='▶ INICIAR VUELO';
     $('btn-start-stop').className='btn btn-cyan';
     $('btn-cancelar-vuelo').style.display='none';
     $('v-cierre').style.display='none';
     $('v-guardado').style.display='none';
-    $('btn-cambiar-turno').style.display='';
   }
 }
 
@@ -1404,7 +831,7 @@ function actualizarEstado(estado){
 // ── Toggle GPS ───────────────────────────────────────────
 function pintarToggleGPS(){
   const track=$('gps-toggle-track'), sub=$('gps-toggle-sub'), card=$('gps-toggle-card');
-  const bloqueado=!!tsInicio; // no se puede cambiar con el vuelo ya iniciado
+  const bloqueado=!!tsInicio;
   track.style.background=gpsHabilitado?'var(--cyan)':'var(--gray2)';
   $('gps-toggle-thumb').style.left=gpsHabilitado?'20px':'2px';
   card.style.opacity=bloqueado?'.6':'1';
@@ -1414,19 +841,17 @@ function pintarToggleGPS(){
   } else {
     sub.textContent='Registra el recorrido del vuelo (opcional)';
   }
-  // Mostrar aviso de pantalla solo cuando GPS está habilitado y aún no se inició
   const warn=$('gps-warning');
   if(warn) warn.style.display=(gpsHabilitado&&!bloqueado)?'block':'none';
 }
 function toggleGPS(){
-  if(tsInicio) return; // bloqueado durante el vuelo
+  if(tsInicio) return;
   gpsHabilitado=!gpsHabilitado;
   localStorage.setItem(LS_GPS_PREF,gpsHabilitado?'1':'0');
   pintarToggleGPS();
 }
 $('gps-toggle-card').addEventListener('click',toggleGPS);
 
-// ── Captura de traza GPS ─────────────────────────────────
 function iniciarTrackGPS(){
   if(!('geolocation' in navigator)){
     toast('Este dispositivo no permite obtener ubicación — el vuelo se registra igual, sin traza');
@@ -1435,7 +860,7 @@ function iniciarTrackGPS(){
   gpsWatchId=navigator.geolocation.watchPosition(
     (pos)=>{
       const ahora=Date.now();
-      if(ahora-gpsUltimoPunto<GPS_MUESTREO_MS) return; // muestreo cada 10s, watchPosition puede disparar más seguido
+      if(ahora-gpsUltimoPunto<GPS_MUESTREO_MS) return;
       gpsUltimoPunto=ahora;
       gpsPoints.push({
         lat: +pos.coords.latitude.toFixed(6),
@@ -1457,39 +882,27 @@ function detenerTrackGPS(){
 }
 
 // ── Screen Wake Lock ──────────────────────────────────────
-// Evita que la pantalla se apague durante el vuelo (iOS 16.4+, Chrome Android).
-// Falla silenciosamente en browsers que no la soportan.
 let _wakeLock = null;
-
 async function adquirirWakeLock() {
-  if (!('wakeLock' in navigator)) return; // no soportado
+  if (!('wakeLock' in navigator)) return;
   try {
     _wakeLock = await navigator.wakeLock.request('screen');
     _wakeLock.addEventListener('release', () => { _wakeLock = null; });
-    console.log('[WakeLock] pantalla bloqueada activa');
-  } catch(e) {
-    console.warn('[WakeLock] no se pudo adquirir:', e.message);
-  }
+  } catch(e) { console.warn('[WakeLock] no se pudo adquirir:', e.message); }
 }
-
 function liberarWakeLock() {
   if (_wakeLock) { _wakeLock.release(); _wakeLock = null; }
 }
-
-// Si la app vuelve al foco (ej: el usuario la reabre) y hay un vuelo en curso,
-// re-adquirir el wake lock automáticamente
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && tsInicio && !tsFin) {
-    adquirirWakeLock();
-  }
+  if (document.visibilityState === 'visible' && tsInicio && !tsFin) adquirirWakeLock();
 });
 
-// START / STOP
+// ── START / STOP ──────────────────────────────────────────
 $('btn-start-stop').addEventListener('click',()=>{
   if(!tsInicio){
-    // START — confirmar antes de grabar (evita un toque accidental)
     if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
+    $('p-avion').disabled=true;
     if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); adquirirWakeLock(); }
     persistir();
     actualizarEstado('en-vuelo');
@@ -1497,14 +910,13 @@ $('btn-start-stop').addEventListener('click',()=>{
     $('btn-start-stop').textContent='⏹ FINALIZAR VUELO';
     $('btn-start-stop').className='btn btn-red';
     $('btn-cancelar-vuelo').style.display='';
-    $('btn-cambiar-turno').style.display='none';
+    $('v-avion-wrap').style.display='none';
     toast('Vuelo iniciado · '+fmtLocalFull(tsInicio));
   } else {
-    // STOP — confirmar antes de grabar
     if(!confirm('¿Finalizar el vuelo ahora?')) return;
     tsFin=new Date().toISOString();
     detenerTrackGPS();
-    liberarWakeLock(); // liberar wake lock al aterrizar
+    liberarWakeLock();
     persistir();
     actualizarEstado('finalizado');
     $('btn-start-stop').style.display='none';
@@ -1512,21 +924,16 @@ $('btn-start-stop').addEventListener('click',()=>{
   }
 });
 
-// CANCELAR — pedido de Daniel, disponible en todo momento después de tocar
-// INICIAR (tanto en vuelo como en la pantalla de cierre, antes de guardar).
-// No graba nada: si el turno es real (ya existía en Firebase), no se toca —
-// queda tal cual estaba (pendiente/aprobado, lo que fuera). Si es un turno
-// in-situ (crearTurnoInSitu, todavía sin crear en Firebase — ver más abajo),
-// tampoco se crea nada. Solo se descarta el estado local (tsInicio/tsFin/GPS)
-// y se vuelve a la pantalla "Listo para iniciar" con la MISMA persona/avión,
-// lista para tocar INICIAR de nuevo — no manda de vuelta a elegir turno.
+// CANCELAR — no graba nada. Si había una reserva propia que hubiera hecho
+// match, no se toca (recién se busca/actualiza al CONFIRMAR). Vuelve a la
+// pantalla inicial con el mismo avión ya elegido.
 function cancelarVuelo(){
-  if(!confirm('¿Cancelar este vuelo? No se va a grabar nada — queda todo como estaba.')) return;
+  if(!confirm('¿Cancelar este vuelo? No se va a grabar nada.')) return;
   detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
   liberarWakeLock();
   tsInicio=null; tsFin=null; guardadoExitoso=false;
   persistir();
-  mostrarPantallaVuelo(turnoActual);
+  renderPantalla();
   toast('Vuelo cancelado — no se grabó nada');
 }
 $('btn-cancelar-vuelo').addEventListener('click',cancelarVuelo);
@@ -1537,7 +944,6 @@ function mostrarCierre(){
   $('t-manual').style.display='none';
   $('btn-edit-t').textContent='✎ editar';
   $('c-err').textContent='';
-  // Resetear spinner de aterrizajes
   $('c-aterr').value='0';
   $('c-aterr-display').textContent='0';
   $('c-obs').value='';
@@ -1568,7 +974,6 @@ window.stepAterr = function(delta) {
 };
 $('c-obs').addEventListener('input',persistir);
 
-// Editar tiempo
 $('btn-edit-t').addEventListener('click',()=>{
   const inp=$('t-manual');
   if(inp.style.display==='none'){
@@ -1585,13 +990,13 @@ $('btn-edit-t').addEventListener('click',()=>{
   persistir();
 });
 
-// CONFIRMAR Y GUARDAR
+// ── CONFIRMAR Y GUARDAR ──────────────────────────────────
 // Pedido de Daniel: protección máxima ante pérdida de conectividad. En vez
-// de escribir a Firebase directo y bloquear al instructor si no hay señal,
-// el vuelo se guarda PRIMERO en localStorage (siempre funciona, instantáneo)
-// y la app queda libre para el próximo turno de inmediato. La sincronización
-// real a Firebase pasa en segundo plano (intentarSincronizarPendientes) y se
-// reintenta sola. Ver esa función y escribirPendiente() más abajo.
+// de escribir a Firebase directo y bloquear al piloto si no hay señal, el
+// vuelo se guarda PRIMERO en localStorage (siempre funciona, es instantáneo)
+// y la app queda libre para el próximo vuelo de inmediato. La sincronización
+// real a Firebase pasa en segundo plano (intentarSincronizarPendientes) y
+// se reintenta sola. Ver esa función y escribirPendiente() más abajo.
 $('btn-confirmar').addEventListener('click',guardar);
 
 async function guardar(){
@@ -1606,19 +1011,13 @@ async function guardar(){
 
   if(!horas||horas<=0){$('c-err').textContent='El tiempo de vuelo no puede ser 0.';return;}
 
+  const avion=$('p-avion').value;
   const item={
-    id: 'v'+Date.now()+Math.random().toString(36).slice(2),
-    esInSitu: !!turnoActual?.esInSitu,
-    key: turnoActual?.key||null,
-    // Solo hace falta el snapshot completo si todavía no existe en Firebase —
-    // si ya tiene .key, escribirPendiente() solo necesita ese key para el update.
-    turnoSnapshot: turnoActual?.esInSitu ? {
-      nombre:turnoActual.nombre, email:turnoActual.email, fecha:turnoActual.fecha,
-      hora:turnoActual.hora, avion:turnoActual.avion, rol:turnoActual.rol
-    } : null,
-    nombreMostrado: turnoActual?.nombre||'Vuelo manual',
-    instructorNombre: session.nombre,
-    horas, aterr, obs,
+    id: 'p'+Date.now()+Math.random().toString(36).slice(2),
+    email: session.email,
+    nombre: session.nombre,
+    fecha: hoy(),
+    avion, horas, aterr, obs,
     tsInicio, tsFin,
     gpsPoints: [...gpsPoints],
     creadoTs: new Date().toISOString()
@@ -1635,17 +1034,15 @@ async function guardar(){
   }
 
   // El vuelo ya está seguro (encolado) — se libera la pantalla para el
-  // próximo turno sin esperar la escritura real a Firebase.
-  localStorage.removeItem(LS);
-  localStorage.removeItem(LS_GPS_PUNTOS);
-  gpsPoints=[];
+  // próximo vuelo sin esperar la escritura real a Firebase.
+  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
   liberarWakeLock();
-  guardadoExitoso=true;
+  tsInicio=null; tsFin=null; guardadoExitoso=false;
+  localStorage.removeItem(LS);
   $('v-cierre').style.display='none';
   $('btn-cancelar-vuelo').style.display='none';
   $('v-guardado').style.display='block';
-  $('btn-cambiar-turno').style.display='';
-  $('guardado-detalle').textContent=`${item.nombreMostrado} · ${horas} hs · ${aterr} aterrizajes`;
+  $('guardado-detalle').textContent=`${avion} · ${horas} hs · ${aterr} aterrizajes`;
   toast('✓ Vuelo guardado');
 
   intentarSincronizarPendientes(); // en segundo plano, no bloquea
@@ -1665,63 +1062,77 @@ function agregarPendiente(item){
   guardarListaPendientes(lista);
 }
 
+// Reintenta con la misma lógica de matching ±20min que tenía guardar() antes
+// — recalculada en cada intento porque el estado de /reservas puede haber
+// cambiado entre el momento en que se voló y el momento en que se sincroniza.
 async function escribirPendiente(item){
-  const datos={
-    obs_privada_tiempo_vuelo: item.horas,
-    obs_privada_aterrizajes:  item.aterr||null,
-    obs_privada:              item.obs||null,
-    obs_privada_autor:        item.instructorNombre,
-    obs_privada_ts:           new Date().toISOString(),
-    ts_despegue:              item.tsInicio,
-    ts_aterrizaje:            item.tsFin,
+  const datosVuelo={
+    piloto_tiempo_vuelo: item.horas,
+    piloto_aterrizajes:  item.aterr||null,
+    piloto_obs:          item.obs||null,
+    piloto_autor:        item.nombre,
+    piloto_ts:           new Date().toISOString(),
+    ts_despegue:         item.tsInicio,
+    ts_aterrizaje:       item.tsFin,
+    ...(item.gpsPoints&&item.gpsPoints.length>1?{tiene_traza_gps:true}:{})
   };
-  Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
+  Object.keys(datosVuelo).forEach(k=>{ if(datosVuelo[k]===null) delete datosVuelo[k]; });
 
-  if(item.esInSitu){
-    const t=item.turnoSnapshot;
-    const tieneTraza=item.gpsPoints&&item.gpsPoints.length>1;
+  const iniDate=new Date(item.tsInicio);
+  const VENTANA_MS=20*60000;
+
+  const snap=await conTimeout(get(ref(db,'reservas')));
+  const todas=rArr(snap.val());
+  const candidatos=todas.filter(r=>{
+    if(r.email!==item.email) return false;
+    if(r.fecha!==item.fecha) return false;
+    if(r.avion!==item.avion) return false;
+    if(r.estado!=='aprobado') return false;
+    if(r.piloto_tiempo_vuelo!=null) return false;
+    return true;
+  }).map(r=>{
+    const horaT=r.hora||r.horaInicio||'00:00';
+    const [hh,mm]=horaT.split(':').map(Number);
+    const turnoTs=new Date(iniDate.getFullYear(),iniDate.getMonth(),iniDate.getDate(),hh,mm);
+    return {...r,_diff:Math.abs(turnoTs-iniDate)};
+  }).filter(r=>r._diff<=VENTANA_MS).sort((a,b)=>a._diff-b._diff);
+
+  let key;
+  if(candidatos.length){
+    key=candidatos[0].key;
+    await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
+  } else {
+    const horaIni=String(iniDate.getHours()).padStart(2,'0')+':'+String(iniDate.getMinutes()).padStart(2,'0');
     const nuevo={
-      nombre:      t.nombre,
-      email:       t.email,
-      fecha:       t.fecha,
-      hora:        t.hora,
-      avion:       t.avion,
-      tipo_vuelo:  'instruccion',
+      nombre:      item.nombre,
+      email:       item.email,
+      fecha:       item.fecha,
+      hora:        horaIni,
+      avion:       item.avion,
+      tipo_vuelo:  'particular',
       estado:      'aprobado',
-      rol:         t.rol,
-      instructor:  item.instructorNombre,
-      aprobado_por:item.instructorNombre,
-      cargado_por: item.instructorNombre,
+      rol:         'piloto',
       ts:          new Date().toISOString(),
-      ...datos,
-      ...(tieneTraza?{tiene_traza_gps:true}:{})
+      ...datosVuelo
     };
     const nuevaRef=push(ref(db,'reservas'));
     await conTimeout(set(nuevaRef,nuevo));
-    if(tieneTraza){
-      await conTimeout(set(ref(db,`vuelo_tracks/${nuevaRef.key}`),{
-        puntos: item.gpsPoints,
-        autor: item.instructorNombre,
-        ts_guardado: new Date().toISOString()
-      }));
-    }
+    key=nuevaRef.key;
     await conTimeout(set(push(ref(db,'auditoria')),{
-      accion:'alta_turno_manual',
-      rol:'instructor',
+      accion:'alta_turno',
+      rol:'piloto',
       resultado:'exito',
-      detalle:`${item.instructorNombre} cargó turno — ${nuevo.avion} — ${nuevo.fecha} ${nuevo.hora} hs — alumno: ${nuevo.nombre} — aprobado por ${item.instructorNombre} — in situ desde vuelo.html`,
+      detalle:`${item.nombre} — ${item.avion} — ${item.fecha} ${horaIni} hs — vuelo particular registrado desde vuelo-piloto.html`,
       ts:new Date().toISOString()
     }));
-  } else if(item.key){
-    if(item.gpsPoints&&item.gpsPoints.length>1){
-      await conTimeout(set(ref(db,`vuelo_tracks/${item.key}`),{
-        puntos: item.gpsPoints,
-        autor: item.instructorNombre,
-        ts_guardado: new Date().toISOString()
-      }));
-      datos.tiene_traza_gps=true;
-    }
-    await conTimeout(update(ref(db,`reservas/${item.key}`),datos));
+  }
+
+  if(item.gpsPoints&&item.gpsPoints.length>1){
+    await conTimeout(set(ref(db,`vuelo_tracks/${key}`),{
+      puntos: item.gpsPoints,
+      autor: item.nombre,
+      ts_guardado: new Date().toISOString()
+    }));
   }
 }
 
@@ -1769,25 +1180,17 @@ $('btn-reintentar-pendientes').addEventListener('click',()=>intentarSincronizarP
 window.addEventListener('online',()=>intentarSincronizarPendientes());
 setInterval(()=>intentarSincronizarPendientes(),30000);
 
+$('btn-otro-vuelo').addEventListener('click',resetVuelo);
 function resetVuelo(){
   detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
-  tsInicio=null;tsFin=null;turnoActual=null;guardadoExitoso=false;
+  tsInicio=null;tsFin=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
-  $('btn-start-stop').style.display='';
-  $('btn-start-stop').textContent='▶ INICIAR VUELO';
-  $('btn-start-stop').className='btn btn-cyan';
-  $('btn-cancelar-vuelo').style.display='none';
-  $('v-cierre').style.display='none';
-  $('v-guardado').style.display='none';
-  $('btn-cambiar-turno').style.display='';
-  $('gps-toggle-card').style.display='flex';
-  pintarToggleGPS();
-  actualizarEstado('idle');
+  renderPantalla();
 }
 
 function persistir(){
   localStorage.setItem(LS,JSON.stringify({
-    turno:turnoActual,tsInicio,tsFin,gpsHabilitado,
+    avion:$('p-avion').value,tsInicio,tsFin,gpsHabilitado,
     // Borrador del formulario de cierre — así, si la app se cuelga esperando
     // conexión en CONFIRMAR (ver guardar()) y hay que recargarla, no se
     // pierde lo ya tipeado (antes solo se guardaban los timestamps).
@@ -1798,18 +1201,95 @@ function persistir(){
   }));
 }
 
+// ── LOGOUT ────────────────────────────────────────────────
+$('btn-logout').addEventListener('click',()=>{
+  if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
+  const pendientesAlSalir=leerPendientes().length;
+  session=null;sessionStorage.removeItem('lvoad-session');
+  if(!tsInicio) localStorage.removeItem(LS);
+  $('app-shell').classList.remove('active');
+  $('screen-login').classList.add('active');
+  $('l-pass').value='';$('l-err').textContent='';
+  // Los vuelos pendientes NO se pierden al salir (viven aparte de la sesión)
+  // y la sincronización sigue intentando sola mientras la pestaña siga
+  // abierta — solo se avisa para que quede claro, no bloquea el logout.
+  if(pendientesAlSalir) toast(`⏳ Quedan ${pendientesAlSalir} vuelo${pendientesAlSalir>1?'s':''} sincronizando en segundo plano`,4000);
+});
+
 // ── TAB LIBRO ─────────────────────────────────────────────
-// Helper: genera HTML del botón de traza (evita template literal anidado con replace)
+// Todos los vuelos registrados para este piloto: los propios (piloto_*,
+// desde esta misma app) y, si alguna vez voló acompañado (ej. un chequeo
+// con instructor en LV-OAD, tipo_vuelo instrucción), también los de
+// obs_privada_* — pero SIN mostrar el texto de esa observación, que sigue
+// siendo privada del instructor (mismo criterio que turnos.html: el
+// piloto ve sus horas/aterrizajes de esos vuelos pero no la nota). El
+// texto de piloto_obs, en cambio, siempre se muestra — es autorreporte
+// propio, no hay nada que ocultarle a nadie.
+$('libro-fecha').addEventListener('change',cargarLibro);
+
+async function cargarLibro(){
+  const fecha=$('libro-fecha').value;
+  if(!fecha) return;
+  $('libro-contenido').innerHTML='<div class="spinner"></div>';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const mis=todas.filter(r=>
+      r.email===session.email&&
+      r.fecha===fecha&&
+      (r.piloto_tiempo_vuelo!=null||r.obs_privada_tiempo_vuelo!=null)
+    ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+
+    if(!mis.length){
+      $('libro-contenido').innerHTML=`<div class="empty-libro">Sin vuelos registrados el ${fmtFecha(fecha)}.</div>`;
+      return;
+    }
+
+    const totalHoras=mis.reduce((acc,r)=>acc+(parseFloat(r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo)||0),0);
+    const totalAterr=mis.reduce((acc,r)=>acc+(parseInt(r.piloto_aterrizajes??r.obs_privada_aterrizajes)||0),0);
+    const totalizador=`<div class="libro-total">
+      <div class="lt-item"><div class="lt-val">${mis.length}</div><div class="lt-lbl">Vuelo${mis.length===1?'':'s'}</div></div>
+      <div class="lt-item"><div class="lt-val">${Math.round(totalHoras*10)/10}</div><div class="lt-lbl">Horas</div></div>
+      <div class="lt-item"><div class="lt-val">${totalAterr}</div><div class="lt-lbl">Aterrizajes</div></div>
+    </div>`;
+
+    $('libro-contenido').innerHTML=totalizador+mis.map(r=>{
+      const despegue=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
+      const aterr=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
+      const horas=(r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo)??'—';
+      const aterrizajes=(r.piloto_aterrizajes??r.obs_privada_aterrizajes)??'—';
+      const obsVisible=r.piloto_obs||''; // obs_privada NUNCA se muestra acá — sigue siendo privada del instructor
+      return `<div class="vuelo-row">
+        <div class="vr-top">
+          <div class="vr-hora">${r.hora||r.horaInicio||'—'}</div>
+          <div class="vr-avion">${r.avion||'—'}</div>
+        </div>
+        <div class="vr-datos">
+          <span>▶ <span class="vr-val">${despegue}</span></span>
+          <span>⏹ <span class="vr-val">${aterr}</span></span>
+          <span>⏱ <span class="vr-val">${horas} hs</span></span>
+          <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
+        </div>
+        ${obsVisible?`<div class="vr-obs">${obsVisible.replace(/</g,'&lt;')}</div>`:''}
+        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
+      </div>`;
+    }).join('');
+  }catch(e){
+    $('libro-contenido').innerHTML=`<div class="empty-libro">Error al cargar: ${e.message}</div>`;
+    console.error(e);
+  }
+}
+
 function btnTraza(key, nombre, avion, hora) {
   const n = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  const av = (avion||'LV-OAD').replace(/'/g,"\\'");
+  const av = (avion||'—').replace(/'/g,"\\'");
   const h  = (hora||'').replace(/'/g,"\\'");
   return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
 }
 
 function btnExportGPS(key, nombre, avion, fecha) {
   const n  = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  const av = (avion||'LV-OAD').replace(/'/g,"\\'");
+  const av = (avion||'—').replace(/'/g,"\\'");
   const f  = (fecha||'').replace(/'/g,"\\'");
   return `<button class="btn-export-gps" onclick="exportarTrazaGPX('${key}','${n}','${av}','${f}')">⬇ GPX</button>`
        + `<button class="btn-export-gps" onclick="exportarTrazaKML('${key}','${n}','${av}','${f}')">⬇ KML</button>`;
@@ -1827,7 +1307,8 @@ async function _puntosTraza(key) {
   return data.puntos;
 }
 
-// GPX 1.1 — formato que CloudAhoy sí procesa bien (confirmado por Daniel).
+// GPX 1.1 — formato que CloudAhoy sí procesa bien (confirmado por Daniel, mismo
+// código que vuelo.html/turnos.html).
 window.exportarTrazaGPX = async function(key, nombre, avion, fecha) {
   try {
     const puntos = await _puntosTraza(key);
@@ -1837,7 +1318,7 @@ window.exportarTrazaGPX = async function(key, nombre, avion, fecha) {
       `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
     ).join('\n');
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Aeroclub Río Grande — vuelo.html"
+<gpx version="1.1" creator="Aeroclub Río Grande — vuelo-piloto.html"
   xmlns="http://www.topografix.com/GPX/1/1"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
@@ -1865,8 +1346,7 @@ ${trkpts}
   }
 };
 
-// KML plano (LineString, sin tiempo por punto) — solo para Google Earth. gx:Track
-// se probó y NO anda ni en Google Earth Web ni en CloudAhoy, se descartó (v5.9/5.10).
+// KML plano (LineString, sin tiempo por punto) — solo para Google Earth.
 window.exportarTrazaKML = async function(key, nombre, avion, fecha) {
   try {
     const puntos = await _puntosTraza(key);
@@ -1915,82 +1395,22 @@ window.exportarTrazaKML = async function(key, nombre, avion, fecha) {
   }
 };
 
-$('libro-fecha').addEventListener('change',cargarLibro);
-
-async function cargarLibro(){
-  const fecha=$('libro-fecha').value;
-  if(!fecha) return;
-  $('libro-contenido').innerHTML='<div class="spinner"></div>';
-  try{
-    const snap=await get(ref(db,'reservas'));
-    const todas=rArr(snap.val());
-    const mis=todas.filter(r=>
-      r.fecha===fecha&&
-      (r.instructor===session.nombre||r.aprobado_por===session.nombre||
-       r.instructor===session.user||r.aprobado_por===session.user)&&
-      (r.estado==='aprobado'||r.estado==='vencido')&&
-      !!r.obs_privada_tiempo_vuelo // solo vuelos finalizados y guardados (tiempo cargado)
-    ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
-
-    if(!mis.length){
-      $('libro-contenido').innerHTML=`<div class="empty-libro">Sin vuelos registrados el ${fmtFecha(fecha)}.</div>`;
-      return;
-    }
-
-    const totalHoras=mis.reduce((acc,r)=>acc+(parseFloat(r.obs_privada_tiempo_vuelo)||0),0);
-    const totalAterr=mis.reduce((acc,r)=>acc+(parseInt(r.obs_privada_aterrizajes)||0),0);
-    const totalizador=`<div class="libro-total">
-      <div class="lt-item"><div class="lt-val">${mis.length}</div><div class="lt-lbl">Vuelo${mis.length===1?'':'s'}</div></div>
-      <div class="lt-item"><div class="lt-val">${Math.round(totalHoras*10)/10}</div><div class="lt-lbl">Horas</div></div>
-      <div class="lt-item"><div class="lt-val">${totalAterr}</div><div class="lt-lbl">Aterrizajes</div></div>
-    </div>`;
-
-    $('libro-contenido').innerHTML=totalizador+mis.map(r=>{
-      const despegue=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
-      const aterr=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
-      const horas=r.obs_privada_tiempo_vuelo||'—';
-      const aterrizajes=r.obs_privada_aterrizajes||'—';
-      const tieneObs=!!r.obs_privada;
-      return `<div class="vuelo-row">
-        <div class="vr-top">
-          <div class="vr-hora">${r.hora||r.horaInicio||'—'}</div>
-          <div class="vr-alumno">${r.nombre||'—'}</div>
-          <div class="vr-avion">${r.avion||'LV-OAD'}</div>
-        </div>
-        <div class="vr-datos">
-          <span>▶ <span class="vr-val">${despegue}</span></span>
-          <span>⏹ <span class="vr-val">${aterr}</span></span>
-          <span>⏱ <span class="vr-val">${horas} hs</span></span>
-          <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
-          ${tieneObs?'<span class="badge-ok">obs ✓</span>':''}
-        </div>
-        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+''+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
-      </div>`;
-    }).join('');
-  }catch(e){
-    $('libro-contenido').innerHTML=`<div class="empty-libro">Error: ${e.message}</div>`;
-  }
-}
-
-// ── MAPA GPS ──────────────────────────────────────────────
+// ── Visor de mapa GPS (idéntico al de vuelo.html) ────────
 let _leafletMap = null;
-
 window.abrirMapa = async function(key, alumno, avion, hora) {
-  // Formateador local para los tooltips — definido acá para no depender del scope del módulo
   const fmtTs = iso => {
     if(!iso) return '—';
     const d = new Date(iso);
     return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z';
   };
   const modal = $('map-modal');
-  $('map-modal-title').textContent = `${alumno} · ${avion}`;
-  $('map-modal-sub').textContent = hora ? `Turno ${hora} hs` : '';
+  $('map-modal-title').textContent = `${avion}`;
+  $('map-modal-sub').textContent = hora ? `Vuelo ${hora} hs` : '';
   $('map-loading').style.display = 'flex';
   $('map-info-bar').style.display = 'none';
   $('map-leaflet').style.opacity = '0';
   modal.classList.add('open');
 
-  // Destruir instancia anterior de Leaflet si existe
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
 
   try {
@@ -2002,29 +1422,24 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       return;
     }
 
-    const puntos = data.puntos; // [{lat, lng, alt, ts}, ...]
+    const puntos = data.puntos;
     const coords = puntos.map(p => [p.lat, p.lng]);
 
-    // Inicializar Leaflet
     _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false });
 
-    // Capa satélite ESRI (aeronáuticamente más útil que calles)
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19,
     }).addTo(_leafletMap);
 
-    // Capa de etiquetas encima del satélite
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
       maxZoom: 19, opacity: 0.7,
     }).addTo(_leafletMap);
 
-    // Polilínea del recorrido
     const linea = L.polyline(coords, {
       color: '#00c8d4', weight: 3, opacity: 0.9,
       dashArray: null,
     }).addTo(_leafletMap);
 
-    // Marcador de inicio (verde)
     const icoInicio = L.divIcon({
       html: '<div style="background:#22c55e;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(34,197,94,.8)"></div>',
       className: '', iconSize: [14,14], iconAnchor: [7,7],
@@ -2033,7 +1448,6 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       .bindTooltip('▶ Despegue · ' + fmtTs(puntos[0].ts), { permanent: false })
       .addTo(_leafletMap);
 
-    // Marcador de fin (rojo)
     const icoFin = L.divIcon({
       html: '<div style="background:#ef4444;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(239,68,68,.8)"></div>',
       className: '', iconSize: [14,14], iconAnchor: [7,7],
@@ -2042,10 +1456,8 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       .bindTooltip('⏹ Aterrizaje · ' + fmtTs(puntos[puntos.length-1].ts), { permanent: false })
       .addTo(_leafletMap);
 
-    // Ajustar zoom al recorrido
     _leafletMap.fitBounds(linea.getBounds(), { padding: [40, 40], maxZoom: 15 });
 
-    // Info bar
     const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
     const durMin = Math.round(durMs / 60000);
     const distKm = calcDistanciaKm(coords);
@@ -2055,9 +1467,6 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('mi-duracion').textContent = durMin >= 60
       ? `${Math.floor(durMin/60)}h ${durMin%60}m`
       : `${durMin} min`;
-    // Cálculo interno se mantiene en km/metros (estándar, sin ambigüedad); la
-    // conversión a millas náuticas y pies es solo para la visualización — pedido
-    // de Daniel, unidades aeronáuticas en vez de métricas.
     const distNm = distKm * 0.539957;
     $('mi-distancia').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
     const altMaxFt = altMax * 3.28084;
@@ -2066,7 +1475,6 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('map-loading').style.display = 'none';
     $('map-leaflet').style.opacity = '1';
     $('map-info-bar').style.display = 'flex';
-    // Leaflet necesita que el contenedor sea visible antes de invalidar el tamaño
     setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 100);
 
   } catch(e) {
@@ -2075,7 +1483,6 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
   }
 };
 
-// Distancia total del recorrido (Haversine)
 function calcDistanciaKm(coords) {
   let total = 0;
   for (let i = 1; i < coords.length; i++) {
@@ -2094,65 +1501,14 @@ $('btn-map-close').addEventListener('click', () => {
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
 });
 
-// ── LOGOUT ────────────────────────────────────────────────
-$('btn-logout').addEventListener('click',()=>{
-  if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
-  const pendientesAlSalir=leerPendientes().length;
-  session=null;sessionStorage.removeItem('lvoad-session');
-  if(!tsInicio) localStorage.removeItem(LS);
-  $('app-shell').classList.remove('active');
-  $('screen-login').classList.add('active');
-  $('l-pass').value='';$('l-err').textContent='';
-  // Los vuelos pendientes NO se pierden al salir (viven aparte de la sesión)
-  // y la sincronización sigue intentando sola mientras la pestaña siga
-  // abierta — solo se avisa para que quede claro, no bloquea el logout.
-  if(pendientesAlSalir) toast(`⏳ Quedan ${pendientesAlSalir} vuelo${pendientesAlSalir>1?'s':''} sincronizando en segundo plano`,4000);
-});
-
-// ── AUTO-REFRESH ──────────────────────────────────────────
-// La app corre standalone (PWA) sin botón de recarga, así que los turnos
-// nuevos/aprobados no aparecían hasta cerrar y reabrir. Refresca solo:
-//  - si estamos en la lista de turnos del día (vistaActual==='lista'):
-//    ahí sí se puede reemplazar el contenido sin perder nada.
-//  - si estamos en la pestaña Pendientes o Libro (ambas de solo lectura/
-//    selección, no hay datos en edición que perder).
-// NUNCA toca la pantalla mientras hay un turno elegido/vuelo en curso o
-// recién finalizado (vistaActual==='vuelo'): un vuelo iniciado (tsInicio)
-// o terminado pero sin guardar (tsFin, form de cierre con aterrizajes/obs
-// cargados a mano) sigue su flujo normal, intacto, hasta que el propio
-// instructor toque "Cambiar turno", elija otro turno en Pendientes, o guarde.
-function autoRefrescar(){
-  if(!session) return;
-  if(!$('app-shell').classList.contains('active')) return;
-  if($('tab-vuelo').classList.contains('active')){
-    if(vistaActual==='lista') cargarTabVuelo();
-  } else if($('tab-pendientes').classList.contains('active')){
-    cargarPendientes();
-  } else if($('tab-libro').classList.contains('active')){
-    cargarLibro();
-  }
-}
-setInterval(autoRefrescar,60000); // cada 60s
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible') autoRefrescar();
-});
-window.addEventListener('pageshow',(e)=>{
-  if(e.persisted) autoRefrescar(); // iOS standalone: vuelve del bfcache al reabrir
-});
-
 // ── CHEQUEO DE VERSIÓN ────────────────────────────────────
-// Mismo mecanismo que turnos.html: la pestaña puede quedar abierta días
-// (PWA sin recarga automática) corriendo una versión vieja del archivo
-// mientras el repo ya tiene una más nueva. Cada VERSION_POLL_MS (y al
-// volver a primer plano) se vuelve a bajar este mismo HTML sin caché y se
-// compara la constante APP_VERSION contra la que quedó corriendo acá — si
-// difieren, se muestra el banner fijo con botón para recargar.
+// Mismo mecanismo que vuelo.html/turnos.html.
 function extraerVersionDeHTML(html){
   const m=html.match(/const APP_VERSION\s*=\s*'([\d.]+)'/);
   return m?('v'+m[1]):null;
 }
 const VERSION_ACTUAL='v'+APP_VERSION;
-const VERSION_POLL_MS=5*60*1000; // 5 minutos
+const VERSION_POLL_MS=5*60*1000;
 let _versionDesactualizada=false;
 async function chequearVersionNueva(){
   if(_versionDesactualizada) return;
@@ -2171,7 +1527,7 @@ async function chequearVersionNueva(){
 }
 document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
 setInterval(chequearVersionNueva,VERSION_POLL_MS);
-// v5.7: antes el primer chequeo recién corría a los 5 min (VERSION_POLL_MS) o si el
+// v2.3: antes el primer chequeo recién corría a los 5 min (VERSION_POLL_MS) o si el
 // usuario cambiaba de pestaña y volvía — alguien que entraba con una versión vieja
 // cacheada y probaba algo en el primer minuto nunca veía el aviso. Ahora también
 // corre una vez, temprano, a los 5s de cargar (delay chico para no competir con el
