@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.33
+  FECHA   : 2026-08-08
+  CAMBIOS : FIX v7.32: exportarTrazaTurnosGPX seguía fallando en CloudAhoy pese a
+            tener xsi:schemaLocation+metadata. Diff byte a byte contra el GPX
+            viejo que sí andaba: la única diferencia real era formato — <ele>/
+            <time> en una sola línea dentro de <trkpt> vs líneas separadas en
+            el que funcionaba. Alineado 1:1 (multi-línea) + trk/name vuelto al
+            formato espaciado original ("avion fecha nombre" sin em-dashes).
   VERSION : 7.32
   FECHA   : 2026-08-08
   CAMBIOS : FIX v7.31: exportarTrazaTurnosGPX generaba GPX sin xsi:schemaLocation
@@ -2419,7 +2427,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.32</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.33</div>
   </div>
 
 </div>
@@ -8996,7 +9004,7 @@ window.exportarTrazaTurnosGPX = async function(key, nombre, avion, fecha) {
     if (!puntos) return;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const trkpts = puntos.map(p =>
-      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
+      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}">\n        <ele>${p.alt!=null?p.alt.toFixed(1):0}</ele>\n        <time>${esc(p.ts)}</time>\n      </trkpt>`
     ).join('\n');
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Aeroclub Río Grande — turnos.html"
@@ -9008,7 +9016,7 @@ window.exportarTrazaTurnosGPX = async function(key, nombre, avion, fecha) {
     <time>${esc(puntos[0].ts)}</time>
   </metadata>
   <trk>
-    <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
+    <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
     <trkseg>
 ${trkpts}
     </trkseg>
