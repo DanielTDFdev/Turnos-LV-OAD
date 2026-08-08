@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.11 · 2026-08-08
+  gx:Track (v5.9/5.10) se descartó: no anda ni en Google Earth Web ni en CloudAhoy
+  (confirmado por Daniel con archivo real). Vuelto a dos botones separados:
+  ⬇ GPX (exportarTrazaGPX, formato que sí anda en CloudAhoy) y ⬇ KML
+  (exportarTrazaKML, LineString plano sin tiempo, solo para Google Earth).
+  Mismo cambio en paralelo en turnos.html. vuelo-piloto.html suma export
+  GPS por primera vez (antes no tenía).
   v5.10 · 2026-08-08
   FIX v5.9: el fix anterior armaba <gx:Track> con todos los <when> agrupados y
   después todos los <gx:coord> agrupados. CloudAhoy no tiraba error pero no
@@ -939,7 +946,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.10'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.11'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1787,37 +1794,64 @@ function btnExportGPS(key, nombre, avion, fecha) {
   const n  = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
   const av = (avion||'LV-OAD').replace(/'/g,"\\'");
   const f  = (fecha||'').replace(/'/g,"\\'");
-  return `<button class="btn-export-gps" onclick="exportarTraza('${key}','${n}','${av}','${f}')">⬇ KML</button>`;
+  return `<button class="btn-export-gps" onclick="exportarTrazaGPX('${key}','${n}','${av}','${f}')">⬇ GPX</button>`
+       + `<button class="btn-export-gps" onclick="exportarTrazaKML('${key}','${n}','${av}','${f}')">⬇ KML</button>`;
 }
 
-window.exportarTraza = async function(key, nombre, avion, fecha) {
+async function _puntosTraza(key) {
+  const snap = await get(ref(db, `vuelo_tracks/${key}`));
+  const data = snap.val();
+  if (!data || !data.puntos || !data.puntos.length) {
+    alert('No hay datos de traza para este vuelo.'); return null;
+  }
+  return data.puntos;
+}
+
+// GPX 1.1 — formato que CloudAhoy sí procesa bien (confirmado por Daniel).
+window.exportarTrazaGPX = async function(key, nombre, avion, fecha) {
   try {
-    const snap = await get(ref(db, `vuelo_tracks/${key}`));
-    const data = snap.val();
-    if (!data || !data.puntos || !data.puntos.length) {
-      alert('No hay datos de traza para este vuelo.'); return;
-    }
-    const puntos = data.puntos;
+    const puntos = await _puntosTraza(key);
+    if (!puntos) return;
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const trkpts = puntos.map(p =>
+      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
+    ).join('\n');
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Aeroclub Rio Grande" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.gpx`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al exportar: ' + e.message);
+  }
+};
+
+// KML plano (LineString, sin tiempo por punto) — solo para Google Earth. gx:Track
+// se probó y NO anda ni en Google Earth Web ni en CloudAhoy, se descartó (v5.9/5.10).
+window.exportarTrazaKML = async function(key, nombre, avion, fecha) {
+  try {
+    const puntos = await _puntosTraza(key);
+    if (!puntos) return;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
-
-    // Construir KML con gx:Track (lleva timestamp por punto).
-    // CloudAhoy necesita <when>/<gx:coord> por punto para calcular vel/rumbo/fases;
-    // un LineString plano no tiene tiempo y por eso fallaba ahí (en Google Earth
-    // no importa porque solo dibuja la línea).
-    // CloudAhoy espera <when>/<gx:coord> INTERCALADOS punto a punto (confirmado
-    // contra su doc oficial de formato KML), no agrupados en dos bloques separados.
-    // Agrupados no tira error pero CloudAhoy no logra correlacionar tiempo↔posición
-    // (no calcula from/to ni air/total time, no deja debriefear).
-    const trackLines = puntos.map(p =>
-      `        <when>${esc(p.ts)}</when>\n        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`
-    ).join('\n');
+    const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
     const p0 = puntos[0], pN = puntos[puntos.length-1];
     const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
     const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
-
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${esc(nombreDoc)}</name>
     <Style id="trazaVuelo">
@@ -1826,10 +1860,10 @@ window.exportarTraza = async function(key, nombre, avion, fecha) {
     <Placemark>
       <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
       <styleUrl>#trazaVuelo</styleUrl>
-      <gx:Track>
+      <LineString>
         <altitudeMode>absolute</altitudeMode>
-${trackLines}
-      </gx:Track>
+        <coordinates>${coordsLinea}</coordinates>
+      </LineString>
     </Placemark>
     <Placemark>
       <name>▶ Despegue</name>
@@ -1841,7 +1875,6 @@ ${trackLines}
     </Placemark>
   </Document>
 </kml>`;
-
     const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
