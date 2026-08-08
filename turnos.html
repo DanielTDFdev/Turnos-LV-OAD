@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.29
+  FECHA   : 2026-08-08
+  CAMBIOS : FIX v7.28: exportarTrazaTurnos() generaba KML con <LineString> plano
+            (sin tiempo por punto). Google Earth lo abre bien porque solo dibuja
+            la línea, pero CloudAhoy necesita timestamp por punto para calcular
+            velocidad/rumbo/fases y tiraba error. Cambiado a <gx:Track> con
+            <when> (usa p.ts, ya en ISO) + <gx:coord> por punto, agregado xmlns:gx.
+            Se mantienen los Placemark <Point> de despegue/aterrizaje sin cambios.
   VERSION : 7.28
   FECHA   : 2026-08-08
   CAMBIOS : Pedido de Daniel: exportación de traza GPS cambiada de GPX a KML (formato
@@ -2388,7 +2396,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.28</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.29</div>
   </div>
 
 </div>
@@ -8950,13 +8958,14 @@ window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
 
-    const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
+    const whens  = puntos.map(p => `        <when>${esc(p.ts)}</when>`).join('\n');
+    const coords = puntos.map(p => `        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`).join('\n');
     const p0 = puntos[0], pN = puntos[puntos.length-1];
     const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
     const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
 
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
   <Document>
     <name>${esc(nombreDoc)}</name>
     <Style id="trazaVuelo">
@@ -8965,10 +8974,11 @@ window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
     <Placemark>
       <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
       <styleUrl>#trazaVuelo</styleUrl>
-      <LineString>
+      <gx:Track>
         <altitudeMode>absolute</altitudeMode>
-        <coordinates>${coordsLinea}</coordinates>
-      </LineString>
+${whens}
+${coords}
+      </gx:Track>
     </Placemark>
     <Placemark>
       <name>▶ Despegue</name>
