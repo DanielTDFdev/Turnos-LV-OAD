@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.30
+  FECHA   : 2026-08-08
+  CAMBIOS : FIX v7.29: el fix anterior armaba <gx:Track> con todos los <when>
+            agrupados y después todos los <gx:coord> agrupados. CloudAhoy no
+            tiraba error pero no mostraba el vuelo (from/to "????", sin
+            air/total time, sin botón Debrief) porque no lograba correlacionar
+            tiempo↔posición así. Según la doc oficial de CloudAhoy, <when>/
+            <gx:coord> van INTERCALADOS punto a punto. Corregido en
+            exportarTrazaTurnos().
   VERSION : 7.29
   FECHA   : 2026-08-08
   CAMBIOS : FIX v7.28: exportarTrazaTurnos() generaba KML con <LineString> plano
@@ -2396,7 +2405,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.29</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.30</div>
   </div>
 
 </div>
@@ -8958,8 +8967,13 @@ window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
 
-    const whens  = puntos.map(p => `        <when>${esc(p.ts)}</when>`).join('\n');
-    const coords = puntos.map(p => `        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`).join('\n');
+    // CloudAhoy espera <when>/<gx:coord> INTERCALADOS punto a punto (confirmado
+    // contra su doc oficial de formato KML), no agrupados en dos bloques separados.
+    // Agrupados no tira error pero CloudAhoy no logra correlacionar tiempo↔posición
+    // (no calcula from/to ni air/total time, no deja debriefear).
+    const trackLines = puntos.map(p =>
+      `        <when>${esc(p.ts)}</when>\n        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`
+    ).join('\n');
     const p0 = puntos[0], pN = puntos[puntos.length-1];
     const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
     const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
@@ -8976,8 +8990,7 @@ window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
       <styleUrl>#trazaVuelo</styleUrl>
       <gx:Track>
         <altitudeMode>absolute</altitudeMode>
-${whens}
-${coords}
+${trackLines}
       </gx:Track>
     </Placemark>
     <Placemark>
