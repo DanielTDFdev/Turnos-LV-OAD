@@ -1,5 +1,11 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.32
+  FECHA   : 2026-08-08
+  CAMBIOS : FIX v7.31: exportarTrazaTurnosGPX generaba GPX sin xsi:schemaLocation
+            ni bloque <metadata>. Comparado contra un GPX viejo que sí había
+            andado en CloudAhoy (pre-refactor a KML), esa era la diferencia real.
+            Restaurados ambos. Mismo fix en paralelo en vuelo.html/vuelo-piloto.html.
   VERSION : 7.31
   FECHA   : 2026-08-08
   CAMBIOS : gx:Track (v7.29/7.30) se descartó: no anda ni en Google Earth Web ni
@@ -2413,7 +2419,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.31</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.32</div>
   </div>
 
 </div>
@@ -8993,7 +8999,14 @@ window.exportarTrazaTurnosGPX = async function(key, nombre, avion, fecha) {
       `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
     ).join('\n');
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Aeroclub Rio Grande" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="Aeroclub Río Grande — turnos.html"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
+    <time>${esc(puntos[0].ts)}</time>
+  </metadata>
   <trk>
     <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
     <trkseg>
