@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.28
+  FECHA   : 2026-08-08
+  CAMBIOS : Pedido de Daniel: exportación de traza GPS cambiada de GPX a KML (formato
+            nativo de Google Earth, Pro y web). Reemplaza GPX por completo (no
+            coexisten). window.exportarTrazaTurnos() ahora arma un <kml> con un
+            Placemark <LineString> (la traza completa, altitudeMode=absolute, alt en
+            metros) más dos Placemark <Point> para despegue/aterrizaje. Botones "⬇ GPX"
+            renombrados a "⬇ KML" en las dos vistas (Log del Alumno y Log de
+            Instructores). Mismo cambio aplicado en paralelo a vuelo.html y
+            vuelo-piloto.html (pedido de Daniel: consistencia entre las 3 apps).
+            Nombre de archivo: track_{avion}_{fecha}_{alumno}.kml.
   VERSION : 7.27
   FECHA   : 2026-08-08
   CAMBIOS : Pedido de Daniel: visualizador de mapa de vuelo (Mi Log de Vuelos, mv-dist/
@@ -2377,7 +2388,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.27</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.28</div>
   </div>
 
 </div>
@@ -5600,7 +5611,7 @@ function renderObsPublicasAlumno(){
       div.appendChild(btnMapa);
       const btnExp=document.createElement('button');
       btnExp.className='btn-export-mapa';
-      btnExp.textContent='⬇ GPX';
+      btnExp.textContent='⬇ KML';
       btnExp.addEventListener('click',()=>exportarTrazaTurnos(rKey,rNombre,rAvion,rFecha));
       div.appendChild(btnExp);
     }
@@ -5838,7 +5849,7 @@ function renderNotasPrivadasAlumno(){
       div.appendChild(btnMapa);
       const btnExp=document.createElement('button');
       btnExp.className='btn-export-mapa';
-      btnExp.textContent='⬇ GPX';
+      btnExp.textContent='⬇ KML';
       btnExp.addEventListener('click',()=>exportarTrazaTurnos(rKey,rNombre,rAvion,rFecha));
       div.appendChild(btnExp);
     }
@@ -8936,35 +8947,44 @@ window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
       alert('No hay datos de traza para este vuelo.'); return;
     }
     const puntos = data.puntos;
-    const ts0 = puntos[0].ts || new Date().toISOString();
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
 
-    const trkpts = puntos.map(p => {
-      const alt  = p.alt != null ? `\n        <ele>${p.alt.toFixed(1)}</ele>` : '';
-      const time = p.ts ? `\n        <time>${p.ts}</time>` : '';
-      return `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}">${alt}${time}\n      </trkpt>`;
-    }).join('\n');
+    const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
+    const p0 = puntos[0], pN = puntos[puntos.length-1];
+    const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
+    const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
 
-    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Aeroclub Río Grande — turnos.html"
-  xmlns="http://www.topografix.com/GPX/1/1"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
-  <metadata>
-    <name>${avion} — ${nombre} — ${fecha}</name>
-    <time>${ts0}</time>
-  </metadata>
-  <trk>
-    <name>${avion} ${fecha} ${nombre}</name>
-    <trkseg>
-${trkpts}
-    </trkseg>
-  </trk>
-</gpx>`;
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${esc(nombreDoc)}</name>
+    <Style id="trazaVuelo">
+      <LineStyle><color>ffd4c800</color><width>3</width></LineStyle>
+    </Style>
+    <Placemark>
+      <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
+      <styleUrl>#trazaVuelo</styleUrl>
+      <LineString>
+        <altitudeMode>absolute</altitudeMode>
+        <coordinates>${coordsLinea}</coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>▶ Despegue</name>
+      <Point><altitudeMode>absolute</altitudeMode><coordinates>${coordP0}</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>⏹ Aterrizaje</name>
+      <Point><altitudeMode>absolute</altitudeMode><coordinates>${coordPN}</coordinates></Point>
+    </Placemark>
+  </Document>
+</kml>`;
 
-    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.gpx`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.kml`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
     a.href = url; a.download = nombreArchivo;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a);
