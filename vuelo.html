@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.10 · 2026-08-08
+  FIX v5.9: el fix anterior armaba <gx:Track> con todos los <when> agrupados y
+  después todos los <gx:coord> agrupados. CloudAhoy no tiraba error pero no
+  mostraba el vuelo (from/to "????", sin air/total time, sin botón Debrief)
+  porque no lograba correlacionar tiempo↔posición así. Según la doc oficial de
+  CloudAhoy, <when>/<gx:coord> van INTERCALADOS punto a punto. Corregido.
   v5.9 · 2026-08-08
   FIX v5.8: exportarTraza() generaba KML con <LineString> plano (sin tiempo por
   punto). Funcionaba en Google Earth (solo dibuja la línea) pero CloudAhoy
@@ -933,7 +939,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.10'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1799,8 +1805,13 @@ window.exportarTraza = async function(key, nombre, avion, fecha) {
     // CloudAhoy necesita <when>/<gx:coord> por punto para calcular vel/rumbo/fases;
     // un LineString plano no tiene tiempo y por eso fallaba ahí (en Google Earth
     // no importa porque solo dibuja la línea).
-    const whens  = puntos.map(p => `        <when>${esc(p.ts)}</when>`).join('\n');
-    const coords = puntos.map(p => `        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`).join('\n');
+    // CloudAhoy espera <when>/<gx:coord> INTERCALADOS punto a punto (confirmado
+    // contra su doc oficial de formato KML), no agrupados en dos bloques separados.
+    // Agrupados no tira error pero CloudAhoy no logra correlacionar tiempo↔posición
+    // (no calcula from/to ni air/total time, no deja debriefear).
+    const trackLines = puntos.map(p =>
+      `        <when>${esc(p.ts)}</when>\n        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`
+    ).join('\n');
     const p0 = puntos[0], pN = puntos[puntos.length-1];
     const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
     const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
@@ -1817,8 +1828,7 @@ window.exportarTraza = async function(key, nombre, avion, fecha) {
       <styleUrl>#trazaVuelo</styleUrl>
       <gx:Track>
         <altitudeMode>absolute</altitudeMode>
-${whens}
-${coords}
+${trackLines}
       </gx:Track>
     </Placemark>
     <Placemark>
