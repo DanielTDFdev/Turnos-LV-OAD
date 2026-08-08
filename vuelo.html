@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.12 · 2026-08-08
+  FIX v5.11: exportarTrazaGPX generaba GPX sin xsi:schemaLocation ni bloque
+  <metadata>. Comparado contra un GPX viejo que sí había andado en CloudAhoy
+  (pre-refactor a KML), esa era la diferencia real. Restaurados ambos.
+  Mismo fix en paralelo en turnos.html y vuelo-piloto.html.
   v5.11 · 2026-08-08
   gx:Track (v5.9/5.10) se descartó: no anda ni en Google Earth Web ni en CloudAhoy
   (confirmado por Daniel con archivo real). Vuelto a dos botones separados:
@@ -946,7 +951,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.11'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.12'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1817,7 +1822,14 @@ window.exportarTrazaGPX = async function(key, nombre, avion, fecha) {
       `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
     ).join('\n');
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Aeroclub Rio Grande" xmlns="http://www.topografix.com/GPX/1/1">
+<gpx version="1.1" creator="Aeroclub Río Grande — vuelo.html"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
+    <time>${esc(puntos[0].ts)}</time>
+  </metadata>
   <trk>
     <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
     <trkseg>
