@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.31
+  FECHA   : 2026-08-08
+  CAMBIOS : gx:Track (v7.29/7.30) se descartó: no anda ni en Google Earth Web ni
+            en CloudAhoy (confirmado por Daniel con archivo real). Vuelto a dos
+            botones separados: ⬇ GPX (exportarTrazaTurnosGPX, formato que sí
+            anda en CloudAhoy) y ⬇ KML (exportarTrazaTurnosKML, LineString
+            plano sin tiempo, solo para Google Earth). Mismo cambio en paralelo
+            en vuelo.html. vuelo-piloto.html suma export GPS por primera vez.
   VERSION : 7.30
   FECHA   : 2026-08-08
   CAMBIOS : FIX v7.29: el fix anterior armaba <gx:Track> con todos los <when>
@@ -2405,7 +2413,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.30</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.31</div>
   </div>
 
 </div>
@@ -5626,11 +5634,16 @@ function renderObsPublicasAlumno(){
       btnMapa.textContent='🗺 Ver recorrido GPS';
       btnMapa.addEventListener('click',()=>abrirMapaVuelo(rKey,rNombre,rAvion,rHora));
       div.appendChild(btnMapa);
-      const btnExp=document.createElement('button');
-      btnExp.className='btn-export-mapa';
-      btnExp.textContent='⬇ KML';
-      btnExp.addEventListener('click',()=>exportarTrazaTurnos(rKey,rNombre,rAvion,rFecha));
-      div.appendChild(btnExp);
+      const btnExpG=document.createElement('button');
+      btnExpG.className='btn-export-mapa';
+      btnExpG.textContent='⬇ GPX';
+      btnExpG.addEventListener('click',()=>exportarTrazaTurnosGPX(rKey,rNombre,rAvion,rFecha));
+      div.appendChild(btnExpG);
+      const btnExpK=document.createElement('button');
+      btnExpK.className='btn-export-mapa';
+      btnExpK.textContent='⬇ KML';
+      btnExpK.addEventListener('click',()=>exportarTrazaTurnosKML(rKey,rNombre,rAvion,rFecha));
+      div.appendChild(btnExpK);
     }
     cont.appendChild(div);
   });
@@ -5864,11 +5877,16 @@ function renderNotasPrivadasAlumno(){
       btnMapa.textContent='🗺 Ver recorrido GPS';
       btnMapa.addEventListener('click',()=>abrirMapaVuelo(rKey,rNombre,rAvion,rHora));
       div.appendChild(btnMapa);
-      const btnExp=document.createElement('button');
-      btnExp.className='btn-export-mapa';
-      btnExp.textContent='⬇ KML';
-      btnExp.addEventListener('click',()=>exportarTrazaTurnos(rKey,rNombre,rAvion,rFecha));
-      div.appendChild(btnExp);
+      const btnExpG=document.createElement('button');
+      btnExpG.className='btn-export-mapa';
+      btnExpG.textContent='⬇ GPX';
+      btnExpG.addEventListener('click',()=>exportarTrazaTurnosGPX(rKey,rNombre,rAvion,rFecha));
+      div.appendChild(btnExpG);
+      const btnExpK=document.createElement('button');
+      btnExpK.className='btn-export-mapa';
+      btnExpK.textContent='⬇ KML';
+      btnExpK.addEventListener('click',()=>exportarTrazaTurnosKML(rKey,rNombre,rAvion,rFecha));
+      div.appendChild(btnExpK);
     }
     cont.appendChild(div);
   });
@@ -8957,29 +8975,59 @@ window.cerrarMapaVuelo = function() {
   if (_mapaVueloLeaflet) { _mapaVueloLeaflet.remove(); _mapaVueloLeaflet = null; }
 };
 
-window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
+async function _puntosTrazaTurnos(key) {
+  const data = await fbGet('vuelo_tracks/' + key);
+  if (!data || !data.puntos || !data.puntos.length) {
+    alert('No hay datos de traza para este vuelo.'); return null;
+  }
+  return data.puntos;
+}
+
+// GPX 1.1 — formato que CloudAhoy sí procesa bien (confirmado por Daniel).
+window.exportarTrazaTurnosGPX = async function(key, nombre, avion, fecha) {
   try {
-    const data = await fbGet('vuelo_tracks/' + key);
-    if (!data || !data.puntos || !data.puntos.length) {
-      alert('No hay datos de traza para este vuelo.'); return;
-    }
-    const puntos = data.puntos;
+    const puntos = await _puntosTrazaTurnos(key);
+    if (!puntos) return;
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const trkpts = puntos.map(p =>
+      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
+    ).join('\n');
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Aeroclub Rio Grande" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.gpx`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al exportar: ' + e.message);
+  }
+};
+
+// KML plano (LineString, sin tiempo por punto) — solo para Google Earth. gx:Track
+// se probó y NO anda ni en Google Earth Web ni en CloudAhoy, se descartó (v7.29/7.30).
+window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
+  try {
+    const puntos = await _puntosTrazaTurnos(key);
+    if (!puntos) return;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
-
-    // CloudAhoy espera <when>/<gx:coord> INTERCALADOS punto a punto (confirmado
-    // contra su doc oficial de formato KML), no agrupados en dos bloques separados.
-    // Agrupados no tira error pero CloudAhoy no logra correlacionar tiempo↔posición
-    // (no calcula from/to ni air/total time, no deja debriefear).
-    const trackLines = puntos.map(p =>
-      `        <when>${esc(p.ts)}</when>\n        <gx:coord>${p.lng.toFixed(8)} ${p.lat.toFixed(8)} ${(p.alt!=null?p.alt.toFixed(1):0)}</gx:coord>`
-    ).join('\n');
+    const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
     const p0 = puntos[0], pN = puntos[puntos.length-1];
     const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
     const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
-
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+<kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${esc(nombreDoc)}</name>
     <Style id="trazaVuelo">
@@ -8988,10 +9036,10 @@ window.exportarTrazaTurnos = async function(key, nombre, avion, fecha) {
     <Placemark>
       <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
       <styleUrl>#trazaVuelo</styleUrl>
-      <gx:Track>
+      <LineString>
         <altitudeMode>absolute</altitudeMode>
-${trackLines}
-      </gx:Track>
+        <coordinates>${coordsLinea}</coordinates>
+      </LineString>
     </Placemark>
     <Placemark>
       <name>▶ Despegue</name>
@@ -9003,7 +9051,6 @@ ${trackLines}
     </Placemark>
   </Document>
 </kml>`;
-
     const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
