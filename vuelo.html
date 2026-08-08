@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.14 · 2026-08-08
+  GPS_MUESTREO_MS 5000→3000 (pedido de Daniel, pensando en vuelo típico de
+  instrucción de 1h): a 5s un circuito/pattern corto de 20-30min quedaba al
+  límite de los 300 puntos mínimos de CloudAhoy. A 3s, ~15min ya da margen
+  cómodo (500pts a 25min, 1200pts a 1h). Mismo cambio en vuelo-piloto.html.
   v5.13 · 2026-08-08
   Causa raíz real del problema CloudAhoy encontrada: "not enough flight data:
   flights must have at least 300 GPS locations". Con muestreo cada 10s, vuelos
@@ -958,12 +963,12 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.13'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.14'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
 const LS_GPS_PREF    = 'acrg-vuelo-gps-pref';      // preferencia recordada entre vuelos (on/off)
-const GPS_MUESTREO_MS = 5000; // 5s entre puntos (bajado de 10s v5.13 — CloudAhoy exige mínimo 300 puntos GPS por vuelo, con 10s los vuelos cortos quedaban por debajo)
+const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v5.14 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
 let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1'; // toggle actual (editable solo antes de iniciar)
 let gpsWatchId     = null;   // id de navigator.geolocation.watchPosition, null si no está corriendo
 let gpsPoints      = [];     // [{lat,lng,alt,ts}] del vuelo en curso
