@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v2.4 · 2026-08-08
+  Export de traza GPS agregado (antes solo tenía "Ver recorrido GPS", sin
+  descarga). Dos botones en tab Libro: ⬇ GPX (exportarTrazaGPX, formato que
+  anda en CloudAhoy) y ⬇ KML (exportarTrazaKML, LineString plano sin tiempo,
+  solo Google Earth) — mismo código que vuelo.html v5.11/turnos.html v7.31.
   v2.3 · 2026-08-05
   chequearVersionNueva() ahora también corre una vez a los 5s de cargar
   (setTimeout), no solo cada VERSION_POLL_MS (5 min) o al volver a la pestaña.
@@ -360,6 +365,8 @@ select:disabled{opacity:.55}
 
 .btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;transition:all .15s}
 .btn-traza:active{background:rgba(0,200,212,.2)}
+.btn-export-gps{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-left:6px;transition:all .15s}
+.btn-export-gps:active{background:rgba(240,165,0,.2)}
 
 /* Modal mapa */
 .map-modal-overlay{
@@ -589,7 +596,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '2.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1251,7 +1258,7 @@ async function cargarLibro(){
           <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
         </div>
         ${obsVisible?`<div class="vr-obs">${obsVisible.replace(/</g,'&lt;')}</div>`:''}
-        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora):''}
+        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
       </div>`;
     }).join('');
   }catch(e){
@@ -1266,6 +1273,104 @@ function btnTraza(key, nombre, avion, hora) {
   const h  = (hora||'').replace(/'/g,"\\'");
   return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
 }
+
+function btnExportGPS(key, nombre, avion, fecha) {
+  const n  = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const av = (avion||'—').replace(/'/g,"\\'");
+  const f  = (fecha||'').replace(/'/g,"\\'");
+  return `<button class="btn-export-gps" onclick="exportarTrazaGPX('${key}','${n}','${av}','${f}')">⬇ GPX</button>`
+       + `<button class="btn-export-gps" onclick="exportarTrazaKML('${key}','${n}','${av}','${f}')">⬇ KML</button>`;
+}
+
+async function _puntosTraza(key) {
+  const snap = await get(ref(db, `vuelo_tracks/${key}`));
+  const data = snap.val();
+  if (!data || !data.puntos || !data.puntos.length) {
+    alert('No hay datos de traza para este vuelo.'); return null;
+  }
+  return data.puntos;
+}
+
+// GPX 1.1 — formato que CloudAhoy sí procesa bien (confirmado por Daniel, mismo
+// código que vuelo.html/turnos.html).
+window.exportarTrazaGPX = async function(key, nombre, avion, fecha) {
+  try {
+    const puntos = await _puntosTraza(key);
+    if (!puntos) return;
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const trkpts = puntos.map(p =>
+      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
+    ).join('\n');
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Aeroclub Rio Grande" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.gpx`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al exportar: ' + e.message);
+  }
+};
+
+// KML plano (LineString, sin tiempo por punto) — solo para Google Earth.
+window.exportarTrazaKML = async function(key, nombre, avion, fecha) {
+  try {
+    const puntos = await _puntosTraza(key);
+    if (!puntos) return;
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
+    const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
+    const p0 = puntos[0], pN = puntos[puntos.length-1];
+    const coordP0 = `${p0.lng.toFixed(8)},${p0.lat.toFixed(8)},${(p0.alt!=null?p0.alt.toFixed(1):0)}`;
+    const coordPN = `${pN.lng.toFixed(8)},${pN.lat.toFixed(8)},${(pN.alt!=null?pN.alt.toFixed(1):0)}`;
+    const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${esc(nombreDoc)}</name>
+    <Style id="trazaVuelo">
+      <LineStyle><color>ffd4c800</color><width>3</width></LineStyle>
+    </Style>
+    <Placemark>
+      <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
+      <styleUrl>#trazaVuelo</styleUrl>
+      <LineString>
+        <altitudeMode>absolute</altitudeMode>
+        <coordinates>${coordsLinea}</coordinates>
+      </LineString>
+    </Placemark>
+    <Placemark>
+      <name>▶ Despegue</name>
+      <Point><altitudeMode>absolute</altitudeMode><coordinates>${coordP0}</coordinates></Point>
+    </Placemark>
+    <Placemark>
+      <name>⏹ Aterrizaje</name>
+      <Point><altitudeMode>absolute</altitudeMode><coordinates>${coordPN}</coordinates></Point>
+    </Placemark>
+  </Document>
+</kml>`;
+    const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const nombreArchivo = `track_${avion}_${fecha||key.slice(1,9)}_${(nombre||'').split(' ')[0]}.kml`.replace(/[^a-zA-Z0-9_.\-]/g,'_');
+    a.href = url; a.download = nombreArchivo;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    alert('Error al exportar: ' + e.message);
+  }
+};
 
 // ── Visor de mapa GPS (idéntico al de vuelo.html) ────────
 let _leafletMap = null;
