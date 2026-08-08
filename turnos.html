@@ -1,5 +1,12 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.27
+  FECHA   : 2026-08-08
+  CAMBIOS : Pedido de Daniel: visualizador de mapa de vuelo (Mi Log de Vuelos, mv-dist/
+            mv-alt) mostraba distancia/altura en km/m. Cambiado a millas náuticas (nm)
+            y pies (ft), mismo criterio que ya usa vuelo.html v5.7 (cálculo interno
+            se mantiene en km/metros vía Haversine, la conversión es solo visual:
+            1 km = 0.539957 nm, 1 m = 3.28084 ft).
   VERSION : 7.26
   FECHA   : 2026-08-07
   CAMBIOS : Pedido de Daniel: botón "🗑" para borrar un vuelo directo desde cada fila
@@ -2370,7 +2377,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.26</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.27</div>
   </div>
 
 </div>
@@ -8898,8 +8905,12 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     const altMax = Math.max(...puntos.filter(p=>p.alt!=null).map(p=>p.alt));
     document.getElementById('mv-puntos').textContent = puntos.length;
     document.getElementById('mv-dur').textContent = durMin >= 60 ? `${Math.floor(durMin/60)}h ${durMin%60}m` : `${durMin} min`;
-    document.getElementById('mv-dist').textContent = distKm >= 1 ? `${distKm.toFixed(1)} km` : `${Math.round(distKm*1000)} m`;
-    document.getElementById('mv-alt').textContent = isFinite(altMax) ? `${Math.round(altMax)} m` : '—';
+    // Cálculo interno se mantiene en km/metros; conversión a millas náuticas y
+    // pies solo para visualización (mismo criterio que vuelo.html v5.7).
+    const distNm = distKm * 0.539957;
+    document.getElementById('mv-dist').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
+    const altMaxFt = altMax * 3.28084;
+    document.getElementById('mv-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
 
     document.getElementById('mapa-vuelo-loading').style.display = 'none';
     document.getElementById('mapa-vuelo-leaflet').style.opacity = '1';
