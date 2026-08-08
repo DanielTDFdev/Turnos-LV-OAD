@@ -1,5 +1,12 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.34
+  FECHA   : 2026-08-08
+  CAMBIOS : Causa raíz real del problema CloudAhoy encontrada: "not enough
+            flight data: flights must have at least 300 GPS locations". Export
+            GPX/KML ahora avisa si el vuelo tiene <300 puntos (turnos.html solo
+            exporta, no graba GPS — el fix de muestreo real es en vuelo.html
+            v5.13/vuelo-piloto.html v2.6, GPS_MUESTREO_MS 10000→5000).
   VERSION : 7.33
   FECHA   : 2026-08-08
   CAMBIOS : FIX v7.32: exportarTrazaTurnosGPX seguía fallando en CloudAhoy pese a
@@ -2427,7 +2434,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.33</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.34</div>
   </div>
 
 </div>
@@ -8993,6 +9000,9 @@ async function _puntosTrazaTurnos(key) {
   const data = await fbGet('vuelo_tracks/' + key);
   if (!data || !data.puntos || !data.puntos.length) {
     alert('No hay datos de traza para este vuelo.'); return null;
+  }
+  if (data.puntos.length < 300) {
+    alert(`⚠ Este vuelo tiene ${data.puntos.length} puntos GPS. CloudAhoy exige mínimo 300 — es probable que rechace la importación.`);
   }
   return data.puntos;
 }
