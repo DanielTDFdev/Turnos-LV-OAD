@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.36
+  FECHA   : 2026-08-09
+  CAMBIOS : FIX reportado por Daniel: un turno cargado a mano se duplicó (dos
+            reservas idénticas, mismo horario/obs/cargado_por). Causa: "GUARDAR
+            TURNO" (guardarTurnoManual y guardarVueloHistorico, mismo botón)
+            no tenía protección contra doble click/doble tap. La validación de
+            conflicto lee Firebase con get() ANTES de escribir con fbPush(); si
+            el botón se clickeaba dos veces seguidas (típico en mobile con
+            latencia), ambos clicks leían el mismo estado sin el turno nuevo
+            todavía, pasaban la validación en paralelo, y escribían dos
+            reservas. Agregado flag _ctGuardando + disabled en #ct-btn-guardar
+            durante el guardado, liberado en finally (cubre éxito y error, y
+            todos los early return de validación).
   VERSION : 7.35
   FECHA   : 2026-08-09
   CAMBIOS : FIX reportado por Daniel: "CARGAR VUELO HISTÓRICO" (dentro de "+
@@ -2446,7 +2459,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.35</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.36</div>
   </div>
 
 </div>
@@ -7505,6 +7518,10 @@ window.ctSetModo = function(modo) {
 };
 
 window.guardarVueloHistorico = async function() {
+  if(_ctGuardando)return;
+  _ctGuardando=true;
+  document.getElementById('ct-btn-guardar').disabled=true;
+  try{
   hideEl('ct-err'); hideEl('ct-ok');
   const sel = document.getElementById('ct-alumno');
   const key = sel.value;
@@ -7586,9 +7603,27 @@ window.guardarVueloHistorico = async function() {
     console.error(e);
     showErr('ct-err', 'Error al guardar. Volvé a intentar.');
   }
+  }finally{
+    _ctGuardando=false;
+    document.getElementById('ct-btn-guardar').disabled=false;
+  }
 };
 
+// FIX v7.36 (reportado por Daniel): guardarTurnoManual/guardarVueloHistorico no
+// tenían protección contra doble click/doble tap en "GUARDAR TURNO". La validación
+// de conflicto lee Firebase con get() ANTES de escribir con fbPush() — si el botón
+// se clickeaba dos veces seguidas (típico en mobile con latencia), ambos clicks
+// leían el mismo estado (sin el turno nuevo todavía), pasaban la validación en
+// paralelo, y terminaban escribiendo dos reservas idénticas. _ctGuardando bloquea
+// reentradas mientras hay un guardado en curso; se libera en el finally, tanto en
+// éxito como en error.
+let _ctGuardando=false;
+
 window.guardarTurnoManual=async function(){
+  if(_ctGuardando)return;
+  _ctGuardando=true;
+  document.getElementById('ct-btn-guardar').disabled=true;
+  try{
   hideEl('ct-err'); hideEl('ct-ok');
   const sel=document.getElementById('ct-alumno');
   const key=sel.value;
@@ -7656,6 +7691,10 @@ window.guardarTurnoManual=async function(){
   }catch(e){
     console.error(e);
     showErr('ct-err','No se pudo guardar el turno (error de conexión). Volvé a intentar.');
+  }
+  }finally{
+    _ctGuardando=false;
+    document.getElementById('ct-btn-guardar').disabled=false;
   }
 };
 
