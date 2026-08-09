@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.16 · 2026-08-09
+  Timer en vivo (Despegó a las / Aterrizó a las / toast "Vuelo iniciado")
+  pasó de hora local Ushuaia a UTC/Zulu — pedido de Daniel: toda hora visible
+  en la app tiene que ser UTC 24hs, sin excepción. fmtLocalFull ahora fuerza
+  timeZone:'UTC' y agrega sufijo "Z" (igual que fmtUTC, que ya estaba bien
+  desde v3.0). Texto "Hora local · esperando aterrizaje..." → "Hora UTC
+  (Zulu) · esperando aterrizaje...". No se tocó el nombre de la función para
+  no repetir el bug de v3.8 (abrirMapa llamando por nombre viejo). Mismo
+  cambio en vuelo-piloto.html.
   v5.15 · 2026-08-08
   Versión y "(c) 2026 by DAC" casi invisibles contra el fondo negro (color
   --gray2 #2a4a6a, muy oscuro). Clase .ver pasa a cian (--cyan), 11px→13px.
@@ -937,7 +946,7 @@ const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
 const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
 const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
-const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z'; };
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
 
 function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
@@ -967,7 +976,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.15'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.16'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1395,7 +1404,7 @@ function actualizarEstado(estado){
     label.textContent='Despegó a las';
     ts.textContent=fmtLocalFull(tsInicio);
     ts.classList.add('en-vuelo');
-    sub.textContent='Hora local · esperando aterrizaje...';
+    sub.textContent='Hora UTC (Zulu) · esperando aterrizaje...';
   } else if(estado==='finalizado'){
     label.textContent='Aterrizó a las';
     ts.textContent=fmtLocalFull(tsFin);
