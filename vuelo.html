@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.17 · 2026-08-09
+  NUEVO — Contraparte del modo alumno agregado en vuelo-piloto.html v3.0
+  (tracking GPS independiente desde el celular del alumno, ver ese header
+  para el diseño completo). Este lado (instructor) ahora respeta el mismo
+  candado gps_tracker_activo en la reserva: al tocar INICIAR VUELO, si
+  gpsHabilitado y hay turnoActual.key, se relee la reserva fresca de
+  Firebase antes de arrancar el propio GPS — si el alumno ya está
+  trackeando (lock 'alumno' vigente, <4hs), se salta el GPS de este lado
+  con un toast informativo, PERO el resto de "Iniciar Vuelo" sigue andando
+  normal (el instructor sigue cargando tiempo/aterrizajes igual, eso nunca
+  se bloquea). Si el candado estaba libre, lo toma como 'instructor'
+  (gpsLockTomadoPorMi=true) y lo suelta al FINALIZAR o CANCELAR — nunca
+  toca el candado si lo tiene el alumno, para no cortarle el track a mitad
+  de vuelo. El guardado ya era seguro sin cambios: update() en Firebase no
+  pisa campos que no toca, así que tiene_traza_gps:true escrito por el
+  alumno no se pierde aunque el instructor cierre el vuelo sin su propio
+  track.
   v5.16 · 2026-08-09
   Timer en vivo (Despegó a las / Aterrizó a las / toast "Vuelo iniciado")
   pasó de hora local Ushuaia a UTC/Zulu — pedido de Daniel: toda hora visible
@@ -976,7 +993,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.16'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.17'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -986,6 +1003,13 @@ let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1'; // toggle actual
 let gpsWatchId     = null;   // id de navigator.geolocation.watchPosition, null si no está corriendo
 let gpsPoints      = [];     // [{lat,lng,alt,ts}] del vuelo en curso
 let gpsUltimoPunto = 0;      // Date.now() del último punto guardado, para el muestreo cada 10s
+// Candado gps_tracker_activo (v5.17, ver también vuelo-piloto.html v3.0): evita
+// que instructor y alumno trackeen el mismo vuelo en simultáneo desde sus apps.
+// gpsLockTomadoPorMi indica si ESTA sesión tomó el candado como 'instructor' —
+// solo entonces lo suelta al FINALIZAR VUELO; si el candado lo tiene el alumno,
+// el instructor no lo toca (para no pisarle el track a mitad de vuelo).
+const GPS_LOCK_STALE_MS = 4*60*60*1000; // 4 horas — candado huérfano se considera vencido
+let gpsLockTomadoPorMi = false;
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Init ─────────────────────────────────────────────────
@@ -1012,6 +1036,11 @@ function init(){
         gpsHabilitado=true;
         try{ gpsPoints=JSON.parse(localStorage.getItem(LS_GPS_PUNTOS)||'[]'); }catch{ gpsPoints=[]; }
         iniciarTrackGPS();
+        // Se asume que el candado ya lo había tomado esta misma sesión antes
+        // del reload (si no había turnoActual.key no se tomó nunca). No se
+        // re-chequea contra el alumno acá: si de casualidad el alumno arrancó
+        // en el medio, se resuelve solo al soltar/re-tomar en el próximo vuelo.
+        if(turnoActual?.key) gpsLockTomadoPorMi=true;
       }
     }
   }catch{}
@@ -1498,12 +1527,38 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // START / STOP
-$('btn-start-stop').addEventListener('click',()=>{
+$('btn-start-stop').addEventListener('click', async ()=>{
   if(!tsInicio){
     // START — confirmar antes de grabar (evita un toque accidental)
     if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
-    if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); adquirirWakeLock(); }
+    if(gpsHabilitado){
+      // Chequear candado ANTES de arrancar el GPS propio — si el alumno ya
+      // está trackeando este vuelo desde vuelo-piloto.html, no arrancamos
+      // un segundo stream de puntos (pedido de Daniel: bloquear, no permitir
+      // los dos). Esto NO bloquea el resto de "Iniciar Vuelo" — el instructor
+      // sigue registrando el vuelo (tiempo, aterrizajes) igual; solo se salta
+      // el GPS de este lado.
+      let bloqueadoPorAlumno=false;
+      if(turnoActual?.key){
+        try{
+          const snap=await get(ref(db,'reservas/'+turnoActual.key));
+          const actual=snap.val();
+          const lock=actual?.gps_tracker_activo;
+          const lockTs=actual?.gps_tracker_ts?new Date(actual.gps_tracker_ts).getTime():0;
+          if(lock==='alumno'&&(Date.now()-lockTs)<GPS_LOCK_STALE_MS) bloqueadoPorAlumno=true;
+        }catch(e){ console.warn('No se pudo chequear candado GPS (sigue igual sin bloquear):',e); }
+      }
+      if(bloqueadoPorAlumno){
+        toast('📍 El alumno ya está trackeando el GPS de este vuelo desde su app — no hace falta activarlo también acá.',4500);
+      } else {
+        gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); adquirirWakeLock();
+        if(turnoActual?.key){
+          gpsLockTomadoPorMi=true;
+          update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:'instructor',gps_tracker_ts:new Date().toISOString()}).catch(e=>console.warn('No se pudo tomar el candado GPS:',e));
+        }
+      }
+    }
     persistir();
     actualizarEstado('en-vuelo');
     pintarToggleGPS();
@@ -1518,6 +1573,10 @@ $('btn-start-stop').addEventListener('click',()=>{
     tsFin=new Date().toISOString();
     detenerTrackGPS();
     liberarWakeLock(); // liberar wake lock al aterrizar
+    if(gpsLockTomadoPorMi&&turnoActual?.key){
+      update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:null}).catch(e=>console.warn('No se pudo soltar el candado GPS:',e));
+      gpsLockTomadoPorMi=false;
+    }
     persistir();
     actualizarEstado('finalizado');
     $('btn-start-stop').style.display='none';
@@ -1537,6 +1596,10 @@ function cancelarVuelo(){
   if(!confirm('¿Cancelar este vuelo? No se va a grabar nada — queda todo como estaba.')) return;
   detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
   liberarWakeLock();
+  if(gpsLockTomadoPorMi&&turnoActual?.key){
+    update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:null}).catch(e=>console.warn('No se pudo soltar el candado GPS:',e));
+    gpsLockTomadoPorMi=false;
+  }
   tsInicio=null; tsFin=null; guardadoExitoso=false;
   persistir();
   mostrarPantallaVuelo(turnoActual);
