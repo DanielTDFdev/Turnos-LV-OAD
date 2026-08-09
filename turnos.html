@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.35
+  FECHA   : 2026-08-09
+  CAMBIOS : FIX reportado por Daniel: "CARGAR VUELO HISTÓRICO" (dentro de "+
+            CARGAR TURNO") nunca escribía ts_despegue/ts_aterrizaje — solo
+            guardaba hora (texto HH:MM), no timestamp ISO. El vuelo quedaba
+            completo (alumno, horas, aterrizajes) pero el Libro de vuelo.html
+            mostraba "—" en los horarios porque esos dos campos no existían
+            en el registro. Ahora guardarVueloHistorico() deriva ts_despegue
+            de fecha+hora interpretados como hora local Río Grande (UTC-3
+            fijo) y ts_aterrizaje sumando el tiempo de vuelo cargado. hora
+            ya era obligatoria en este modal, así que siempre hay dato para
+            calcular. No afecta "GUARDAR TURNO" (modo turno futuro).
   VERSION : 7.34
   FECHA   : 2026-08-08
   CAMBIOS : Causa raíz real del problema CloudAhoy encontrada: "not enough
@@ -2434,7 +2446,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.34</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.35</div>
   </div>
 
 </div>
@@ -7525,6 +7537,15 @@ window.guardarVueloHistorico = async function() {
     showErr('ct-err', `El ${avion} ya tiene un vuelo registrado a las ${hora} el ${fecha}. Elegí otro horario.`);
     return;
   }
+  // ts_despegue/ts_aterrizaje: se derivan de fecha+hora (hora local Río Grande,
+  // UTC-3 fijo, sin horario de verano) para que el vuelo histórico aparezca en
+  // el Libro de vuelo.html con horarios reales, igual que uno cargado en vivo
+  // desde la app. Antes de este fix estos dos campos nunca se escribían acá —
+  // el registro quedaba con horas/aterrizajes pero sin ts_despegue/ts_aterrizaje,
+  // y el Libro mostraba "—" en los horarios (reportado por Daniel). hora es
+  // obligatoria en este modal (validada arriba), así que siempre hay dato.
+  const tsDespegue = new Date(`${fecha}T${hora}:00-03:00`).toISOString();
+  const tsAterrizaje = new Date(new Date(tsDespegue).getTime() + tiempo*3600000).toISOString();
   const nuevo = {
     nombre:    alumno.nombre || alumno.email || key,
     email:     alumno.email || '',
@@ -7538,6 +7559,8 @@ window.guardarVueloHistorico = async function() {
     obs_privada:              obs || null,
     obs_privada_autor:        session.nombre || session.user || '',
     obs_privada_ts:           new Date().toISOString(),
+    ts_despegue:   tsDespegue,
+    ts_aterrizaje: tsAterrizaje,
     rol:       alumno.rol || 'alumno',
     cargado_por: session.nombre || session.user || '',
     es_historico: true,        // flag para distinguir de vuelos reales del sistema
