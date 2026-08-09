@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v2.9 · 2026-08-09
+  Timer en vivo pasó de hora local Ushuaia a UTC/Zulu — mismo cambio que
+  vuelo.html v5.16. fmtLocalFull ahora fuerza timeZone:'UTC' + sufijo "Z".
+  Texto "Hora local..." → "Hora UTC (Zulu)...".
   v2.8 · 2026-08-08
   Versión y "(c) 2026 by DAC" casi invisibles contra el fondo negro. Clase .ver
   pasa a cian, 11px→13px. Mismo cambio en vuelo.html v5.15.
@@ -588,7 +592,7 @@ const $ = id => document.getElementById(id);
 const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
 const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
-const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'America/Argentina/Ushuaia'}); };
+const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z'; };
 const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
 const ek = email => (email||'').toLowerCase().replace(/\./g,'_').replace('@','__at__');
@@ -612,7 +616,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '2.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -821,7 +825,7 @@ function actualizarEstado(estado){
     label.textContent='Despegó a las';
     ts.textContent=fmtLocalFull(tsInicio);
     ts.classList.add('en-vuelo');
-    sub.textContent='Hora local · esperando aterrizaje...';
+    sub.textContent='Hora UTC (Zulu) · esperando aterrizaje...';
   } else if(estado==='finalizado'){
     label.textContent='Aterrizó a las';
     ts.textContent=fmtLocalFull(tsFin);
