@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v2.8 · 2026-08-08
+  Versión y "(c) 2026 by DAC" casi invisibles contra el fondo negro. Clase .ver
+  pasa a cian, 11px→13px. Mismo cambio en vuelo.html v5.15.
+  v2.7 · 2026-08-08
+  GPS_MUESTREO_MS 5000→3000 (pedido de Daniel). Mismo cambio en vuelo.html v5.14.
   v2.6 · 2026-08-08
   Causa raíz real del problema CloudAhoy encontrada: "not enough flight data:
   flights must have at least 300 GPS locations". Con muestreo cada 10s, vuelos
@@ -258,7 +263,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 .top-bar .inst-info{flex:1}
 .top-bar .inst-info .nombre{font-family:var(--disp);font-size:15px;color:var(--cyan);letter-spacing:.08em}
 .top-bar .inst-info .sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px}
-.ver{font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em}
+.ver{font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.06em;opacity:.75}
 .top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .btn-sm{
   background:transparent;border:1px solid var(--gray2);border-radius:8px;
@@ -440,7 +445,7 @@ select:disabled{opacity:.55}
     <div class="err" id="l-err"></div>
     <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
   </div>
-  <div style="text-align:center;margin-top:18px;opacity:.6;font-family:var(--mono);font-size:11px;color:var(--gray2);letter-spacing:.06em">(c) 2026 by DAC</div>
+  <div style="text-align:center;margin-top:18px;opacity:.75;font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.06em">(c) 2026 by DAC</div>
 </div>
 
 <div id="app-shell">
@@ -607,13 +612,13 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '2.6'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '2.8'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
 const LS_GPS_PUNTOS = 'acrg-piloto-v1-gps-puntos';
 const LS_GPS_PREF   = 'acrg-piloto-gps-pref';
-const GPS_MUESTREO_MS = 5000; // 5s entre puntos (bajado de 10s v2.6 — CloudAhoy exige mínimo 300 puntos GPS por vuelo, con 10s los vuelos cortos quedaban por debajo)
+const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v2.7 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
 let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1';
 let gpsWatchId     = null;
 let gpsPoints      = [];
