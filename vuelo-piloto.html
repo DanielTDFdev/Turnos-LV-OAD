@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v3.1 · 2026-08-09
+  FIX cosmético reportado por Daniel: el <select> de avión arrancaba con
+  LV-OAD preseleccionado por ser la primera opción de FLOTA — un piloto que
+  voló el ART sin fijarse pudo arrancar el vuelo así y quedó todo grabado
+  como LV-OAD. Ahora poblarAviones() arranca con un placeholder vacío
+  disabled ("— Elegí el avión —"), pintarEstadoAvion() resalta el select en
+  ámbar + muestra un aviso mientras siga sin elegir, y btn-start-stop
+  bloquea INICIAR VUELO con un toast si se toca sin haber elegido nada. No
+  afecta la restauración de un vuelo ya en curso (_avionRestaurado sigue
+  aplicándose igual).
   v3.0 · 2026-08-09
   NUEVO — Modo alumno: esta app ahora acepta login de rol==='alumno', no
   solo 'piloto'. Un alumno entra a una pantalla nueva (#app-shell-alumno,
@@ -312,6 +322,7 @@ input,textarea,select{
   font-size:17px;padding:14px 15px;outline:none;transition:border .2s;
 }
 input:focus,textarea:focus,select:focus{border-color:var(--cyan)}
+select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,.25)}
 textarea{resize:none;min-height:80px;line-height:1.5}
 select:disabled{opacity:.55}
 
@@ -499,6 +510,7 @@ select:disabled{opacity:.55}
     <div id="v-avion-wrap">
       <span class="label">Avión</span>
       <select id="p-avion"><option value="">Cargando...</option></select>
+      <div id="p-avion-warn" style="display:none;font-family:var(--mono);font-size:11px;color:var(--amber);margin-top:6px;font-weight:700">⚠ ELEGÍ EL AVIÓN — no quedó seleccionado ninguno todavía</div>
     </div>
 
     <!-- Estado del vuelo -->
@@ -692,7 +704,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -850,10 +862,27 @@ async function poblarAviones(){
   }catch(e){
     console.warn('No se pudo chequear aviones habilitados (o tardó demasiado), se muestran todos:',e);
   }
-  sel.innerHTML=habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
+  sel.innerHTML='<option value="" disabled selected>— Elegí el avión —</option>'+habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
   if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
   _avionRestaurado=null;
+  pintarEstadoAvion();
 }
+
+// FIX v2.10 (reportado por Daniel): antes el <select> arrancaba con LV-OAD
+// preseleccionado por ser la primera opción del array FLOTA — un piloto que
+// voló el ART sin tocar el dropdown podía arrancar el vuelo y quedar todo
+// grabado como LV-OAD sin darse cuenta. Ahora la primera opción es un
+// placeholder vacío (disabled, así no se puede volver a elegir sin querer)
+// y hay que elegir el avión explícitamente. pintarEstadoAvion() resalta el
+// select en ámbar + muestra un aviso mientras siga vacío, y btn-start-stop
+// bloquea el inicio del vuelo si no se eligió nada (ver más abajo).
+function pintarEstadoAvion(){
+  const sel=$('p-avion');
+  const vacio=!sel.value;
+  sel.classList.toggle('sin-elegir',vacio);
+  $('p-avion-warn').style.display=vacio?'block':'none';
+}
+$('p-avion').addEventListener('change',pintarEstadoAvion);
 
 // Tabs
 function cambiarATab(nombre){
@@ -1141,6 +1170,11 @@ $('btn-logout-alumno').addEventListener('click',()=>{
 // ── START / STOP ──────────────────────────────────────────
 $('btn-start-stop').addEventListener('click',()=>{
   if(!tsInicio){
+    if(!$('p-avion').value){
+      pintarEstadoAvion();
+      toast('⚠ Elegí el avión antes de iniciar el vuelo');
+      return;
+    }
     if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
     $('p-avion').disabled=true;
