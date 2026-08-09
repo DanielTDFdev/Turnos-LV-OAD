@@ -2,6 +2,26 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v3.0 · 2026-08-09
+  NUEVO — Modo alumno: esta app ahora acepta login de rol==='alumno', no
+  solo 'piloto'. Un alumno entra a una pantalla nueva (#app-shell-alumno,
+  separada del flujo de piloto) que muestra su turno de instrucción de HOY
+  (buscarTurnoHoyAlumno, mismo patrón sin .indexOn que el resto de la app:
+  trae /reservas completo y filtra por email+fecha client-side) y un único
+  botón: INICIAR/DETENER TRACKING GPS. El alumno NO autoreporta tiempo de
+  vuelo/aterrizajes/obs — eso lo sigue cargando el instructor desde
+  vuelo.html. La traza se asocia al key REAL de la reserva ya existente
+  (no crea una reserva nueva, a diferencia del flujo de piloto particular)
+  y se escribe a /vuelo_tracks/{key} recién al DETENER, con origen:'alumno'.
+  Candado gps_tracker_activo en la reserva (pedido de Daniel: bloquear, no
+  permitir instructor+alumno trackeando el mismo vuelo a la vez) — se toma
+  al iniciar (releyendo Firebase fresco antes, para no pisar un candado
+  tomado un instante antes), se libera al detener, y se considera vencido
+  a las 4hs (GPS_LOCK_STALE_MS) si quedó huérfano por un celular apagado
+  sin soltar. Reutiliza iniciarTrackGPS/detenerTrackGPS/adquirirWakeLock/
+  liberarWakeLock/GPS_MUESTREO_MS ya existentes — sin duplicar lógica GPS.
+  Pendiente (a implementar del lado de vuelo.html): que el instructor
+  respete/vea el mismo candado antes de arrancar su propio GPS.
   v2.9 · 2026-08-09
   Timer en vivo pasó de hora local Ushuaia a UTC/Zulu — mismo cambio que
   vuelo.html v5.16. fmtLocalFull ahora fuerza timeZone:'UTC' + sufijo "Z".
@@ -257,6 +277,9 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 
 #app-shell{display:none;flex-direction:column;min-height:100dvh}
 #app-shell.active{display:flex}
+
+#app-shell-alumno{display:none;flex-direction:column;min-height:100dvh}
+#app-shell-alumno.active{display:flex}
 
 .top-bar{
   display:flex;align-items:center;padding:16px 20px 12px;
@@ -571,6 +594,59 @@ select:disabled{opacity:.55}
 
 </div><!-- /app-shell -->
 
+<!-- ── Shell modo ALUMNO — solo tracking GPS, sin autoreporte de vuelo.
+     El instructor sigue siendo quien carga tiempo/aterrizajes/obs desde
+     vuelo.html; esta pantalla solo arranca/para el GPS y lo asocia al
+     turno de hoy ya reservado (mismo key de /reservas). v3.0. ── -->
+<div id="app-shell-alumno">
+  <div class="top-bar">
+    <div class="inst-info">
+      <div class="nombre" id="sha-nombre">—</div>
+      <div class="sub" id="sha-fecha">—</div>
+    </div>
+    <div class="top-actions">
+      <button class="btn-sm" id="btn-logout-alumno">⏻ Salir</button>
+      <div class="ver" id="app-ver-alumno">—</div>
+    </div>
+  </div>
+
+  <div class="contenido">
+
+    <div id="sha-sin-turno" class="empty-libro" style="display:none">
+      No tenés un turno de instrucción para hoy.
+    </div>
+
+    <div class="card" id="sha-turno-card" style="display:none">
+      <div class="card-title">Turno de hoy</div>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--white);line-height:2">
+        <div>✈ Avión: <b id="sha-avion">—</b></div>
+        <div>🕐 Horario: <b id="sha-horario">—</b></div>
+        <div>👨‍✈️ Instructor: <b id="sha-instructor">—</b></div>
+      </div>
+    </div>
+
+    <div class="estado-vuelo" id="sha-estado" style="display:none">
+      <div class="estado-label" id="sha-ev-label">Tracking detenido</div>
+      <div class="ts-display" id="sha-ev-ts">—</div>
+      <div class="ts-sub" id="sha-ev-sub"></div>
+    </div>
+
+    <div id="sha-gps-warning" style="display:none;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:12px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:700;letter-spacing:.06em;margin-bottom:6px">⚠ MANTENÉ LA PANTALLA ENCENDIDA</div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--amber);opacity:.85;line-height:1.6">
+        Si la pantalla se bloquea, el GPS deja de registrar.<br>
+        <span style="color:var(--white);opacity:.7">Samsung: Ajustes → Apps → Chrome → Batería → Sin restricciones</span>
+      </div>
+    </div>
+
+    <div class="err" id="sha-err" style="margin-bottom:10px"></div>
+
+    <button class="btn btn-cyan" id="sha-btn-iniciar">🛰 INICIAR TRACKING GPS</button>
+    <button class="btn btn-ghost" id="sha-btn-detener" style="display:none;border-color:var(--red);color:var(--red)">⏹ DETENER TRACKING</button>
+
+  </div>
+</div><!-- /app-shell-alumno -->
+
 <div class="toast" id="toast"></div>
 
 <script type="module">
@@ -616,7 +692,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '2.9'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.0'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -639,7 +715,7 @@ function init(){
   // instructores, acá aplicado a la sesión de alumno/piloto)
   try{
     const s=JSON.parse(sessionStorage.getItem('lvoad-session')||'{}');
-    if(s&&s.tipo==='alumno'&&s.rol==='piloto'&&s.nombre) session={nombre:s.nombre,email:s.email||'',emailKey:s.emailKey||''};
+    if(s&&s.tipo==='alumno'&&(s.rol==='piloto'||s.rol==='alumno')&&s.nombre) session={nombre:s.nombre,email:s.email||'',emailKey:s.emailKey||'',rol:s.rol};
   }catch{}
 
   // Restaurar vuelo en curso desde localStorage
@@ -701,18 +777,22 @@ async function login(){
       $('l-err').textContent='Usuario/email o contraseña incorrectos.';
       return;
     }
-    if((alumno.rol||'alumno')!=='piloto'){
-      $('l-err').textContent='Esta app es solo para pilotos.';
+    // v3.0: antes esta app rechazaba a cualquiera que no fuera rol==='piloto'.
+    // Ahora acepta también rol==='alumno' — entra en modo tracking GPS
+    // (sin autoreporte de vuelo, ver abrirApp()).
+    const rol=alumno.rol||'alumno';
+    if(rol!=='piloto'&&rol!=='alumno'){
+      $('l-err').textContent='Esta app es solo para pilotos y alumnos.';
       return;
     }
     if(alumno.estado_login==='suspendido'){
       $('l-err').textContent='⚠ Tu acceso está suspendido. Comunicate con administración.';
       return;
     }
-    session={nombre:alumno.nombre,email:alumno.email,emailKey:k};
+    session={nombre:alumno.nombre,email:alumno.email,emailKey:k,rol};
     // Misma sessionStorage que turnos.html — así quedás logueado en ambos lados
     sessionStorage.setItem('lvoad-session',JSON.stringify({
-      tipo:'alumno',rol:'piloto',nombre:alumno.nombre,email:alumno.email,
+      tipo:'alumno',rol,nombre:alumno.nombre,email:alumno.email,
       emailKey:k,username:alumno.username||''
     }));
     abrirApp();
@@ -727,6 +807,13 @@ async function login(){
 // ── APP SHELL ─────────────────────────────────────────────
 async function abrirApp(){
   $('screen-login').classList.remove('active');
+  if(session.rol==='alumno'){
+    $('app-shell-alumno').classList.add('active');
+    $('sha-nombre').textContent=session.nombre.split(' ')[0];
+    $('sha-fecha').textContent=fmtFecha(hoy());
+    await abrirAppAlumno();
+    return;
+  }
   $('app-shell').classList.add('active');
   $('sh-nombre').textContent=session.nombre.split(' ')[0];
   $('sh-fecha').textContent=fmtFecha(hoy());
@@ -901,7 +988,154 @@ function liberarWakeLock() {
   if (_wakeLock) { _wakeLock.release(); _wakeLock = null; }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && tsInicio && !tsFin) adquirirWakeLock();
+  if (document.visibilityState === 'visible' && ((tsInicio && !tsFin) || shaTrackeando)) adquirirWakeLock();
+});
+
+// ── MODO ALUMNO — tracking GPS asociado al turno del día (v3.0) ─────────
+// El alumno NO autoreporta el vuelo (tiempo/aterrizajes/obs siguen siendo
+// responsabilidad del instructor desde vuelo.html). Esta pantalla solo
+// arranca/para el GPS y lo asocia al turno de hoy vía su key REAL de
+// /reservas (el que ya existe porque el alumno reservó el turno) — no crea
+// una reserva nueva como sí hace el flujo de piloto.
+//
+// Candado gps_tracker_activo en la reserva: pedido explícito de Daniel de
+// BLOQUEAR (no permitir los dos en simultáneo). Antes de tomar el candado
+// se relee la reserva fresca de Firebase (evita pisar un candado tomado
+// un instante antes desde vuelo.html). Se libera al detener el tracking;
+// si el candado quedó huérfano (celular apagado sin soltar) se considera
+// vencido pasadas GPS_LOCK_STALE_MS y se puede volver a tomar.
+const GPS_LOCK_STALE_MS = 4*60*60*1000; // 4 horas
+
+let shaTurno=null;       // {key,...datos de /reservas} del turno de hoy
+let shaTrackeando=false;
+let shaTsInicio=null;
+
+async function abrirAppAlumno(){
+  $('sha-err').textContent='';
+  $('sha-turno-card').style.display='none';
+  $('sha-sin-turno').style.display='none';
+  $('sha-estado').style.display='none';
+
+  shaTurno=await buscarTurnoHoyAlumno();
+  if(!shaTurno){
+    $('sha-sin-turno').style.display='block';
+    $('sha-btn-iniciar').style.display='none';
+    return;
+  }
+  $('sha-turno-card').style.display='block';
+  $('sha-avion').textContent=shaTurno.avion||'LV-OAD';
+  $('sha-horario').textContent=(shaTurno.horaInicio&&shaTurno.horaFin?shaTurno.horaInicio+'–'+shaTurno.horaFin:shaTurno.hora)+' hs';
+  $('sha-instructor').textContent=shaTurno.instructor||shaTurno.aprobado_por||'—';
+  $('sha-estado').style.display='block';
+  $('sha-btn-iniciar').style.display='';
+  actualizarEstadoAlumno();
+}
+
+// Sin .indexOn en /reservas (limitación conocida de Firebase RTDB en este
+// proyecto) → traer todo el nodo y filtrar client-side, mismo patrón que
+// el resto de la app. Turno de hoy para este email, no cancelado; si hay
+// más de uno (raro) se toma el de hora más temprana.
+async function buscarTurnoHoyAlumno(){
+  const snap=await conTimeout(get(ref(db,'reservas')));
+  const data=snap.val()||{};
+  const f=hoy();
+  const candidatos=Object.entries(data)
+    .map(([key,r])=>({key,...r}))
+    .filter(r=>r.email===session.email&&r.fecha===f&&r.estado!=='cancelado');
+  if(!candidatos.length) return null;
+  candidatos.sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+  return candidatos[0];
+}
+
+function actualizarEstadoAlumno(){
+  const label=$('sha-ev-label'), ts=$('sha-ev-ts'), sub=$('sha-ev-sub');
+  ts.className='ts-display';
+  if(!shaTrackeando){
+    label.textContent='Tracking detenido';
+    ts.textContent='—';
+    sub.textContent='';
+  } else {
+    label.textContent='Trackeando desde las';
+    ts.textContent=fmtLocalFull(shaTsInicio);
+    ts.classList.add('en-vuelo');
+    sub.textContent=gpsPoints.length+' puntos · cada '+(GPS_MUESTREO_MS/1000)+'s';
+  }
+}
+
+$('sha-btn-iniciar').addEventListener('click', async ()=>{
+  $('sha-err').textContent='';
+  if(!shaTurno) return;
+  $('sha-btn-iniciar').disabled=true;
+  try{
+    const snap=await conTimeout(get(ref(db,'reservas/'+shaTurno.key)));
+    const actual=snap.val();
+    if(!actual){ $('sha-err').textContent='El turno ya no existe. Recargá la app.'; return; }
+    const lock=actual.gps_tracker_activo;
+    const lockTs=actual.gps_tracker_ts?new Date(actual.gps_tracker_ts).getTime():0;
+    const lockVigente=lock&&(Date.now()-lockTs)<GPS_LOCK_STALE_MS;
+    if(lockVigente&&lock!=='alumno'){
+      $('sha-err').textContent='⚠ Ya se está trackeando este vuelo desde la app del instructor.';
+      return;
+    }
+    await conTimeout(update(ref(db,'reservas/'+shaTurno.key),{gps_tracker_activo:'alumno',gps_tracker_ts:new Date().toISOString()}));
+    gpsPoints=[];gpsUltimoPunto=0;
+    shaTrackeando=true;
+    shaTsInicio=new Date().toISOString();
+    iniciarTrackGPS();
+    adquirirWakeLock();
+    $('sha-gps-warning').style.display='block';
+    $('sha-btn-iniciar').style.display='none';
+    $('sha-btn-detener').style.display='';
+    actualizarEstadoAlumno();
+    toast('Tracking GPS iniciado · '+fmtLocalFull(shaTsInicio));
+  }catch(e){
+    console.error(e);
+    $('sha-err').textContent='Error de conexión. Volvé a intentar.';
+  }finally{
+    $('sha-btn-iniciar').disabled=false;
+  }
+});
+
+$('sha-btn-detener').addEventListener('click', async ()=>{
+  if(!confirm('¿Detener el tracking GPS?')) return;
+  $('sha-btn-detener').disabled=true;
+  detenerTrackGPS();
+  liberarWakeLock();
+  shaTrackeando=false;
+  $('sha-gps-warning').style.display='none';
+  try{
+    if(gpsPoints.length>1){
+      await conTimeout(set(ref(db,'vuelo_tracks/'+shaTurno.key),{
+        puntos:gpsPoints,
+        origen:'alumno',
+        ts_guardado:new Date().toISOString()
+      }));
+      await conTimeout(update(ref(db,'reservas/'+shaTurno.key),{tiene_traza_gps:true,gps_tracker_activo:null}));
+      toast('✓ Traza GPS guardada — '+gpsPoints.length+' puntos');
+    } else {
+      await conTimeout(update(ref(db,'reservas/'+shaTurno.key),{gps_tracker_activo:null}));
+      toast('Tracking detenido — muy pocos puntos, no se guardó traza');
+    }
+  }catch(e){
+    console.error(e);
+    toast('⚠ No se pudo guardar la traza (sin conexión) — el candado sigue tomado, volvé a intentar DETENER cuando tengas señal',4500);
+    shaTrackeando=true; // no se soltó el candado: dejamos el estado "trackeando" para que reintente
+    $('sha-btn-detener').disabled=false;
+    return;
+  }
+  gpsPoints=[];
+  $('sha-btn-detener').style.display='none';
+  $('sha-btn-iniciar').style.display='';
+  $('sha-btn-detener').disabled=false;
+  actualizarEstadoAlumno();
+});
+
+$('btn-logout-alumno').addEventListener('click',()=>{
+  if(shaTrackeando){ if(!confirm('Hay un tracking GPS en curso. ¿Salir igual? (el candado va a quedar tomado hasta que expire solo o lo sueltes desde acá)')) return; }
+  session=null;sessionStorage.removeItem('lvoad-session');
+  $('app-shell-alumno').classList.remove('active');
+  $('screen-login').classList.add('active');
+  $('l-pass').value='';$('l-err').textContent='';
 });
 
 // ── START / STOP ──────────────────────────────────────────
