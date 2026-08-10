@@ -767,7 +767,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.6';
+const APP_VERSION = '3.7';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -909,25 +909,11 @@ const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
 const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
 async function poblarAviones(){
   const sel=$('p-avion');
-  const render=(habilitados)=>{
-    sel.innerHTML='<option value="" disabled selected>— Elegí el avión —</option>'+habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
-    if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
-    pintarEstadoAvion();
-  };
-  render(FLOTA); // pinta ya mismo, sin depender de red — nunca queda "Cargando..." colgado
-  try{
-    const cfgSnap=await Promise.race([
-      get(ref(db,'config')),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de conexión')),5000))
-    ]);
-    const cfg=cfgSnap.val()||{};
-    const habilitados=FLOTA.filter(a=>cfg[a]?.activo!==false);
-    if(habilitados.length) render(habilitados); // refina la lista si el chequeo respondió a tiempo
-  }catch(e){
-    console.warn('No se pudo chequear aviones habilitados (o tardó demasiado), se mantienen todos:',e);
-  }finally{
-    _avionRestaurado=null;
-  }
+  const habilitados=['LV-OAD','LV-ART'];
+  sel.innerHTML='<option value="" disabled selected>— Elegí el avión —</option>'+habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
+  if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
+  _avionRestaurado=null;
+  pintarEstadoAvion();
 }
 
 // FIX v2.10 (reportado por Daniel): antes el <select> arrancaba con LV-OAD
