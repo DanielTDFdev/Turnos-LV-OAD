@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.37
+  FECHA   : 2026-08-10
+  CAMBIOS : Pedido de Daniel: resaltar el día de hoy en la grilla "Pedir Turno"
+            (renderDaysGrid, pantalla alumno/piloto) — hasta ahora no había ninguna
+            marca visual para ubicarse rápido en el calendario. Nueva clase CSS
+            .day-btn.hoy (outline verde, var(--green), color no usado por ningún otro
+            estado de esta grilla: cyan=seleccionado, rojo=bloqueado, ámbar=feriado) +
+            etiqueta chica "● HOY" debajo de la fecha. Se calcula con
+            fmtDate(ahoraServidor()) (hora del servidor, nunca reloj del cliente, mismo
+            criterio que el resto del archivo desde v6.85). Combinable con cualquier
+            otro estado del día (seleccionado, feriado) — no usa el if/else if que
+            arma la clase base, se agrega aparte.
   VERSION : 7.36
   FECHA   : 2026-08-09
   CAMBIOS : FIX reportado por Daniel: un turno cargado a mano se duplicó (dos
@@ -2211,6 +2223,8 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .day-btn.holiday{border-color:rgba(240,165,0,.4);color:var(--amber);background:rgba(240,165,0,.06);}
 .day-btn.holiday:hover{border-color:var(--amber);background:rgba(240,165,0,.12);}
 .day-btn-festivo{font-size:8px;line-height:1.2;opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
+.day-btn.hoy{outline:2px solid var(--green);outline-offset:-2px;}
+.day-btn-hoy-tag{font-size:8px;line-height:1.2;letter-spacing:.1em;color:var(--green);font-weight:700;margin-top:2px;}
 
 .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:.5rem}
 .slot{padding:12px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;cursor:pointer;background:var(--bg2);color:var(--text2);transition:all .15s;}
@@ -2459,7 +2473,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.36</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.37</div>
   </div>
 
 </div>
@@ -4525,6 +4539,7 @@ async function renderDaysGrid(){
   const año=ahoraServidor().getFullYear();
   const feriados=await getFeriados(año);
   const bloqueados=diasBloqueadosParaAvion(selectedAvion);
+  const hoyDs=fmtDate(ahoraServidor());
   grid.innerHTML='';
   days.forEach(d=>{
     const ds=fmtDate(d),bl=bloqueados.includes(ds),sel=selectedDay===ds;
@@ -4532,14 +4547,16 @@ async function renderDaysGrid(){
     const esFeriado=!!feriados[ds];
     const motivoFeriado=feriados[ds]||'';
     const motCorto=motivoFeriado.length>12?motivoFeriado.slice(0,11)+'…':motivoFeriado;
+    const esHoy=ds===hoyDs;
     let cls='day-btn';
     if(bl) cls+=' blocked';
     else if(sel) cls+=' selected';
     else if(esFeriado) cls+=' holiday';
+    if(esHoy) cls+=' hoy';
     const el=document.createElement('div');
     el.className=cls;el.dataset.date=ds;
     if(esFeriado&&!bl)el.title=motivoFeriado;
-    el.innerHTML=`<div style="font-weight:600">${lbl[0]}</div><div>${lbl[1]}</div>${esFeriado&&!bl?`<div class="day-btn-festivo">${motCorto}</div>`:''}`;
+    el.innerHTML=`<div style="font-weight:600">${lbl[0]}</div><div>${lbl[1]}</div>${esFeriado&&!bl?`<div class="day-btn-festivo">${motCorto}</div>`:''}${esHoy?`<div class="day-btn-hoy-tag">● HOY</div>`:''}`;
     if(!bl)el.addEventListener('click',()=>selectDay(ds));
     grid.appendChild(el);
   });
