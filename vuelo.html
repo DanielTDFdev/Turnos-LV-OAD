@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.19 · 2026-08-10
+  Pedido de Daniel: el link "✈ Plan de Vuelo" ahora lleva ?volver=vuelo.html —
+  fpl.html usa ese parámetro para que su botón "← VOLVER" (antes "← TURNERO", fijo
+  a turnos.html siempre) vuelva acá en vez de al turnero. Mismo cambio en
+  "⚖ Peso y Balance". Ver fpl.html v3.28 / peso-balance.html v1.8 para el mecanismo.
+==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.18 · 2026-08-10
   NUEVO — Pedido de Daniel: fila de links "✈ Plan de Vuelo" / "⚖ Peso y Balance"
   entre el top-bar y el tab-bar, siempre visible sin importar la pestaña activa
@@ -825,8 +832,8 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
   <!-- Links a otras apps del Aeroclub (v5.18) -->
   <div class="links-row">
-    <a href="fpl.html" class="fpl-link">✈ Plan de Vuelo</a>
-    <a href="peso-balance.html" class="wb-link">⚖ Peso y Balance</a>
+    <a href="fpl.html?volver=vuelo.html" class="fpl-link">✈ Plan de Vuelo</a>
+    <a href="peso-balance.html?volver=vuelo.html" class="wb-link">⚖ Peso y Balance</a>
   </div>
 
   <!-- Tab bar -->
@@ -1022,7 +1029,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.18'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.19'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)

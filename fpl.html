@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   PLAN DE VUELO (FPL) — Prototipo standalone
+  v3.28 ·  Pedido de Daniel: el botón "← TURNERO" siempre volvía a turnos.html sin
+           importar desde dónde se había entrado (rompía la navegación desde
+           vuelo.html/vuelo-piloto.html, que también linkean acá desde v5.18/v3.2).
+           Renombrado a "← VOLVER" (id="btn-volver") y resuelto dinámicamente:
+           turnos.html/vuelo.html/vuelo-piloto.html ahora agregan ?volver=<origen> a
+           su link; un IIFE al principio del script (antes del resto de la lógica)
+           lee ese parámetro contra una whitelist estricta (los 3 nombres de archivo
+           exactos — nunca se usa el valor crudo del query string como href sin
+           validar, para no habilitar un redirect arbitrario) y fija el href del
+           botón. Sin parámetro o valor no reconocido → turnos.html (compatible con
+           accesos directos/bookmarks/QR existentes, que no llevan el parámetro).
   v3.27 ·  Ícono y manifest propios para la PWA (antes compartía el manifest.json
            y los íconos de turnos.html). Ahora usa manifest-fpl.json e
            icon-fpl-192/512/512-maskable.png, con el logo "Plan de Vuelo" que
@@ -560,8 +571,8 @@
   <header class="bar">
     <span class="dot"></span>
     <h1>Plan de Vuelo <small>/ FPL</small></h1>
-    <span class="ver">v3.27</span>
-    <a href="turnos.html" title="Volver al turnero (sin cerrar sesión)" style="font-family:var(--mono);font-size:12px;color:var(--cyan);text-decoration:none;border:1px solid var(--line-hot);border-radius:5px;padding:5px 11px;letter-spacing:1px;transition:.15s" onmouseover="this.style.background='var(--cyan)';this.style.color='#04141a'" onmouseout="this.style.background='transparent';this.style.color='var(--cyan)'">← TURNERO</a>
+    <span class="ver">v3.28</span>
+    <a href="turnos.html" id="btn-volver" title="Volver (sin cerrar sesión)" style="font-family:var(--mono);font-size:12px;color:var(--cyan);text-decoration:none;border:1px solid var(--line-hot);border-radius:5px;padding:5px 11px;letter-spacing:1px;transition:.15s" onmouseover="this.style.background='var(--cyan)';this.style.color='#04141a'" onmouseout="this.style.background='transparent';this.style.color='var(--cyan)'">← VOLVER</a>
     <div class="clk">
       <div id="clkUTC">--:-- Z</div>
       <div>LOCAL <b id="clkLOC">--:--</b></div>
@@ -903,6 +914,21 @@
 /* ============================ CONFIG ============================ */
 const DB = "https://turnos-lv-oad-default-rtdb.firebaseio.com"; // proyecto turnos-lv-oad
 const TZ_OFFSET_H = 3; // Rio Grande UTC-3 (sin DST). UTC = local + 3h
+// v3.28: botón "← VOLVER" dinámico — pedido de Daniel: antes siempre volvía a
+// turnos.html sin importar desde dónde se entró (también rompía "TURNERO" como
+// texto cuando en realidad venía de vuelo.html/vuelo-piloto.html). Los 3 archivos
+// que linkean acá (turnos.html, vuelo.html, vuelo-piloto.html) ahora agregan
+// ?volver=turnos.html / vuelo.html / vuelo-piloto.html a su link. Whitelist estricta
+// (no se usa el valor crudo del query string como href sin validar, para no abrir la
+// puerta a un redirect arbitrario) — si no hay parámetro o no matchea la lista, cae a
+// turnos.html (compatible con accesos directos/bookmarks/QR sin parámetro).
+(function(){
+  const PERMITIDOS=['turnos.html','vuelo.html','vuelo-piloto.html'];
+  const origen=new URLSearchParams(location.search).get('volver');
+  const destino=PERMITIDOS.includes(origen)?origen:'turnos.html';
+  const btn=document.getElementById('btn-volver');
+  if(btn)btn.href=destino;
+})();
 // Usuario actual: en el prototipo no hay login -> placeholder 'demo'.
 // ID efímero POR SESIÓN para el externo (no logueado): vive en sessionStorage, muere
 // al cerrar la pestaña. Le da a cada externo su PROPIO bucket /fpl/externo_{id}, así NO

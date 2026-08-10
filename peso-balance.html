@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   PESO Y BALANCE — Aeroclub Río Grande
+  v1.8 ·  Pedido de Daniel, mismo mecanismo que fpl.html v3.28: el botón
+          "← TURNERO" siempre volvía a turnos.html sin importar desde dónde se
+          había entrado. Renombrado a "← VOLVER" (id="btn-volver") y resuelto
+          dinámicamente vía ?volver=<origen> (whitelist estricta: turnos.html,
+          vuelo.html, vuelo-piloto.html — nunca se usa el query string crudo sin
+          validar). Sin parámetro o valor no reconocido → turnos.html.
   v1.7 ·  Ícono y manifest propios para la PWA (antes compartía el manifest.json
           y los íconos de turnos.html). Ahora usa manifest-pyb.json e
           icon-pyb-192/512/512-maskable.png, con el logo "Peso y Balanceo" que
@@ -169,8 +175,8 @@ h3{font-family:var(--font-mono);font-size:12px;color:var(--amber);letter-spacing
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.7</span>
-      <a class="back" href="turnos.html">← TURNERO</a>
+      <span class="ver">v1.8</span>
+      <a class="back" href="turnos.html" id="btn-volver" title="Volver (sin cerrar sesión)">← VOLVER</a>
     </div>
   </header>
 
@@ -186,6 +192,19 @@ h3{font-family:var(--font-mono);font-size:12px;color:var(--amber);letter-spacing
 </div>
 
 <script>
+// v1.8: botón "← VOLVER" dinámico — mismo pedido y mismo mecanismo que fpl.html v3.28:
+// antes siempre volvía a turnos.html sin importar desde dónde se entró. Whitelist
+// estricta de destinos válidos (no se usa el query string crudo como href sin
+// validar). Sin parámetro o valor no reconocido → turnos.html (compatible con
+// accesos directos/bookmarks sin parámetro).
+(function(){
+  const PERMITIDOS=['turnos.html','vuelo.html','vuelo-piloto.html'];
+  const origen=new URLSearchParams(location.search).get('volver');
+  const destino=PERMITIDOS.includes(origen)?origen:'turnos.html';
+  const btn=document.getElementById('btn-volver');
+  if(btn)btn.href=destino;
+})();
+
 // ── GATE DE SESIÓN ───────────────────────────────────────────────
 // A diferencia de portal-alumno.html, NO se filtra por rol: entra cualquiera
 // que tenga sesión activa en turnos.html (alumno, piloto, instructor, admin,
