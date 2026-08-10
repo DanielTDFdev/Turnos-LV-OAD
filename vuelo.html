@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.22 · 2026-08-10
+  Se saca el 'pagehide' no-op de v5.21 (apuntaba a un bug de bfcache que, del lado
+  piloto (vuelo-piloto.html), resultó no ser la causa real — ver ese changelog
+  v3.6 para el fix real que sí funcionó). Acá no hay un selector equivalente al de
+  vuelo-piloto.html (el instructor no elige avión a mano, viene del turno), así
+  que no hay nada concreto para arreglar en este archivo por ahora — se limpia el
+  intento fallido para no dejar código muerto/confuso.
+==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.21 · 2026-08-10
   FIX (mismo bug reportado por Daniel del lado piloto, ver vuelo-piloto.html v3.5):
   al volver de fpl.html/peso-balance.html con "← VOLVER" (agregado en v5.18), el
@@ -1041,7 +1050,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.21'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.22'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1573,13 +1582,6 @@ document.addEventListener('visibilitychange', () => {
     adquirirWakeLock();
   }
 });
-
-// v5.21: 'pageshow'+reload (v5.20) no funcionó confiablemente en la práctica — se
-// reemplaza por 'pagehide' (no-op), que impide directamente que el navegador guarde
-// esta página en bfcache. Así, volver desde fpl.html/peso-balance.html siempre es
-// una carga de red real (el script se ejecuta de nuevo desde cero), en vez de
-// depender de detectar y reaccionar a una restauración ya congelada.
-window.addEventListener('pagehide', () => {});
 
 // START / STOP
 $('btn-start-stop').addEventListener('click', async ()=>{
