@@ -2,7 +2,20 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
-  v3.8 · 2026-08-10
+  v3.9 · 2026-08-10
+  Fixes de revisión (/revisar):
+  1) XSS almacenado en btnTraza/btnExportGPS — nombre sin escapar comilla
+     doble rompía el atributo onclick="...". Ahora _escInline() escapa " también.
+  2) escribirPendiente() podía duplicar el turno si fallaba la escritura de
+     vuelo_tracks DESPUÉS de crear/actualizar la reserva: el reintento no
+     reconocía la reserva ya escrita (piloto_tiempo_vuelo!=null la excluía
+     del matching) y creaba una nueva. Ahora el key se persiste en el item
+     de la cola (marcarKeyPendiente) apenas la reserva queda escrita, y un
+     reintento con key ya seteado salta directo a vuelo_tracks.
+  3) Matching de candidatos no filtraba tipo_vuelo: un autorreporte de piloto
+     particular podía pisar un turno de instrucción del mismo avión/día.
+     Ahora excluye candidatos con tipo_vuelo distinto de 'particular'.
+  --------------------------------------------------------------------------
   CAUSA REAL ENCONTRADA (v3.4/v3.5/v3.6/v3.7 apuntaban todos mal — bfcache/red no
   eran el problema). Consola del navegador: "ReferenceError: Cannot access
   'NOMBRE_AVION' before initialization" en poblarAviones(), llamada desde
@@ -784,7 +797,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.8';
+const APP_VERSION = '3.9';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1427,6 +1440,13 @@ function agregarPendiente(item){
   lista.push(item);
   guardarListaPendientes(lista);
 }
+// v3.9: persiste el key ya escrito en /reservas dentro del item en localStorage,
+// sin disparar el listener de banner (evita parpadeo a mitad de sync).
+function marcarKeyPendiente(itemId,key){
+  const lista=leerPendientes();
+  const it=lista.find(x=>x.id===itemId);
+  if(it){ it.key=key; localStorage.setItem(LS_PENDIENTES,JSON.stringify(lista)); }
+}
 
 // Reintenta con la misma lógica de matching ±20min que tenía guardar() antes
 // — recalculada en cada intento porque el estado de /reservas puede haber
@@ -1444,53 +1464,61 @@ async function escribirPendiente(item){
   };
   Object.keys(datosVuelo).forEach(k=>{ if(datosVuelo[k]===null) delete datosVuelo[k]; });
 
-  const iniDate=new Date(item.tsInicio);
-  const VENTANA_MS=20*60000;
+  let key=item.key; // v3.9: si un intento previo ya escribió la reserva pero
+                     // falló después (ej. al guardar vuelo_tracks), no volver
+                     // a matchear/crear — evita turnos duplicados.
 
-  const snap=await conTimeout(get(ref(db,'reservas')));
-  const todas=rArr(snap.val());
-  const candidatos=todas.filter(r=>{
-    if(r.email!==item.email) return false;
-    if(r.fecha!==item.fecha) return false;
-    if(r.avion!==item.avion) return false;
-    if(r.estado!=='aprobado') return false;
-    if(r.piloto_tiempo_vuelo!=null) return false;
-    return true;
-  }).map(r=>{
-    const horaT=r.hora||r.horaInicio||'00:00';
-    const [hh,mm]=horaT.split(':').map(Number);
-    const turnoTs=new Date(iniDate.getFullYear(),iniDate.getMonth(),iniDate.getDate(),hh,mm);
-    return {...r,_diff:Math.abs(turnoTs-iniDate)};
-  }).filter(r=>r._diff<=VENTANA_MS).sort((a,b)=>a._diff-b._diff);
+  if(!key){
+    const iniDate=new Date(item.tsInicio);
+    const VENTANA_MS=20*60000;
 
-  let key;
-  if(candidatos.length){
-    key=candidatos[0].key;
-    await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
-  } else {
-    const horaIni=String(iniDate.getHours()).padStart(2,'0')+':'+String(iniDate.getMinutes()).padStart(2,'0');
-    const nuevo={
-      nombre:      item.nombre,
-      email:       item.email,
-      fecha:       item.fecha,
-      hora:        horaIni,
-      avion:       item.avion,
-      tipo_vuelo:  'particular',
-      estado:      'aprobado',
-      rol:         'piloto',
-      ts:          new Date().toISOString(),
-      ...datosVuelo
-    };
-    const nuevaRef=push(ref(db,'reservas'));
-    await conTimeout(set(nuevaRef,nuevo));
-    key=nuevaRef.key;
-    await conTimeout(set(push(ref(db,'auditoria')),{
-      accion:'alta_turno',
-      rol:'piloto',
-      resultado:'exito',
-      detalle:`${item.nombre} — ${item.avion} — ${item.fecha} ${horaIni} hs — vuelo particular registrado desde vuelo-piloto.html`,
-      ts:new Date().toISOString()
-    }));
+    const snap=await conTimeout(get(ref(db,'reservas')));
+    const todas=rArr(snap.val());
+    const candidatos=todas.filter(r=>{
+      if(r.email!==item.email) return false;
+      if(r.fecha!==item.fecha) return false;
+      if(r.avion!==item.avion) return false;
+      if(r.estado!=='aprobado') return false;
+      if(r.piloto_tiempo_vuelo!=null) return false;
+      // v3.9: no pisar un turno de instrucción con autorreporte de piloto particular
+      if(r.tipo_vuelo && r.tipo_vuelo!=='particular') return false;
+      return true;
+    }).map(r=>{
+      const horaT=r.hora||r.horaInicio||'00:00';
+      const [hh,mm]=horaT.split(':').map(Number);
+      const turnoTs=new Date(iniDate.getFullYear(),iniDate.getMonth(),iniDate.getDate(),hh,mm);
+      return {...r,_diff:Math.abs(turnoTs-iniDate)};
+    }).filter(r=>r._diff<=VENTANA_MS).sort((a,b)=>a._diff-b._diff);
+
+    if(candidatos.length){
+      key=candidatos[0].key;
+      await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
+    } else {
+      const horaIni=String(iniDate.getHours()).padStart(2,'0')+':'+String(iniDate.getMinutes()).padStart(2,'0');
+      const nuevo={
+        nombre:      item.nombre,
+        email:       item.email,
+        fecha:       item.fecha,
+        hora:        horaIni,
+        avion:       item.avion,
+        tipo_vuelo:  'particular',
+        estado:      'aprobado',
+        rol:         'piloto',
+        ts:          new Date().toISOString(),
+        ...datosVuelo
+      };
+      const nuevaRef=push(ref(db,'reservas'));
+      await conTimeout(set(nuevaRef,nuevo));
+      key=nuevaRef.key;
+      await conTimeout(set(push(ref(db,'auditoria')),{
+        accion:'alta_turno',
+        rol:'piloto',
+        resultado:'exito',
+        detalle:`${item.nombre} — ${item.avion} — ${item.fecha} ${horaIni} hs — vuelo particular registrado desde vuelo-piloto.html`,
+        ts:new Date().toISOString()
+      }));
+    }
+    marcarKeyPendiente(item.id,key); // recién acá — la reserva ya quedó escrita
   }
 
   if(item.gpsPoints&&item.gpsPoints.length>1){
@@ -1646,17 +1674,20 @@ async function cargarLibro(){
   }
 }
 
+// v3.9: escapa también comilla doble — nombre viene de /alumnos (Firebase
+// .write:true sin auth) y sin esto rompía el atributo onclick="..." → XSS.
+function _escInline(s){ return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 function btnTraza(key, nombre, avion, hora) {
-  const n = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  const av = (avion||'—').replace(/'/g,"\\'");
-  const h  = (hora||'').replace(/'/g,"\\'");
+  const n = _escInline(nombre);
+  const av = _escInline(avion||'—');
+  const h  = _escInline(hora);
   return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
 }
 
 function btnExportGPS(key, nombre, avion, fecha) {
-  const n  = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  const av = (avion||'—').replace(/'/g,"\\'");
-  const f  = (fecha||'').replace(/'/g,"\\'");
+  const n  = _escInline(nombre);
+  const av = _escInline(avion||'—');
+  const f  = _escInline(fecha);
   return `<button class="btn-export-gps" onclick="exportarTrazaGPX('${key}','${n}','${av}','${f}')">⬇ GPX</button>`
        + `<button class="btn-export-gps" onclick="exportarTrazaKML('${key}','${n}','${av}','${f}')">⬇ KML</button>`;
 }
