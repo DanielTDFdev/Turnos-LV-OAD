@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v3.7 · 2026-08-10
+  Pedido de Daniel (los fixes v3.4/v3.5/v3.6 no resolvieron el problema en la
+  práctica): poblarAviones() deja de consultar Firebase por completo. Selector
+  hardcodeado a LV-OAD y LV-ART únicamente, sin llamada a get(ref(db,'config')).
   v3.6 · 2026-08-10
   FIX real (los intentos v3.4 y v3.5, ambos apuntando al bfcache, no funcionaron
   en la práctica — Daniel confirmó que seguía sin cargar). poblarAviones() ahora
