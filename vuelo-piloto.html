@@ -2,10 +2,23 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
-  v3.7 · 2026-08-10
-  Pedido de Daniel (los fixes v3.4/v3.5/v3.6 no resolvieron el problema en la
-  práctica): poblarAviones() deja de consultar Firebase por completo. Selector
-  hardcodeado a LV-OAD y LV-ART únicamente, sin llamada a get(ref(db,'config')).
+  v3.8 · 2026-08-10
+  CAUSA REAL ENCONTRADA (v3.4/v3.5/v3.6/v3.7 apuntaban todos mal — bfcache/red no
+  eran el problema). Consola del navegador: "ReferenceError: Cannot access
+  'NOMBRE_AVION' before initialization" en poblarAviones(), llamada desde
+  abrirApp() desde init(). Causa: init() se invocaba en la línea 783 del archivo,
+  pero const FLOTA/NOMBRE_AVION estaban declaradas más abajo (línea ~921) — típico
+  bug de TDZ (temporal dead zone) ya documentado en el proyecto (mismo patrón que
+  portal-alumno.html). En un login fresco nunca se veía: la ejecución para en la
+  pantalla de login y el usuario toca "Ingresar" después de que el script terminó
+  de parsear completo. Pero sessionStorage persiste entre navegaciones — al volver
+  desde fpl.html con sesión ya activa, init() llama sincrónicamente a
+  abrirApp()->poblarAviones() ANTES de llegar a la línea de NOMBRE_AVION, y
+  explota. Fix: FLOTA/NOMBRE_AVION movidas arriba de init(). Se restaura
+  poblarAviones() a su versión completa (3 aviones + chequeo Firebase de
+  deshabilitados, con render inmediato + refinado async) — el hardcodeo a 2
+  aviones de v3.7 fue un parche temporal mientras se buscaba la causa real, ya no
+  hace falta.
   v3.6 · 2026-08-10
   FIX real (los intentos v3.4 y v3.5, ambos apuntando al bfcache, no funcionaron
   en la práctica — Daniel confirmó que seguía sin cargar). poblarAviones() ahora
@@ -771,7 +784,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.7';
+const APP_VERSION = '3.8';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -784,6 +797,19 @@ let gpsPoints      = [];
 let gpsUltimoPunto = 0;
 
 // ── Init ─────────────────────────────────────────────────
+// v3.8 FIX (bug real, no era Firebase/bfcache): init() se llama más abajo, y si ya
+// hay sesión activa (session existente en sessionStorage — exactamente el caso de
+// "volver desde fpl.html", sessionStorage persiste entre navegaciones) llama
+// sincrónicamente a abrirApp()->poblarAviones(), que usa NOMBRE_AVION. Pero
+// NOMBRE_AVION/FLOTA estaban declaradas más abajo en el archivo (const, TDZ) — en
+// login fresco nunca fallaba (la ejecución para en la pantalla de login, el botón se
+// toca después de que el script terminó de parsear), pero con sesión ya restaurada
+// tronaba con "Cannot access 'NOMBRE_AVION' before initialization" apenas init()
+// llegaba a poblarAviones(), synchronous, antes de llegar a esta línea. Se mueven acá,
+// antes de init().
+const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
+const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
+
 init();
 
 let _avionRestaurado=null; // valor guardado en localStorage, se aplica recién cuando el <select> ya tiene opciones
@@ -908,16 +934,29 @@ async function abrirApp(){
 // usarlo — la app no tiene por qué restringir de más. Lo único que sí
 // chequea es que el avión no esté deshabilitado por el club en ese
 // momento (/config/{avion}.activo — mismo flag que usa turnos.html para
-// "Habilitación de aviones" en el panel de instructor/admin).
-const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
-const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
+// "Habilitación de aviones" en el panel de instructor/admin). FLOTA y
+// NOMBRE_AVION se movieron arriba de init() en v3.8 (fix de TDZ).
 async function poblarAviones(){
   const sel=$('p-avion');
-  const habilitados=['LV-OAD','LV-ART'];
-  sel.innerHTML='<option value="" disabled selected>— Elegí el avión —</option>'+habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
-  if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
-  _avionRestaurado=null;
-  pintarEstadoAvion();
+  const render=(habilitados)=>{
+    sel.innerHTML='<option value="" disabled selected>— Elegí el avión —</option>'+habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
+    if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
+    pintarEstadoAvion();
+  };
+  render(FLOTA); // pinta ya mismo, sin depender de red
+  try{
+    const cfgSnap=await Promise.race([
+      get(ref(db,'config')),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de conexión')),5000))
+    ]);
+    const cfg=cfgSnap.val()||{};
+    const habilitados=FLOTA.filter(a=>cfg[a]?.activo!==false);
+    if(habilitados.length) render(habilitados);
+  }catch(e){
+    console.warn('No se pudo chequear aviones habilitados (o tardó demasiado), se mantienen todos:',e);
+  }finally{
+    _avionRestaurado=null;
+  }
 }
 
 // FIX v2.10 (reportado por Daniel): antes el <select> arrancaba con LV-OAD
