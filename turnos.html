@@ -1,5 +1,15 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.38
+  FECHA   : 2026-08-10
+  CAMBIOS : Pedido de Daniel: la card "Disponibilidad de Instructores" en
+            Config→Horarios era visible solo para admin/administrador — ahora también
+            para instructores reales (esInstructorReal()). Sigue siendo de SOLO
+            LECTURA para todos, sin cambios en esa parte. Gate anterior:
+            session.user==='admin'||'administrador'. Gate nuevo: se agrega
+            ||esInstructorReal(). Sin otros candados escondidos —
+            renderAdmDispSelector() solo lee /instructores (reglas abiertas), no
+            vuelve a chequear rol por su cuenta.
   VERSION : 7.37
   FECHA   : 2026-08-10
   CAMBIOS : Pedido de Daniel: resaltar el día de hoy en la grilla "Pedir Turno"
@@ -2473,7 +2483,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.37</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.38</div>
   </div>
 
 </div>
@@ -2970,7 +2980,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <div id="horarios-config"></div>
       </div>
 
-      <!-- VISTA DISPONIBILIDAD INSTRUCTORES — solo admin (solo lectura) -->
+      <!-- VISTA DISPONIBILIDAD INSTRUCTORES — admin + instructores reales (solo lectura, v7.38) -->
       <div id="card-disp-instructores" class="card" style="margin-top:1rem;display:none">
         <h3>Disponibilidad de Instructores</h3>
         <p style="font-family:var(--font-mono);font-size:11px;color:var(--text3);margin-bottom:.75rem;letter-spacing:.05em">
@@ -6851,9 +6861,16 @@ window.showCfgTab=function(tab){
   if(tab==='dias'){calMesActual=ahoraServidor();calMesActual.setDate(1);buildCfgAvionTabs();renderToggleAvion(activeDiasAvion);renderCalMes();}
   if(tab==='horarios'){
     buildCfgAvionTabs();renderHorariosConfig();
-    const isAdmin=session?.user==='admin'||session?.user==='administrador';
+    // v7.38: pedido de Daniel — esta card era visible solo para admin/administrador;
+    // ahora también para instructores reales (esInstructorReal()), que necesitan ver
+    // la disponibilidad de sus colegas al coordinar turnos. Sigue siendo de SOLO
+    // LECTURA para todos (el botón TODAS/NINGUNA de edición de horarios por avión, más
+    // arriba en la misma pestaña, es un control distinto — no se toca acá). Ningún
+    // otro gate oculto: renderAdmDispSelector() solo lee /instructores (reglas
+    // abiertas), no vuelve a chequear rol.
+    const puedeVerDisp=session?.user==='admin'||session?.user==='administrador'||esInstructorReal();
     const cardDisp=document.getElementById('card-disp-instructores');
-    if(cardDisp){ cardDisp.style.display=isAdmin?'block':'none'; if(isAdmin){admDispOffset=0;admDispSemanaOffset=0;admDispVista='lista';admDispInst=null;admDispRenderVistaToggleUI('lista');const lw=document.getElementById('adm-disp-lista-wrap');if(lw)lw.style.display='';const sw=document.getElementById('adm-disp-semana-wrap');if(sw)sw.style.display='none';renderAdmDispSelector();const g=document.getElementById('adm-disp-grid');if(g)g.innerHTML='<div class="empty">// Cargando...</div>';} }
+    if(cardDisp){ cardDisp.style.display=puedeVerDisp?'block':'none'; if(puedeVerDisp){admDispOffset=0;admDispSemanaOffset=0;admDispVista='lista';admDispInst=null;admDispRenderVistaToggleUI('lista');const lw=document.getElementById('adm-disp-lista-wrap');if(lw)lw.style.display='';const sw=document.getElementById('adm-disp-semana-wrap');if(sw)sw.style.display='none';renderAdmDispSelector();const g=document.getElementById('adm-disp-grid');if(g)g.innerHTML='<div class="empty">// Cargando...</div>';} }
   }
   if(tab==='auditoria')cargarAuditoria();
   if(tab==='auditoria-fpl')cargarAuditoriaFpl();
