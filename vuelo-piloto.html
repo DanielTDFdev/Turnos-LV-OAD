@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v3.6 · 2026-08-10
+  FIX real (los intentos v3.4 y v3.5, ambos apuntando al bfcache, no funcionaron
+  en la práctica — Daniel confirmó que seguía sin cargar). poblarAviones() ahora
+  pinta el <select> con la flota completa DE ENTRADA, de forma síncrona, sin
+  esperar ninguna respuesta de red — y recién después intenta el chequeo de
+  aviones deshabilitados contra Firebase (con el mismo timeout de 5s de antes) para
+  refinar la lista si responde a tiempo. Así el "Cargando..." nunca vuelve a
+  quedar colgado, sea cual sea la causa real de que get(ref(db,'config')) no
+  resuelva (bfcache, conexión muerta, lo que sea) — deja de depender de
+  diagnosticar esa causa. Se sacan los intentos anteriores (pageshow+reload de
+  v3.4, pagehide no-op de v3.5 y el watchdog de 6s), ya innecesarios.
+==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v3.5 · 2026-08-10
   FIX reportado por Daniel: al volver de fpl.html con "← VOLVER" (agregado en
   v3.2), el selector de avión quedaba pegado en "Cargando..." para siempre. Causa:
@@ -754,7 +767,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.5';
+const APP_VERSION = '3.6';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -882,13 +895,6 @@ async function abrirApp(){
   $('libro-fecha').value=hoy();
   await poblarAviones();
   renderPantalla();
-  // v3.5: red de seguridad adicional — si por cualquier motivo el <select> sigue en
-  // "Cargando..." pasados 6s (más que el timeout interno de poblarAviones), reintenta
-  // una vez más.
-  setTimeout(()=>{
-    const sel=$('p-avion');
-    if(sel&&sel.options.length===1&&sel.options[0].textContent==='Cargando...') poblarAviones();
-  },6000);
 }
 
 // Pedido de Daniel: dejar elegir cualquier avión de la flota, INCLUIDO
@@ -903,26 +909,25 @@ const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
 const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
 async function poblarAviones(){
   const sel=$('p-avion');
-  let habilitados=FLOTA;
+  const render=(habilitados)=>{
+    sel.innerHTML='<option value="" disabled selected>— Elegí el avión —</option>'+habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
+    if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
+    pintarEstadoAvion();
+  };
+  render(FLOTA); // pinta ya mismo, sin depender de red — nunca queda "Cargando..." colgado
   try{
-    // Timeout de seguridad: si la conexión a Firebase tarda o se cuelga (pasa
-    // en algunas redes móviles que bloquean WebSocket), sin esto el <select>
-    // podía quedar pegado en "Cargando..." para siempre — el try/catch solo
-    // atrapa errores, no una promesa que nunca se resuelve ni rechaza.
     const cfgSnap=await Promise.race([
       get(ref(db,'config')),
       new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout de conexión')),5000))
     ]);
     const cfg=cfgSnap.val()||{};
-    habilitados=FLOTA.filter(a=>cfg[a]?.activo!==false);
-    if(!habilitados.length) habilitados=FLOTA; // fail-open: si por algún motivo queda vacío, mostrar todos antes que dejar al piloto sin nada
+    const habilitados=FLOTA.filter(a=>cfg[a]?.activo!==false);
+    if(habilitados.length) render(habilitados); // refina la lista si el chequeo respondió a tiempo
   }catch(e){
-    console.warn('No se pudo chequear aviones habilitados (o tardó demasiado), se muestran todos:',e);
+    console.warn('No se pudo chequear aviones habilitados (o tardó demasiado), se mantienen todos:',e);
+  }finally{
+    _avionRestaurado=null;
   }
-  sel.innerHTML='<option value="" disabled selected>— Elegí el avión —</option>'+habilitados.map(a=>`<option value="${a}">${a} — ${NOMBRE_AVION[a]||''}</option>`).join('');
-  if(_avionRestaurado&&habilitados.includes(_avionRestaurado)) sel.value=_avionRestaurado;
-  _avionRestaurado=null;
-  pintarEstadoAvion();
 }
 
 // FIX v2.10 (reportado por Daniel): antes el <select> arrancaba con LV-OAD
@@ -1076,12 +1081,6 @@ function liberarWakeLock() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && ((tsInicio && !tsFin) || shaTrackeando)) adquirirWakeLock();
 });
-
-// v3.5: 'pagehide' (no-op) impide que el navegador guarde esta página en bfcache —
-// así, volver desde fpl.html siempre es una carga de red real (init() se ejecuta de
-// nuevo), en vez de una posible restauración congelada que dejaba el <select> de
-// avión pegado en "Cargando...".
-window.addEventListener('pagehide', () => {});
 
 // ── MODO ALUMNO — tracking GPS asociado al turno del día (v3.0) ─────────
 // El alumno NO autoreporta el vuelo (tiempo/aterrizajes/obs siguen siendo
