@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v3.4 · 2026-08-10
+  FIX reportado por Daniel: al volver de fpl.html con "← VOLVER" (agregado en
+  v3.2), el selector de avión quedaba pegado en "Cargando..." para siempre. Causa:
+  el navegador restaura la página desde el bfcache (back/forward cache) en vez de
+  recargarla — el script no se re-ejecuta, y si get(ref(db,'config')) de
+  poblarAviones() todavía estaba en vuelo al navegar afuera, esa promesa nunca
+  resuelve ni rechaza al volver (la conexión de red se aborta al congelar la
+  página, y hasta el timeout de 5s de Promise.race queda congelado con ella). Fix:
+  'pageshow' con event.persisted===true (solo dispara en restauración desde
+  bfcache) fuerza un reload completo — no se reintenta poblarAviones() puntual
+  porque el mismo riesgo aplica a cualquier get() pendiente, no solo ese. Seguro:
+  persistir()/_avionRestaurado (localStorage) ya está pensado para sobrevivir un
+  reload sin perder el vuelo en curso.
+==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v3.3 · 2026-08-10
   Pedido de Daniel: el link "✈ Plan de Vuelo" ahora lleva ?volver=vuelo-piloto.html —
   fpl.html usa ese parámetro para que su botón "← VOLVER" (antes "← TURNERO", fijo
@@ -738,7 +753,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.3'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.4'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1052,6 +1067,28 @@ function liberarWakeLock() {
 }
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && ((tsInicio && !tsFin) || shaTrackeando)) adquirirWakeLock();
+});
+
+// v3.4: FIX reportado por Daniel — si el piloto entra a "✈ Plan de Vuelo" (fpl.html,
+// v3.2) y vuelve con "← VOLVER", el selector de avión queda pegado en "Cargando..."
+// para siempre. Causa: el navegador restaura la página desde el bfcache
+// (back/forward cache) en vez de recargarla — el script NO se vuelve a ejecutar, la
+// pantalla queda congelada tal cual estaba en el momento de navegar afuera. Si en ese
+// momento el get(ref(db,'config')) de poblarAviones() todavía estaba en vuelo (caso
+// típico: usuario tocó "Plan de Vuelo" apenas entrando, antes de que la promesa
+// resolviera), esa promesa nunca se resuelve ni rechaza al volver — el navegador
+// aborta la conexión de red subyacente al congelar la página, así que ni el then/catch
+// ni el timeout de 5s de Promise.race llegan a dispararse (el propio setTimeout queda
+// congelado con la página). El mismo riesgo aplica en teoría a CUALQUIER get()
+// pendiente en el momento de navegar afuera (turno del día, aeronaves personales,
+// etc.), no solo a poblarAviones() — por eso el fix no reintenta una función puntual,
+// sino que fuerza un location.reload() completo apenas se detecta la restauración vía
+// bfcache ('pageshow' con event.persisted===true — no dispara en una carga normal).
+// Es seguro: la app ya tiene persistir()/_avionRestaurado (localStorage), pensado
+// específicamente para sobrevivir un reload sin perder el vuelo en curso — mismo
+// mecanismo que ya protege contra cierres accidentales de pestaña.
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) location.reload();
 });
 
 // ── MODO ALUMNO — tracking GPS asociado al turno del día (v3.0) ─────────
