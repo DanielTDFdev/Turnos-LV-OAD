@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.20 · 2026-08-10
+  FIX (mismo bug reportado por Daniel del lado piloto, ver vuelo-piloto.html v3.4):
+  al volver de fpl.html/peso-balance.html con "← VOLVER" (agregado en v5.18), el
+  navegador puede restaurar esta página desde el bfcache en vez de recargarla — el
+  script no se re-ejecuta y cualquier get() de Firebase que hubiera quedado en
+  vuelo al navegar afuera queda congelado para siempre, ni conTimeout() lo salva
+  (su propio setTimeout también queda congelado). Fix: 'pageshow' con
+  event.persisted===true fuerza un reload completo — seguro porque persistir()/LS
+  ya está pensado para sobrevivir un reload sin perder el vuelo en curso.
+==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.19 · 2026-08-10
   Pedido de Daniel: el link "✈ Plan de Vuelo" ahora lleva ?volver=vuelo.html —
   fpl.html usa ese parámetro para que su botón "← VOLVER" (antes "← TURNERO", fijo
@@ -1029,7 +1040,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.19'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.20'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1560,6 +1571,23 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && tsInicio && !tsFin) {
     adquirirWakeLock();
   }
+});
+
+// v5.20: mismo fix que vuelo-piloto.html v3.4 (reportado por Daniel del lado piloto,
+// pero el riesgo es idéntico acá desde que v5.18 agregó los links "Plan de Vuelo"/
+// "Peso y Balance"): si el instructor entra a fpl.html o peso-balance.html y vuelve
+// con "← VOLVER", el navegador puede restaurar esta página desde el bfcache
+// (back/forward cache) en vez de recargarla — el script no se re-ejecuta, y
+// cualquier get() de Firebase que hubiera quedado en vuelo en el momento de navegar
+// afuera (turno del día, aeronaves, etc.) nunca resuelve ni rechaza al volver, ni
+// siquiera con conTimeout() (su propio setTimeout queda congelado junto con la
+// página). Fix: 'pageshow' con event.persisted===true (solo dispara en una
+// restauración desde bfcache, nunca en una carga normal) fuerza un reload completo.
+// Seguro: persistir()/LS (localStorage) ya está pensado para sobrevivir un reload
+// sin perder el vuelo en curso — mismo mecanismo que protege contra cierres
+// accidentales de pestaña.
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) location.reload();
 });
 
 // START / STOP
