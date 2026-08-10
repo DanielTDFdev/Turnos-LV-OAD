@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v3.2 · 2026-08-10
+  NUEVO — Pedido de Daniel: fila de links "✈ Plan de Vuelo" / "⚖ Peso y Balance"
+  entre el top-bar y el tab-bar del shell principal (#app-shell, tabs Vuelo/Libro) —
+  mismo agregado que vuelo.html v5.18, para gestionar todo sin salir de la app.
+  Deliberadamente NO se agregó al shell de modo alumno (#app-shell-alumno, v3.0,
+  tracking GPS puro durante el vuelo) — esa pantalla se mantiene minimalista a
+  propósito, sin tabs ni navegación. Mismo nombre de clase que turnos.html
+  (.fpl-link/.wb-link), colores reutilizando las CSS vars ya presentes en este
+  archivo (--amber/--green).
   v3.1 · 2026-08-09
   FIX cosmético reportado por Daniel: el <select> de avión arrancaba con
   LV-OAD preseleccionado por ser la primera opción de FLOTA — un piloto que
@@ -390,6 +399,18 @@ select:disabled{opacity:.55}
   text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
 }
 .tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+
+/* v3.2: links a fpl.html/peso-balance.html — mismo agregado que vuelo.html v5.18,
+   pedido de Daniel: gestionar todo (vuelo + plan de vuelo + peso y balance) sin
+   salir de la app. Solo en el shell principal del piloto (#app-shell) — NO en
+   #app-shell-alumno (modo tracking GPS del alumno, v3.0), que se mantiene
+   deliberadamente minimalista durante el vuelo. */
+.links-row{display:flex;gap:8px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;}
+.fpl-link,.wb-link{flex:1;text-align:center;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;color:#0a0a0a;border-radius:8px;padding:9px 6px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;text-transform:uppercase;white-space:nowrap;}
+.fpl-link{background:var(--amber);border:1px solid var(--amber);}
+.fpl-link:active{background:#ffc840}
+.wb-link{background:var(--green);border:1px solid var(--green);}
+.wb-link:active{filter:brightness(1.12)}
 .tab-content{display:none}
 .tab-content.active{display:block}
 
@@ -496,6 +517,12 @@ select:disabled{opacity:.55}
       <button class="btn-sm" id="btn-logout">⏻ Salir</button>
       <div class="ver" id="app-ver">—</div>
     </div>
+  </div>
+
+  <!-- Links a otras apps del Aeroclub (v3.2) -->
+  <div class="links-row">
+    <a href="fpl.html" class="fpl-link">✈ Plan de Vuelo</a>
+    <a href="peso-balance.html" class="wb-link">⚖ Peso y Balance</a>
   </div>
 
   <div class="tab-bar">
@@ -704,7 +731,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.1'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '3.2'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
