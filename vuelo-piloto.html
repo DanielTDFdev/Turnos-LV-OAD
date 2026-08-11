@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.0.1 · 2026-08-11
+  Fix de revisión (/revisar) del propio v4.0: mostrarConflictoTurnos()
+  insertaba c.nombre/c.avion vía innerHTML sin escapar — mismo vector de
+  XSS que btnTraza/btnExportGPS en v3.9, mismo origen de datos (/reservas,
+  Firebase .write:true sin auth). Reescrito con textContent por línea.
+  ==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.0 · 2026-08-11
   NUEVO — Pedido de Daniel: si al loguearse el piloto tiene una reserva
   propia aprobada, tipo_vuelo:'particular', dentro de ±30min de la hora
@@ -844,7 +851,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.0';
+const APP_VERSION = '4.0.1';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1044,9 +1051,18 @@ async function buscarTurnoPropioParaAhora(){
 }
 
 function mostrarConflictoTurnos(candidatos){
-  $('conflicto-lista').innerHTML=candidatos.map(c=>
-    `${c._hora} hs — ${c.avion} — ${c.nombre||''}`
-  ).join('<br>');
+  // v4.0.1: fix — c.nombre/c.avion venían de /reservas (datos de usuario,
+  // Firebase .write:true sin auth) insertados vía innerHTML sin escapar,
+  // mismo vector de XSS que btnTraza/btnExportGPS en v3.9. Se arma con
+  // textContent por línea en vez de interpolar HTML crudo.
+  const cont=$('conflicto-lista');
+  cont.innerHTML='';
+  candidatos.forEach((c,i)=>{
+    if(i>0) cont.appendChild(document.createElement('br'));
+    const linea=document.createElement('span');
+    linea.textContent=`${c._hora} hs — ${c.avion} — ${c.nombre||''}`;
+    cont.appendChild(linea);
+  });
   $('screen-conflicto').classList.add('active');
 }
 $('btn-conflicto-reintentar').addEventListener('click',async()=>{
