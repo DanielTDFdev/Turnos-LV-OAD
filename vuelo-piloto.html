@@ -2,6 +2,27 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.0 · 2026-08-11
+  NUEVO — Pedido de Daniel: si al loguearse el piloto tiene una reserva
+  propia aprobada, tipo_vuelo:'particular', dentro de ±30min de la hora
+  actual (ahoraServidor(), no reloj del dispositivo), el vuelo queda atado
+  a ESE turno desde el arranque:
+  - Match único → salta el selector de avión, lo fija solo, banner
+    "✓ TURNO DETECTADO" con avión+hora. item.turnoKey viaja ya resuelto
+    hasta escribirPendiente(), que lo usa directo sin rematchear por
+    ±20min (ver v3.9 #2/#3, ese fallback queda intacto para cuando NO
+    hay match al loguearse — ej. reserva se aprobó recién después).
+  - Sin match → selector de avión normal, como hasta ahora.
+  - Más de un match (turnos superpuestos, caso raro/anómalo) → pantalla
+    bloqueante #screen-conflicto, no deja entrar a la app hasta que
+    alguien resuelva el conflicto en /reservas (botón Reintentar).
+  Solo pendiente=instrucción, no aplica acá (regla existente, tipo_vuelo
+  siempre 'particular' en este archivo). No se re-corre si hay un vuelo
+  restaurado en curso (recarga a mitad de vuelo) — el avión ya está fijo.
+  Agrega ahoraServidor() a este archivo (mismo patrón que turnos.html vía
+  .info/serverTimeOffset), no existía acá todavía.
+  ==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v3.9 · 2026-08-10
   Fixes de revisión (/revisar):
   1) XSS almacenado en btnTraza/btnExportGPS — nombre sin escapar comilla
@@ -573,6 +594,19 @@ select:disabled{opacity:.55}
   <div style="text-align:center;margin-top:18px;opacity:.75;font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.06em">(c) 2026 by DAC</div>
 </div>
 
+<!-- v4.0: pantalla bloqueante — se encontró más de un turno propio en la
+     misma ventana horaria, no hay forma segura de elegir uno solo -->
+<div id="screen-conflicto" class="screen" style="justify-content:center;align-items:center;text-align:center;gap:16px">
+  <div style="font-size:40px">⚠</div>
+  <h2 style="margin:0">Conflicto de turnos</h2>
+  <div style="font-family:var(--mono);font-size:13px;color:var(--gray);max-width:340px;line-height:1.6">
+    Encontramos más de un turno aprobado a tu nombre en este horario. No podemos elegir uno solo automáticamente — pedile a administración que revise y corrija antes de registrar el vuelo.
+  </div>
+  <div id="conflicto-lista" style="font-family:var(--mono);font-size:12px;color:var(--amber);text-align:left;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.3);border-radius:10px;padding:12px 14px;width:100%;max-width:340px"></div>
+  <button class="btn btn-ghost" id="btn-conflicto-reintentar" style="max-width:340px">🔄 Reintentar</button>
+  <button class="btn btn-ghost" id="btn-conflicto-salir" style="max-width:340px;border-color:var(--red);color:var(--red)">Cerrar sesión</button>
+</div>
+
 <div id="app-shell">
   <div class="top-bar">
     <div class="inst-info">
@@ -599,7 +633,13 @@ select:disabled{opacity:.55}
   <div id="tab-vuelo" class="tab-content active">
   <div class="contenido">
 
-    <!-- Avión (editable solo antes de iniciar) -->
+    <!-- v4.0: turno propio detectado al loguearse — reemplaza al selector -->
+    <div id="turno-vinculado-banner" class="card" style="display:none;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.35);margin-bottom:14px">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-bottom:4px">✓ TURNO DETECTADO</div>
+      <div id="turno-vinculado-detalle" style="font-family:var(--mono);font-size:13px;color:var(--white)"></div>
+    </div>
+
+    <!-- Avión (editable solo antes de iniciar; oculto si hay turno vinculado) -->
     <div id="v-avion-wrap">
       <span class="label">Avión</span>
       <select id="p-avion"><option value="">Cargando...</option></select>
@@ -756,7 +796,7 @@ select:disabled{opacity:.55}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getDatabase, ref, get, update, set, push } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+import { getDatabase, ref, get, update, set, push, onValue } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
 const app = initializeApp({
   apiKey:'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
@@ -767,6 +807,13 @@ const app = initializeApp({
   appId:'1:855020455192:web:4b6d18f1b2efbb52faca6d',
 });
 const db = getDatabase(app);
+
+// v4.0: hora del servidor, mismo mecanismo que turnos.html (.info/serverTimeOffset)
+// — se usa para decidir el matching de "turno propio ahora" al loguearse, así no
+// depende del reloj del dispositivo.
+let _serverOffsetMs=0;
+onValue(ref(db,'.info/serverTimeOffset'), snap=>{ _serverOffsetMs=snap.val()||0; });
+function ahoraServidor(){ return new Date(Date.now()+_serverOffsetMs); }
 
 // ── Helpers ───────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -797,7 +844,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '3.9';
+const APP_VERSION = '4.0';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -932,12 +979,103 @@ async function abrirApp(){
     await abrirAppAlumno();
     return;
   }
-  $('app-shell').classList.add('active');
   $('sh-nombre').textContent=session.nombre.split(' ')[0];
   $('sh-fecha').textContent=fmtFecha(hoy());
   $('libro-fecha').value=hoy();
+
+  // v4.0: si ya hay un vuelo en curso restaurado (recarga a mitad de vuelo),
+  // NO se re-corre la detección de turno — el avión ya quedó fijado al
+  // iniciar y no hay que tocar nada. Solo se detecta en un arranque limpio.
+  if(!tsInicio){
+    const resultado=await buscarTurnoPropioParaAhora();
+    if(resultado.conflicto){
+      mostrarConflictoTurnos(resultado.candidatos);
+      return; // no abre app-shell hasta que se resuelva
+    }
+    turnoVinculado=resultado.match; // objeto {key,avion,hora} o null
+  }
+
+  $('app-shell').classList.add('active');
+  if(turnoVinculado) _avionRestaurado=turnoVinculado.avion; // reusa el mecanismo de poblarAviones()
   await poblarAviones();
+  aplicarTurnoVinculado();
   renderPantalla();
+}
+
+// v4.0: turno propio ya cargado y aprobado en la ventana de ±30min alrededor
+// de ahoraServidor(). Solo cuenta tipo_vuelo:'particular' (instrucción la
+// registra el instructor, no el autoservicio de piloto — pregunta 5/6 de
+// Daniel) y estado:'aprobado' (pendiente es siempre instrucción). Devuelve
+// {match:null|{key,avion,hora}, conflicto:bool, candidatos:[...]}.
+let turnoVinculado=null; // {key,avion,hora} si hubo match único al loguearse
+async function buscarTurnoPropioParaAhora(){
+  try{
+    const ahora=ahoraServidor();
+    const fechaHoy=hoy();
+    const snap=await Promise.race([
+      get(ref(db,'reservas')),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+    ]);
+    const todas=rArr(snap.val());
+    const VENTANA_MS=30*60000;
+    const candidatos=todas.filter(r=>{
+      if(r.email!==session.email) return false;
+      if(r.fecha!==fechaHoy) return false;
+      if(r.estado!=='aprobado') return false;
+      if(r.tipo_vuelo!=='particular') return false;
+      if(r.piloto_tiempo_vuelo!=null) return false; // ya registrado
+      return true;
+    }).map(r=>{
+      const horaT=r.hora||r.horaInicio||'00:00';
+      const [hh,mm]=horaT.split(':').map(Number);
+      const turnoTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),hh,mm);
+      return {...r,_hora:horaT,_diff:Math.abs(turnoTs-ahora)};
+    }).filter(r=>r._diff<=VENTANA_MS).sort((a,b)=>a._diff-b._diff);
+
+    if(candidatos.length>1) return {match:null,conflicto:true,candidatos};
+    if(candidatos.length===1) return {match:{key:candidatos[0].key,avion:candidatos[0].avion,hora:candidatos[0]._hora},conflicto:false,candidatos};
+    return {match:null,conflicto:false,candidatos:[]};
+  }catch(e){
+    // Sin conexión o timeout: no bloquea el login, simplemente no detecta
+    // nada y el piloto elige el avión a mano como siempre.
+    console.warn('No se pudo chequear turno propio (se sigue sin detección):',e);
+    return {match:null,conflicto:false,candidatos:[]};
+  }
+}
+
+function mostrarConflictoTurnos(candidatos){
+  $('conflicto-lista').innerHTML=candidatos.map(c=>
+    `${c._hora} hs — ${c.avion} — ${c.nombre||''}`
+  ).join('<br>');
+  $('screen-conflicto').classList.add('active');
+}
+$('btn-conflicto-reintentar').addEventListener('click',async()=>{
+  $('screen-conflicto').classList.remove('active');
+  await abrirApp();
+});
+$('btn-conflicto-salir').addEventListener('click',()=>{
+  session=null;
+  sessionStorage.removeItem('lvoad-session');
+  $('screen-conflicto').classList.remove('active');
+  $('screen-login').classList.add('active');
+});
+
+// Oculta el selector de avión y lo fija al del turno detectado (reutiliza
+// _avionRestaurado, el mismo mecanismo que ya usa poblarAviones() para
+// restaurar un vuelo en curso — un solo camino para setear el <select>).
+// Si el avión del turno ya no está habilitado, se cae al selector manual
+// como red de seguridad en vez de dejar al piloto sin poder elegir nada.
+function aplicarTurnoVinculado(){
+  const sel=$('p-avion');
+  if(turnoVinculado && sel.value===turnoVinculado.avion){
+    $('v-avion-wrap').style.display='none';
+    $('turno-vinculado-banner').style.display='block';
+    $('turno-vinculado-detalle').textContent=`${turnoVinculado.avion} — ${turnoVinculado.hora} hs · vas a registrar tu vuelo contra este turno`;
+  } else {
+    if(turnoVinculado) turnoVinculado=null; // avión ya no habilitado, no forzar nada raro
+    $('v-avion-wrap').style.display='';
+    $('turno-vinculado-banner').style.display='none';
+  }
 }
 
 // Pedido de Daniel: dejar elegir cualquier avión de la flota, INCLUIDO
@@ -1023,7 +1161,7 @@ function renderPantalla(){
     actualizarEstado('idle');
     $('gps-toggle-card').style.display='flex';
     pintarToggleGPS();
-    $('v-avion-wrap').style.display='block';
+    aplicarTurnoVinculado(); // v4.0: respeta el turno vinculado en vez de mostrar el selector siempre
     $('p-avion').disabled=false;
     $('btn-start-stop').style.display='';
     $('btn-start-stop').textContent='▶ INICIAR VUELO';
@@ -1399,8 +1537,12 @@ async function guardar(){
     avion, horas, aterr, obs,
     tsInicio, tsFin,
     gpsPoints: [...gpsPoints],
-    creadoTs: new Date().toISOString()
+    creadoTs: new Date().toISOString(),
+    // v4.0: si el turno se detectó/vinculó al loguearse, viaja ya resuelto —
+    // escribirPendiente() lo usa directo sin tener que rematchear por ±20min.
+    turnoKey: turnoVinculado ? turnoVinculado.key : null
   };
+  turnoVinculado=null; // se consume acá — el próximo vuelo de la sesión ya no está atado a este turno
 
   try{
     agregarPendiente(item);
@@ -1469,54 +1611,61 @@ async function escribirPendiente(item){
                      // a matchear/crear — evita turnos duplicados.
 
   if(!key){
-    const iniDate=new Date(item.tsInicio);
-    const VENTANA_MS=20*60000;
-
-    const snap=await conTimeout(get(ref(db,'reservas')));
-    const todas=rArr(snap.val());
-    const candidatos=todas.filter(r=>{
-      if(r.email!==item.email) return false;
-      if(r.fecha!==item.fecha) return false;
-      if(r.avion!==item.avion) return false;
-      if(r.estado!=='aprobado') return false;
-      if(r.piloto_tiempo_vuelo!=null) return false;
-      // v3.9: no pisar un turno de instrucción con autorreporte de piloto particular
-      if(r.tipo_vuelo && r.tipo_vuelo!=='particular') return false;
-      return true;
-    }).map(r=>{
-      const horaT=r.hora||r.horaInicio||'00:00';
-      const [hh,mm]=horaT.split(':').map(Number);
-      const turnoTs=new Date(iniDate.getFullYear(),iniDate.getMonth(),iniDate.getDate(),hh,mm);
-      return {...r,_diff:Math.abs(turnoTs-iniDate)};
-    }).filter(r=>r._diff<=VENTANA_MS).sort((a,b)=>a._diff-b._diff);
-
-    if(candidatos.length){
-      key=candidatos[0].key;
+    if(item.turnoKey){
+      // v4.0: turno ya vinculado al loguearse (ver buscarTurnoPropioParaAhora) —
+      // se usa directo, sin volver a buscar candidatos por ±20min.
+      key=item.turnoKey;
       await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
     } else {
-      const horaIni=String(iniDate.getHours()).padStart(2,'0')+':'+String(iniDate.getMinutes()).padStart(2,'0');
-      const nuevo={
-        nombre:      item.nombre,
-        email:       item.email,
-        fecha:       item.fecha,
-        hora:        horaIni,
-        avion:       item.avion,
-        tipo_vuelo:  'particular',
-        estado:      'aprobado',
-        rol:         'piloto',
-        ts:          new Date().toISOString(),
-        ...datosVuelo
-      };
-      const nuevaRef=push(ref(db,'reservas'));
-      await conTimeout(set(nuevaRef,nuevo));
-      key=nuevaRef.key;
-      await conTimeout(set(push(ref(db,'auditoria')),{
-        accion:'alta_turno',
-        rol:'piloto',
-        resultado:'exito',
-        detalle:`${item.nombre} — ${item.avion} — ${item.fecha} ${horaIni} hs — vuelo particular registrado desde vuelo-piloto.html`,
-        ts:new Date().toISOString()
-      }));
+      const iniDate=new Date(item.tsInicio);
+      const VENTANA_MS=20*60000;
+
+      const snap=await conTimeout(get(ref(db,'reservas')));
+      const todas=rArr(snap.val());
+      const candidatos=todas.filter(r=>{
+        if(r.email!==item.email) return false;
+        if(r.fecha!==item.fecha) return false;
+        if(r.avion!==item.avion) return false;
+        if(r.estado!=='aprobado') return false;
+        if(r.piloto_tiempo_vuelo!=null) return false;
+        // v3.9: no pisar un turno de instrucción con autorreporte de piloto particular
+        if(r.tipo_vuelo && r.tipo_vuelo!=='particular') return false;
+        return true;
+      }).map(r=>{
+        const horaT=r.hora||r.horaInicio||'00:00';
+        const [hh,mm]=horaT.split(':').map(Number);
+        const turnoTs=new Date(iniDate.getFullYear(),iniDate.getMonth(),iniDate.getDate(),hh,mm);
+        return {...r,_diff:Math.abs(turnoTs-iniDate)};
+      }).filter(r=>r._diff<=VENTANA_MS).sort((a,b)=>a._diff-b._diff);
+
+      if(candidatos.length){
+        key=candidatos[0].key;
+        await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
+      } else {
+        const horaIni=String(iniDate.getHours()).padStart(2,'0')+':'+String(iniDate.getMinutes()).padStart(2,'0');
+        const nuevo={
+          nombre:      item.nombre,
+          email:       item.email,
+          fecha:       item.fecha,
+          hora:        horaIni,
+          avion:       item.avion,
+          tipo_vuelo:  'particular',
+          estado:      'aprobado',
+          rol:         'piloto',
+          ts:          new Date().toISOString(),
+          ...datosVuelo
+        };
+        const nuevaRef=push(ref(db,'reservas'));
+        await conTimeout(set(nuevaRef,nuevo));
+        key=nuevaRef.key;
+        await conTimeout(set(push(ref(db,'auditoria')),{
+          accion:'alta_turno',
+          rol:'piloto',
+          resultado:'exito',
+          detalle:`${item.nombre} — ${item.avion} — ${item.fecha} ${horaIni} hs — vuelo particular registrado desde vuelo-piloto.html`,
+          ts:new Date().toISOString()
+        }));
+      }
     }
     marcarKeyPendiente(item.id,key); // recién acá — la reserva ya quedó escrita
   }
