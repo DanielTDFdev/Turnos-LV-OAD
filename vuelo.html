@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.23 · 2026-08-11
+  Fixes de revisión (/revisar), ambos ya presentes/arreglados antes en
+  vuelo-piloto.html (v3.9) pero nunca portados acá:
+  1) XSS almacenado en btnTraza/btnExportGPS — nombre sin escapar comilla
+     doble rompía el atributo onclick="...". _escInline() escapa " también.
+  2) escribirPendiente() rama esInSitu podía duplicar el turno si fallaba
+     vuelo_tracks/auditoria DESPUÉS de crear la reserva: el reintento volvía
+     a hacer push()+set() desde cero. Ahora el key se persiste apenas la
+     reserva queda escrita (marcarKeyPendiente) y un reintento con key ya
+     seteado no vuelve a crear — solo reintenta vuelo_tracks/auditoria.
+  ==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.22 · 2026-08-10
   Se saca el 'pagehide' no-op de v5.21 (apuntaba a un bug de bfcache que, del lado
   piloto (vuelo-piloto.html), resultó no ser la causa real — ver ese changelog
@@ -1050,7 +1062,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.22'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.23'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1797,6 +1809,15 @@ function agregarPendiente(item){
   lista.push(item);
   guardarListaPendientes(lista);
 }
+// v5.23: persiste el key ya escrito en /reservas dentro del item en
+// localStorage — así un reintento posterior (si falla algo después de
+// crear la reserva) no vuelve a crear otra. Mismo mecanismo que
+// vuelo-piloto.html v3.9.
+function marcarKeyPendiente(itemId,key){
+  const lista=leerPendientes();
+  const it=lista.find(x=>x.id===itemId);
+  if(it){ it.key=key; localStorage.setItem(LS_PENDIENTES,JSON.stringify(lista)); }
+}
 
 async function escribirPendiente(item){
   const datos={
@@ -1809,44 +1830,56 @@ async function escribirPendiente(item){
     ts_aterrizaje:            item.tsFin,
   };
   Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
+  const tieneTraza=item.gpsPoints&&item.gpsPoints.length>1;
 
   if(item.esInSitu){
-    const t=item.turnoSnapshot;
-    const tieneTraza=item.gpsPoints&&item.gpsPoints.length>1;
-    const nuevo={
-      nombre:      t.nombre,
-      email:       t.email,
-      fecha:       t.fecha,
-      hora:        t.hora,
-      avion:       t.avion,
-      tipo_vuelo:  'instruccion',
-      estado:      'aprobado',
-      rol:         t.rol,
-      instructor:  item.instructorNombre,
-      aprobado_por:item.instructorNombre,
-      cargado_por: item.instructorNombre,
-      ts:          new Date().toISOString(),
-      ...datos,
-      ...(tieneTraza?{tiene_traza_gps:true}:{})
-    };
-    const nuevaRef=push(ref(db,'reservas'));
-    await conTimeout(set(nuevaRef,nuevo));
+    let key=item.key; // v5.23: si un intento previo ya creó la reserva pero
+                       // falló después (vuelo_tracks/auditoria), no volver a
+                       // crear otra — antes esto duplicaba el turno en cada
+                       // reintento tras un fallo parcial de conectividad.
+    if(!key){
+      const t=item.turnoSnapshot;
+      const nuevo={
+        nombre:      t.nombre,
+        email:       t.email,
+        fecha:       t.fecha,
+        hora:        t.hora,
+        avion:       t.avion,
+        tipo_vuelo:  'instruccion',
+        estado:      'aprobado',
+        rol:         t.rol,
+        instructor:  item.instructorNombre,
+        aprobado_por:item.instructorNombre,
+        cargado_por: item.instructorNombre,
+        ts:          new Date().toISOString(),
+        ...datos,
+        ...(tieneTraza?{tiene_traza_gps:true}:{})
+      };
+      const nuevaRef=push(ref(db,'reservas'));
+      await conTimeout(set(nuevaRef,nuevo));
+      key=nuevaRef.key;
+      marcarKeyPendiente(item.id,key); // recién acá — la reserva ya quedó escrita
+    }
     if(tieneTraza){
-      await conTimeout(set(ref(db,`vuelo_tracks/${nuevaRef.key}`),{
+      await conTimeout(set(ref(db,`vuelo_tracks/${key}`),{
         puntos: item.gpsPoints,
         autor: item.instructorNombre,
         ts_guardado: new Date().toISOString()
       }));
     }
+    // La auditoría se reintenta en cada pasada mientras esInSitu — en el caso
+    // raro de un fallo justo entre crear la reserva y llegar acá, el costo
+    // aceptado es como mucho una línea duplicada en /auditoria, nunca un
+    // turno duplicado (que es lo que importa evitar).
     await conTimeout(set(push(ref(db,'auditoria')),{
       accion:'alta_turno_manual',
       rol:'instructor',
       resultado:'exito',
-      detalle:`${item.instructorNombre} cargó turno — ${nuevo.avion} — ${nuevo.fecha} ${nuevo.hora} hs — alumno: ${nuevo.nombre} — aprobado por ${item.instructorNombre} — in situ desde vuelo.html`,
+      detalle:`${item.instructorNombre} cargó turno — ${item.turnoSnapshot.avion} — ${item.turnoSnapshot.fecha} ${item.turnoSnapshot.hora} hs — alumno: ${item.turnoSnapshot.nombre} — aprobado por ${item.instructorNombre} — in situ desde vuelo.html`,
       ts:new Date().toISOString()
     }));
   } else if(item.key){
-    if(item.gpsPoints&&item.gpsPoints.length>1){
+    if(tieneTraza){
       await conTimeout(set(ref(db,`vuelo_tracks/${item.key}`),{
         puntos: item.gpsPoints,
         autor: item.instructorNombre,
@@ -1933,17 +1966,21 @@ function persistir(){
 
 // ── TAB LIBRO ─────────────────────────────────────────────
 // Helper: genera HTML del botón de traza (evita template literal anidado con replace)
+// v5.23: escapa también comilla doble — nombre viene de /reservas (copiado
+// de /alumnos, Firebase .write:true sin auth) y sin esto rompía el atributo
+// onclick="..." → XSS. Mismo fix que vuelo-piloto.html v3.9.
+function _escInline(s){ return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 function btnTraza(key, nombre, avion, hora) {
-  const n = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  const av = (avion||'LV-OAD').replace(/'/g,"\\'");
-  const h  = (hora||'').replace(/'/g,"\\'");
+  const n = _escInline(nombre);
+  const av = _escInline(avion||'LV-OAD');
+  const h  = _escInline(hora);
   return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
 }
 
 function btnExportGPS(key, nombre, avion, fecha) {
-  const n  = (nombre||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-  const av = (avion||'LV-OAD').replace(/'/g,"\\'");
-  const f  = (fecha||'').replace(/'/g,"\\'");
+  const n  = _escInline(nombre);
+  const av = _escInline(avion||'LV-OAD');
+  const f  = _escInline(fecha);
   return `<button class="btn-export-gps" onclick="exportarTrazaGPX('${key}','${n}','${av}','${f}')">⬇ GPX</button>`
        + `<button class="btn-export-gps" onclick="exportarTrazaKML('${key}','${n}','${av}','${f}')">⬇ KML</button>`;
 }
