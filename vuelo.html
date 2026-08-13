@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.24 · 2026-08-12
+  FIX: horarios mostraban a.m./p.m. en vez de 24hs pese a timeZone:'UTC'.
+  toLocaleTimeString('es-AR',...) sin hour12 explícito puede caer en 12hs
+  según el navegador — no alcanza con el locale. Agregado hour12:false a
+  fmtUTC, fmtLocalFull y al formateador de tooltips del mapa GPS.
+
   v5.23 · 2026-08-11
   Fixes de revisión (/revisar), ambos ya presentes/arreglados antes en
   vuelo-piloto.html (v3.9) pero nunca portados acá:
@@ -1031,8 +1037,8 @@ const $ = id => document.getElementById(id);
 const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
 const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
-const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
-const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z'; };
+const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC',hour12:false})+'Z'; };
+const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC',hour12:false})+'Z'; };
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
 
 function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
@@ -1062,7 +1068,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.23'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.24'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2150,7 +2156,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
   const fmtTs = iso => {
     if(!iso) return '—';
     const d = new Date(iso);
-    return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z';
+    return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC',hour12:false})+'Z';
   };
   const modal = $('map-modal');
   $('map-modal-title').textContent = `${alumno} · ${avion}`;
