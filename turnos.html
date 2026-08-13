@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.41
+  FECHA   : 2026-08-13
+  CAMBIOS : Borrado admin de turno ahora también borra /vuelo_tracks/{key} si existía
+            traza GPS asociada — evita nodos huérfanos. Aplicado en los 3 puntos de
+            borrado definitivo: BORRAR TURNO DEFINITIVAMENTE (admin), borrado de turno
+            propio por instructor (cargado_por), y borrarVueloLogAlumno (admin, desde
+            Log de Instructores). fbRemove sobre key inexistente no falla, así que es
+            seguro aunque el turno no tuviera GPS.
   VERSION : 7.40
   FECHA   : 2026-08-13
   CAMBIOS : maxNativeZoom:15 agregado al tileLayer de World_Imagery en el visor de
@@ -2501,7 +2509,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.40</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.41</div>
   </div>
 
 </div>
@@ -5994,6 +6002,7 @@ window.borrarVueloLogAlumno=async function(key){
   if(!confirm('¿BORRAR este vuelo definitivamente?\n\nSe elimina de la base sin dejar registro en auditoría. No se puede deshacer.'))return;
   try{
     await fbRemove('reservas/'+key);
+    await fbRemove('vuelo_tracks/'+key);
   }catch(e){
     console.error(e);
     alert('No se pudo borrar (error de conexión).');
@@ -6442,7 +6451,7 @@ window.abrirModal=function(key){
     bdel.title='Borra el turno de la base directamente, sin auditoría. Para limpiar pruebas.';
     bdel.onclick=async()=>{
       if(!confirm('¿BORRAR este turno definitivamente?\n\nLo elimina de la base sin dejar registro en auditoría. No se puede deshacer.'))return;
-      try{ await fbRemove('reservas/'+key); }catch(e){ console.error(e); alert('No se pudo borrar (error de conexión).'); return; }
+      try{ await fbRemove('reservas/'+key); await fbRemove('vuelo_tracks/'+key); }catch(e){ console.error(e); alert('No se pudo borrar (error de conexión).'); return; }
       cerrarModal();
     };
     zona.appendChild(cap); zona.appendChild(bdel);
@@ -6468,7 +6477,7 @@ window.abrirModal=function(key){
     bdel2.onclick=async()=>{
       if(!confirm('¿BORRAR este turno definitivamente?\n\nVos lo cargaste manualmente. Se elimina de la base y queda registrado en auditoría. No se puede deshacer.'))return;
       const rv=await fbGet('reservas/'+key);
-      try{ await fbRemove('reservas/'+key); }catch(e){ console.error(e); alert('No se pudo borrar (error de conexión).'); return; }
+      try{ await fbRemove('reservas/'+key); await fbRemove('vuelo_tracks/'+key); }catch(e){ console.error(e); alert('No se pudo borrar (error de conexión).'); return; }
       await registrarAuditoria('borrado_turno_manual',session.rol||'instructor','exito',
         (session.nombre||session.user)+' (instructor) borró definitivamente un turno cargado por él mismo — '+
         (rv?.avion||r.avion||'LV-OAD')+' — '+(rv?.fecha||r.fecha)+' '+(rv?.hora||r.hora)+' hs — alumno: '+(rv?.nombre||r.nombre));
