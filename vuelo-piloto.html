@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.0.2 · 2026-08-12
+  FIX: mismo bug que vuelo.html v5.24 — horarios mostraban a.m./p.m. pese a
+  timeZone:'UTC'. Agregado hour12:false a fmtUTC, fmtLocalFull y al
+  formateador de tooltips del mapa GPS.
+
   v4.0.1 · 2026-08-11
   Fix de revisión (/revisar) del propio v4.0: mostrarConflictoTurnos()
   insertaba c.nombre/c.avion vía innerHTML sin escapar — mismo vector de
@@ -827,8 +832,8 @@ const $ = id => document.getElementById(id);
 const rArr = d => d ? Object.entries(d).map(([k,v])=>({...v,key:k})) : [];
 const hoy = () => { const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
-const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z'; };
-const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z'; };
+const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC',hour12:false})+'Z'; };
+const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC',hour12:false})+'Z'; };
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
 const ek = email => (email||'').toLowerCase().replace(/\./g,'_').replace('@','__at__');
 
@@ -851,7 +856,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.0.1';
+const APP_VERSION = '4.0.2';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1963,7 +1968,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
   const fmtTs = iso => {
     if(!iso) return '—';
     const d = new Date(iso);
-    return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z';
+    return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC',hour12:false})+'Z';
   };
   const modal = $('map-modal');
   $('map-modal-title').textContent = `${avion}`;
