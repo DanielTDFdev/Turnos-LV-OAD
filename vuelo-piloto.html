@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.4 · 2026-08-13
+  /revisar exhaustivo pedido por Daniel tras reportar un tramo sin puntos
+  GPS en un vuelo real (salto recto en el mapa, sin poder asegurar que el
+  celular se hubiera bloqueado). Hallazgos y fixes:
+  1) CAUSA MÁS PROBABLE DEL BUG REPORTADO: el listener de visibilitychange
+     solo re-adquiría el Wake Lock al volver a primer plano — nunca
+     reiniciaba el watchPosition del GPS. En background (sobre todo iOS/
+     WKWebView), watchPosition puede quedar "vivo" del lado de JS pero dejar
+     de entregar callbacks en silencio (sin error, sin aviso) hasta volver a
+     foreground, y ni ahí se recupera solo. Fix: el mismo listener ahora
+     también hace detenerTrackGPS()+iniciarTrackGPS() si hay un vuelo/
+     tracking en curso — seguro de llamar aunque el watch anterior siguiera
+     vivo, no genera watches duplicados.
+  2) XSS menor: obsVisible en el Libro solo escapaba '<', no '&'/'>'.
+     Alineado con el esc() completo que ya usa el resto del archivo.
+  ==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.3 · 2026-08-13
   maxNativeZoom:15 agregado al tileLayer de World_Imagery (mapa GPS). Mismo
   fix que turnos.html v7.40 y vuelo.html v5.25 — sin esto, al hacer zoom
@@ -910,7 +927,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.3';
+const APP_VERSION = '4.4';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1387,7 +1404,20 @@ function liberarWakeLock() {
   if (_wakeLock) { _wakeLock.release(); _wakeLock = null; }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && ((tsInicio && !tsFin) || shaTrackeando)) adquirirWakeLock();
+  if (document.visibilityState === 'visible' && ((tsInicio && !tsFin) || shaTrackeando)) {
+    adquirirWakeLock();
+    // v4.4: además del wake lock, reinicia el watch de GPS. En background
+    // (sobre todo iOS/WKWebView), watchPosition puede quedar "vivo" del
+    // lado de JS pero dejar de entregar callbacks en silencio — sin error,
+    // sin aviso — hasta volver a foreground, y ni ahí se recupera solo.
+    // Sin este restart, un tramo de vuelo con la pantalla apagada/app en
+    // background se perdía completo en la traza GPS sin que nada lo avisara
+    // (reportado por Daniel: salto recto en el mapa, sin poder asegurar que
+    // el celular se hubiera bloqueado). detenerTrackGPS()+iniciarTrackGPS()
+    // es seguro de llamar aunque el watch anterior siguiera vivo: no genera
+    // watches duplicados, solo lo reemplaza por uno nuevo.
+    if((tsInicio && !tsFin && gpsHabilitado) || shaTrackeando){ detenerTrackGPS(); iniciarTrackGPS(); }
+  }
 });
 
 // ── MODO ALUMNO — tracking GPS asociado al turno del día (v3.0) ─────────
@@ -1920,6 +1950,7 @@ async function cargarLibro(){
       const horas=(r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo)??'—';
       const aterrizajes=(r.piloto_aterrizajes??r.obs_privada_aterrizajes)??'—';
       const obsVisible=r.piloto_obs||''; // obs_privada NUNCA se muestra acá — sigue siendo privada del instructor
+      const escObs = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); // v4.4: alineado con esc() usado en el resto del archivo — antes solo escapaba '<'
       return `<div class="vuelo-row">
         <div class="vr-top">
           <div class="vr-hora">${r.hora||r.horaInicio||'—'}</div>
@@ -1931,7 +1962,7 @@ async function cargarLibro(){
           <span>⏱ <span class="vr-val">${horas} hs</span></span>
           <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
         </div>
-        ${obsVisible?`<div class="vr-obs">${obsVisible.replace(/</g,'&lt;')}</div>`:''}
+        ${obsVisible?`<div class="vr-obs">${escObs(obsVisible)}</div>`:''}
         ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
       </div>`;
     }).join('');
