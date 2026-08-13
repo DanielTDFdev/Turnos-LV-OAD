@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.0.3 · 2026-08-12
+  Ventana de matching por horario (guardar()/escribirPendiente(), fallback
+  cuando NO hay turno vinculado al loguearse) ampliada de ±20min a ±30min,
+  pedido de Daniel. La detección al loguearse (buscarTurnoPropioParaAhora,
+  v4.0) ya estaba en ±30min, sin cambios.
+
   v4.0.2 · 2026-08-12
   FIX: mismo bug que vuelo.html v5.24 — horarios mostraban a.m./p.m. pese a
   timeZone:'UTC'. Agregado hour12:false a fmtUTC, fmtLocalFull y al
@@ -329,7 +335,7 @@
     que estos vuelos también aparezcan en "Mi Perfil → Log de Vuelos".
   - AL GUARDAR (no antes): busca una reserva propia del piloto para hoy,
     mismo avión, estado 'aprobado', todavía sin volar, con horario dentro de
-    ±20 minutos del momento de INICIAR VUELO. Si la encuentra, la actualiza
+    ±30 minutos del momento de INICIAR VUELO (v4.0.3). Si la encuentra, la actualiza
     (queda "volada"). Si no, crea una nueva in-situ (mismo patrón que
     vuelo.html v4.3: nada se escribe en Firebase hasta CONFIRMAR).
   - Auditoría: accion:'alta_turno' (NO 'alta_turno_manual' — ese es
@@ -856,7 +862,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.0.2';
+const APP_VERSION = '4.0.3';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1611,7 +1617,7 @@ function marcarKeyPendiente(itemId,key){
   if(it){ it.key=key; localStorage.setItem(LS_PENDIENTES,JSON.stringify(lista)); }
 }
 
-// Reintenta con la misma lógica de matching ±20min que tenía guardar() antes
+// Reintenta con la misma lógica de matching ±30min que tenía guardar() antes
 // — recalculada en cada intento porque el estado de /reservas puede haber
 // cambiado entre el momento en que se voló y el momento en que se sincroniza.
 async function escribirPendiente(item){
@@ -1639,7 +1645,7 @@ async function escribirPendiente(item){
       await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
     } else {
       const iniDate=new Date(item.tsInicio);
-      const VENTANA_MS=20*60000;
+      const VENTANA_MS=30*60000; // v4.0.3: ampliada de 20 a 30min, pedido de Daniel
 
       const snap=await conTimeout(get(ref(db,'reservas')));
       const todas=rArr(snap.val());
