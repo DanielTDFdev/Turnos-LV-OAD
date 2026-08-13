@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.3 · 2026-08-13
+  maxNativeZoom:15 agregado al tileLayer de World_Imagery (mapa GPS). Mismo
+  fix que turnos.html v7.40 y vuelo.html v5.25 — sin esto, al hacer zoom
+  manual más allá de donde ESRI tiene tile real para esta zona, Leaflet
+  pedía tiles inexistentes y mostraba "image not available".
+  ==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.2 · 2026-08-13
   Pedido de Daniel, seguimiento de v4.1: al usar un turno vinculado (match
   silencioso ±30min o confirmado), el campo `hora` de la reserva se corrige
@@ -903,7 +910,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.2';
+const APP_VERSION = '4.3';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2084,8 +2091,12 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
 
     _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false });
 
+    // maxNativeZoom:15 — mismo fix que vuelo.html v5.25: evita el error
+    // "image not available" al hacer zoom manual más allá de la cobertura
+    // real de ESRI acá; Leaflet agranda el último tile real en vez de pedir
+    // uno inexistente.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
+      maxZoom: 19, maxNativeZoom: 15,
     }).addTo(_leafletMap);
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {

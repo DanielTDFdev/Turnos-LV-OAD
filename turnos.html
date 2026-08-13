@@ -1,5 +1,15 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.40
+  FECHA   : 2026-08-13
+  CAMBIOS : maxNativeZoom:15 agregado al tileLayer de World_Imagery en el visor de
+            mapa GPS (abrirMapaVuelo). Sin esto, al hacer zoom manual más allá de
+            donde ESRI tiene tile real para esta zona, Leaflet pedía tiles
+            inexistentes y mostraba el error "image not available" — a diferencia
+            del visor propio de ArcGIS, que en ese caso agranda el último tile real
+            en vez de fallar. Mismo fix en vuelo.html v5.25 y vuelo-piloto.html v4.3.
+            maxZoom:19 se mantiene (hasta dónde se puede seguir haciendo zoom
+            agrandado, no hasta dónde hay datos reales).
   VERSION : 7.39
   FECHA   : 2026-08-10
   CAMBIOS : Pedido de Daniel: los links "✈ Plan de Vuelo" / "⚖ Peso y Balance" ahora
@@ -2491,7 +2501,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.39</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.40</div>
   </div>
 
 </div>
@@ -9046,7 +9056,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false });
 
     // Satélite ESRI + etiquetas
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(_mapaVueloLeaflet);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 15 }).addTo(_mapaVueloLeaflet);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(_mapaVueloLeaflet);
 
     // Polilínea

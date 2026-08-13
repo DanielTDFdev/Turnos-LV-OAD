@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.25 · 2026-08-13
+  maxNativeZoom:15 agregado al tileLayer de World_Imagery (mapa GPS). Sin
+  esto, al hacer zoom manual más allá de donde ESRI tiene tile real para
+  esta zona, Leaflet pedía tiles inexistentes y mostraba "image not
+  available" — a diferencia del visor propio de ArcGIS, que agranda el
+  último tile real en vez de fallar. maxZoom:19 se mantiene (hasta dónde se
+  puede seguir haciendo zoom agrandado, no hasta dónde hay datos reales).
+  Mismo fix en turnos.html v7.40 y vuelo-piloto.html v4.3.
+  ==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.24 · 2026-08-12
   FIX: horarios mostraban a.m./p.m. en vez de 24hs pese a timeZone:'UTC'.
   toLocaleTimeString('es-AR',...) sin hour12 explícito puede caer en 12hs
@@ -1068,7 +1078,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.24'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.25'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2185,8 +2195,14 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false });
 
     // Capa satélite ESRI (aeronáuticamente más útil que calles)
+    // maxNativeZoom:15 — v5.25: sin esto, al hacer zoom manual más allá de
+    // donde ESRI tiene tile real, Leaflet pedía tiles inexistentes y se veía
+    // el error "image not available". Con el tope, Leaflet reusa/agranda el
+    // último tile real en vez de pedir uno que no existe — mismo comportamiento
+    // que el visor propio de ArcGIS. maxZoom:19 se mantiene: es hasta dónde
+    // se puede seguir haciendo zoom (agrandado), no hasta dónde hay datos.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
+      maxZoom: 19, maxNativeZoom: 15,
     }).addTo(_leafletMap);
 
     // Capa de etiquetas encima del satélite
