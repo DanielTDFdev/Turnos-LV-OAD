@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.2 · 2026-08-13
+  Pedido de Daniel, seguimiento de v4.1: al usar un turno vinculado (match
+  silencioso ±30min o confirmado), el campo `hora` de la reserva se corrige
+  a la hora REAL de despegue (antes quedaba con la hora original reservada,
+  ej. "11:00" mientras el vuelo real fue a las 09:40 — calendario y Libro
+  mostraban horas distintas para el mismo vuelo, confuso). Mismo criterio en
+  ambos casos (silencioso y confirmado). No se toca en el turno in-situ
+  nuevo (ya usa la hora real desde que se crea).
+  ==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.1 · 2026-08-13
   Pedido de Daniel — caso real: turno reservado a las 15hs, voló antes (14hs)
   sin turno, quedó una reserva nueva Y el turno de las 15 huérfano (nunca
@@ -893,7 +903,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.1';
+const APP_VERSION = '4.2';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1726,6 +1736,16 @@ async function escribirPendiente(item){
 
   if(!key){
     if(item.turnoKey){
+      // v4.2: además de los datos del vuelo, se corrige el campo `hora` de
+      // la reserva a la hora REAL de despegue. Pedido de Daniel: si el turno
+      // quedaba con su hora original (ej. 11:00) pero el vuelo real fue a
+      // las 09:40, el calendario mostraba una hora y el Libro otra —
+      // confuso, aparte de que ahora el turno puede venir de mucho antes/
+      // después (ver buscarTurnoPropioParaAhora v4.1, ya no hay ventana
+      // acotada). Se corrige tanto en el match silencioso (±30min) como en
+      // el confirmado — mismo criterio en los dos casos.
+      const iniDate=new Date(item.tsInicio);
+      datosVuelo.hora=String(iniDate.getHours()).padStart(2,'0')+':'+String(iniDate.getMinutes()).padStart(2,'0');
       // v4.0: turno ya vinculado al loguearse (buscarTurnoPropioParaAhora,
       // match directo o confirmado) — se usa directo.
       key=item.turnoKey;
