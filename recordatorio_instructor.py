@@ -18,7 +18,10 @@ Corre desde GitHub Actions (cron). En cada ejecución:
 
 Solo usa la librería estándar de Python (urllib, json, datetime). No requiere pip.
 
-Configuración por variables de entorno (las setea el workflow):
+Configuración — PRIMERO intenta leer /parametros de Firebase (mismo nodo que edita
+Config→Parámetros en turnos.html: cron_recordatorio_instructor_horas). Si no está
+seteado ahí o falla la lectura, cae a la variable de entorno de siempre — el cron
+nunca se frena por esto. Variables de entorno (las setea el workflow):
   FIREBASE_DB_URL      URL de la Realtime DB (sin barra final)
   EMAILJS_SERVICE_ID   service_xxx de la cuenta que tiene el template
   EMAILJS_TEMPLATE_ID  template_8awr1zd
@@ -26,7 +29,8 @@ Configuración por variables de entorno (las setea el workflow):
   EMAILJS_PRIVATE_KEY  private key (accessToken) — SECRET, viene de GitHub Secrets
   CLUB_EMAIL           mail del club (va como Reply-To, variable {{email}})
   REMIND_HOURS         ventana de aviso en horas, respecto del turno MÁS TEMPRANO
-                        del día (default 2)
+                        del día — fallback si /parametros no tiene
+                        cron_recordatorio_instructor_horas (default 2)
   TZ_OFFSET            offset horario local respecto de UTC (default -3, Argentina)
   DRY_RUN              "1" para probar sin enviar ni marcar (default "0")
 
@@ -167,11 +171,38 @@ def flight_dt_local(r):
     return datetime(y, m, d, hh, mm, 0)
 
 
+def fb_get_parametros():
+    """v_params: lee /parametros de Firebase (mismo nodo que edita Config→Parámetros
+    en turnos.html). Si falla o el nodo no existe, devuelve {} — el caller usa los
+    defaults de siempre (env vars). Nunca frena el cron por esto (pedido de Daniel:
+    "que no se frene")."""
+    try:
+        data = fb_get("parametros")
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print("AVISO: no se pudo leer /parametros de Firebase ({}) — se usan los "
+              "valores de variables de entorno de siempre.".format(e))
+        return {}
+
+
 def main():
     faltan = faltan_config()
     if faltan:
         print("ERROR: faltan variables de entorno:", ", ".join(faltan))
         sys.exit(1)
+
+    global REMIND_HOURS
+    params = fb_get_parametros()
+    v = params.get("cron_recordatorio_instructor_horas")
+    if isinstance(v, (int, float)) and v > 0:
+        if v != REMIND_HOURS:
+            print("REMIND_HOURS: usando {:g}h desde /parametros (env var era {:g}h)."
+                  .format(v, REMIND_HOURS))
+        REMIND_HOURS = v
+    else:
+        print("AVISO: 'cron_recordatorio_instructor_horas' ausente/inválido en "
+              "/parametros — usando REMIND_HOURS={:g}h de la variable de entorno."
+              .format(REMIND_HOURS))
 
     ahora_local = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=TZ_OFFSET)
     print("== Recordatorio instructor (agrupado por día) ==")

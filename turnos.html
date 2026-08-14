@@ -1,5 +1,22 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.43
+  FECHA   : 2026-08-14
+  CAMBIOS : Pedido de Daniel: parámetros de reglas de negocio que vivían hardcodeados
+            en el código ahora viven en /parametros (Firebase), editables desde nueva
+            pestaña Config→Parámetros (admin-only). 6 parámetros de este archivo
+            (anticipación pedido alumno/piloto, cuota semanal alumno, anticipación
+            cancelación alumno, horizonte máximo alumno/piloto) + 2 que NO lee este
+            archivo pero viven en el mismo nodo para tener una sola pantalla de
+            edición (los leen vencimiento_turnos.py / recordatorio_instructor.py,
+            ver esos archivos). PARAMS_DEFAULT es la red de seguridad: valor
+            inválido/faltante en Firebase → cae al default + banner rojo visible
+            (admin/instructor) en vez de romper la app o fallar en silencio.
+            Validación cruzada al guardar: cron_vencimiento_turno_horas debe ser
+            MENOR que anticipacion_alumno_horas (regla ya documentada en el propio
+            workflow de GitHub Actions). Nodo /parametros aún no sembrado en Firebase
+            desde acá — el primer GUARDAR desde la pantalla nueva lo crea con los
+            valores reales actuales (que son los mismos que quedaron de default).
   VERSION : 7.42
   FECHA   : 2026-08-14
   CAMBIOS : Pedido de Daniel: la card "Disponibilidad de Instructores" se muda de
@@ -2520,7 +2537,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.42</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.43</div>
   </div>
 
 </div>
@@ -2743,6 +2760,14 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <span id="banner-pendientes-txt" style="font-family:var(--font-mono);font-size:12px;color:var(--amber);letter-spacing:.08em;flex:1;min-width:160px"></span>
     <button onclick="showInstTab('config');showCfgTab('usuarios');" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;padding:5px 14px;border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.1);white-space:nowrap">VER USUARIOS →</button>
     <button onclick="document.getElementById('banner-pendientes').style.display='none'" style="font-size:14px;padding:2px 8px;border:none;background:none;color:var(--amber);opacity:.6" title="Cerrar">✕</button>
+  </div>
+  <!-- BANNER PARÁMETROS INVÁLIDOS (v7.43) — admin/administrador+instructor, quien puede
+       llegar a Config→Parámetros. No tiene botón de cerrar a propósito: se apaga solo
+       cuando aplicarParametros() ya no encuentra ningún valor inválido. -->
+  <div id="params-warning-banner" style="display:none;margin-bottom:1rem;padding:.85rem 1.1rem;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.35);border-left:3px solid var(--red);border-radius:var(--radius);align-items:center;gap:12px;flex-wrap:wrap;">
+    <span style="font-size:18px;line-height:1">⚠️</span>
+    <span id="params-warning-txt" style="font-family:var(--font-mono);font-size:12px;color:var(--red);letter-spacing:.05em;flex:1;min-width:160px"></span>
+    <button onclick="showInstTab('config');showCfgTab('parametros');" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;padding:5px 14px;border-color:var(--red);color:var(--red);background:rgba(248,81,73,.1);white-space:nowrap">VER PARÁMETROS →</button>
   </div>
   <!-- BANNER LLAMATIVO: TURNOS PENDIENTES DE APROBACIÓN -->
   <div id="banner-turnos-pend" style="display:none;margin-bottom:1rem;padding:1rem 1.2rem;background:linear-gradient(135deg,rgba(240,165,0,.20),rgba(240,165,0,.06));border:1px solid var(--amber);border-left:4px solid var(--amber);border-radius:var(--radius);align-items:center;gap:14px;flex-wrap:wrap;box-shadow:0 0 18px rgba(240,165,0,.25);animation:pulseTurnos 1.8s ease-in-out infinite;">
@@ -2996,6 +3021,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <button class="nav-btn"        id="cfg-tab-consultas"    onclick="showCfgTab('consultas')">Consultas</button>
       <button class="nav-btn"        id="cfg-tab-auditoria"    onclick="showCfgTab('auditoria')">Auditoría</button>
       <button class="nav-btn"        id="cfg-tab-auditoria-fpl" onclick="showCfgTab('auditoria-fpl')">Audit. FPL</button>
+      <button class="nav-btn"        id="cfg-tab-parametros"   onclick="showCfgTab('parametros')" style="color:var(--red);border-color:rgba(248,81,73,.3)">Parámetros</button>
       <button class="nav-btn"        id="cfg-tab-sistema"      onclick="showCfgTab('sistema')" style="color:var(--red);border-color:rgba(248,81,73,.3)">Sistema</button>
     </div>
 
@@ -3537,6 +3563,83 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       </div>
     </div>
 
+    <!-- PARÁMETROS DE NEGOCIO (v7.43) — solo admin/administrador, mismo gate que Sistema.
+         Valores concretos documentados en PARAMS_DEFAULT (ver script, cerca de
+         ahoraServidor()). Los dos últimos campos (cron_*) no los lee este archivo — los
+         leen vencimiento_turnos.py / recordatorio_instructor.py directo de /parametros;
+         viven acá para tener una sola pantalla de edición. -->
+    <div id="cfg-parametros" class="cfg-panel" style="display:none">
+      <div class="card" style="border-color:rgba(248,81,73,.3)">
+        <h3 style="color:var(--red)">Parámetros del Sistema</h3>
+        <p style="font-family:var(--font-mono);font-size:11px;color:var(--text3);margin-bottom:1rem;letter-spacing:.05em">REGLAS DE NEGOCIO — CAMBIAR ACÁ EN VEZ DE TOCAR CÓDIGO</p>
+        <div id="params-form" style="display:flex;flex-direction:column;gap:14px;max-width:520px">
+          <div class="field">
+            <label>Anticipación mínima para pedir turno — alumno (y piloto en modo Instrucción)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-anticipacion_alumno_horas" min="1" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">horas</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Anticipación mínima para pedir turno — piloto, vuelo Particular</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-anticipacion_piloto_particular_horas" min="0" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">horas</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Cuota máxima de turnos por semana — alumno</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-cuota_semanal_alumno" min="1" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">turnos/semana</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Anticipación mínima para cancelar un turno — alumno</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-cancelacion_alumno_horas" min="0" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">horas</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Horizonte máximo para pedir turno — alumno</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-horizonte_alumno_dias" min="1" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">días</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Horizonte máximo para pedir turno — piloto</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-horizonte_piloto_dias" min="1" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">días</span>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--border2);margin:4px 0;padding-top:14px">
+            <p style="font-family:var(--font-mono);font-size:11px;color:var(--amber);letter-spacing:.05em;margin-bottom:14px">▸ ESTOS DOS LOS USAN LOS CRON DE PYTHON (GitHub Actions), NO ESTE ARCHIVO</p>
+          </div>
+          <div class="field">
+            <label>Vencimiento de turno pendiente sin confirmar (cron)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-cron_vencimiento_turno_horas" min="0" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">horas antes del vuelo</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Recordatorio a instructores (cron)</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="param-cron_recordatorio_instructor_horas" min="0" step="1" style="max-width:120px">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--text3)">horas antes del turno más temprano</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:1.25rem;flex-wrap:wrap">
+          <button onclick="guardarParametros()" style="font-family:var(--font-mono);font-size:12px;padding:9px 20px;background:rgba(0,200,212,.08);border:1px solid var(--cyan);color:var(--cyan);border-radius:var(--radius);cursor:pointer;letter-spacing:.1em">💾 GUARDAR PARÁMETROS</button>
+          <span id="params-status" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.05em"></span>
+        </div>
+      </div>
+    </div>
+
     <div id="cfg-sistema" class="cfg-panel" style="display:none">
       <div class="card" style="border-color:rgba(0,200,212,.2);margin-bottom:1rem">
         <h3 style="color:var(--cyan);margin-bottom:.5rem">Backup de Base de Datos</h3>
@@ -3727,6 +3830,55 @@ let _serverOffsetMs=0;
 onValue(ref(db,'.info/serverTimeOffset'), snap=>{ _serverOffsetMs=snap.val()||0; });
 function ahoraServidor(){ return new Date(Date.now()+_serverOffsetMs); }
 
+// ── PARÁMETROS CONFIGURABLES (v7.43) ────────────────────────────
+// Pedido de Daniel: números de reglas de negocio que antes vivían hardcodeados
+// en el código (anticipación, cuota semanal, horizonte de reserva) ahora viven
+// en /parametros — editables desde Config→Parámetros (solo admin/administrador,
+// ver showCfgTab('parametros')) sin tener que tocar código para cada cambio.
+// PARAMS_DEFAULT es la red de seguridad: si falta un valor en Firebase o está
+// corrupto (no es un número positivo válido), se usa el default y se prende
+// un aviso visible (ver aplicarParametros) — decisión explícita de Daniel:
+// nunca romper la app por un typo, pero avisar en vez de fallar en silencio.
+const PARAMS_DEFAULT={
+  anticipacion_alumno_horas:            12,  // ok12h — también aplica a piloto pidiendo 'instruccion' (requiereAnticipacionLarga)
+  anticipacion_piloto_particular_horas: 1,   // ok1h
+  cuota_semanal_alumno:                 3,   // turnosRestantesSemana → LIMITE
+  cancelacion_alumno_horas:             12,  // puedeAlumnoCancelar
+  horizonte_alumno_dias:                7,   // getDays
+  horizonte_piloto_dias:                30,  // getDays
+  // Los siguientes dos NO los lee turnos.html — los leen los cron de Python
+  // (vencimiento_turnos.py / recordatorio_instructor.py) directo de este mismo
+  // nodo. Viven acá para que haya una sola pantalla de edición para todo.
+  cron_vencimiento_turno_horas:         6,   // EXPIRE_HOURS — DEBE ser < anticipacion_alumno_horas (turno no puede vencer después de que ya no se podía ni pedir)
+  cron_recordatorio_instructor_horas:   12   // REMIND_HOURS
+};
+let PARAMS={...PARAMS_DEFAULT};       // valores efectivos en uso (validados)
+let _paramsInvalidos=[];              // claves que cayeron al default por venir mal de Firebase
+function _paramValido(v){ return typeof v==='number'&&isFinite(v)&&v>0; }
+function aplicarParametros(data){
+  const inval=[];
+  const nuevos={...PARAMS_DEFAULT};
+  for(const k of Object.keys(PARAMS_DEFAULT)){
+    const v=data?.[k];
+    if(_paramValido(v)) nuevos[k]=v;
+    else inval.push(k);
+  }
+  PARAMS=nuevos;
+  _paramsInvalidos=inval;
+  pintarAvisoParametros();
+}
+onValue(ref(db,'parametros'), snap=>{ aplicarParametros(snap.val()); });
+function pintarAvisoParametros(){
+  const el=document.getElementById('params-warning-banner');
+  if(!el) return; // banner vive en el HTML de instructor-screen; alumno/piloto no lo ven ni falta que lo vean
+  if(_paramsInvalidos.length){
+    el.style.display='flex';
+    document.getElementById('params-warning-txt').textContent='Parámetro(s) inválido(s) en /parametros: '+_paramsInvalidos.join(', ')+' — usando valor por defecto. Revisar Config→Parámetros.';
+  } else {
+    el.style.display='none';
+  }
+}
+
 // ── AVIONES ────────────────────────────────────────────────────
 // Definición local; en el futuro puede venir de Firebase /aviones
 const AVIONES=[
@@ -3789,14 +3941,16 @@ function setLoading(id,on){const b=document.getElementById(id);if(!b)return;b.di
 function ek(email){return email.replace(/\./g,'_').replace(/@/g,'__at__');}
 function genPass(){const c='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';let p='';for(let i=0;i<8;i++)p+=c[Math.floor(Math.random()*c.length)];return p;}
 // ── REGLAS DE RESERVA ─────────────────────────────────────────
+// v7.43: estos valores ya NO son literales fijos — vienen de PARAMS (ver
+// PARAMS_DEFAULT más arriba, editable en Config→Parámetros). El resumen de
+// abajo describe el default de fábrica, no necesariamente el valor en uso.
 // ANTICIPACIÓN MÍNIMA : Alumnos = 12 hs | Pilotos = 1 hs
 // HORIZONTE MÁXIMO    : Alumnos = 7 días | Pilotos = 30 días
 // CANCELACIÓN ALUMNO  : hasta 12 hs antes (v6.98, antes 2 hs) | Piloto: sin límite
 // APROBACIÓN          : Alumnos = manual por instructor | Pilotos = automática
 // ──────────────────────────────────────────────────────────────
 function getDays(cantidad){
-  // Alumnos: 7 días | Pilotos: 30 días
-  const max=cantidad||(session?.rol==='piloto'?30:7);
+  const max=cantidad||(session?.rol==='piloto'?PARAMS.horizonte_piloto_dias:PARAMS.horizonte_alumno_dias);
   const d=[],n=ahoraServidor();
   for(let i=0;i<max;i++){const x=new Date(n);x.setDate(n.getDate()+i);d.push(x);}
   return d;
@@ -3883,8 +4037,8 @@ function renderBannerVencimientoAlumno(alumno){
   banner.style.display='block';
 }
 function fmtLabel(d){const D=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];return D[d.getDay()]+'\n'+d.getDate()+'/'+(d.getMonth()+1);}
-function ok12h(ds,h){const[y,m,d]=ds.split('-').map(Number);const[hh,mm]=h.split(':').map(Number);return(new Date(y,m-1,d,hh,mm,0)-ahoraServidor())>=12*3600*1000;}
-function ok1h(ds,h){const[y,m,d]=ds.split('-').map(Number);const[hh,mm]=h.split(':').map(Number);return(new Date(y,m-1,d,hh,mm,0)-ahoraServidor())>=1*3600*1000;}
+function ok12h(ds,h){const[y,m,d]=ds.split('-').map(Number);const[hh,mm]=h.split(':').map(Number);return(new Date(y,m-1,d,hh,mm,0)-ahoraServidor())>=PARAMS.anticipacion_alumno_horas*3600*1000;} // nombre histórico, ya no es literal "12h" (v7.43: viene de PARAMS)
+function ok1h(ds,h){const[y,m,d]=ds.split('-').map(Number);const[hh,mm]=h.split(':').map(Number);return(new Date(y,m-1,d,hh,mm,0)-ahoraServidor())>=PARAMS.anticipacion_piloto_particular_horas*3600*1000;}
 // v6.94: la anticipación mínima ya no depende solo del rol — un piloto pidiendo
 // 'instruccion' en cualquier avión necesita las mismas 12hs que un alumno (tiene que
 // haber margen real para que un instructor lo revise y confirme); un piloto en
@@ -4670,7 +4824,7 @@ function horasContinuacion(r){
 // Límite actual: 3 por semana. Usada en confirmarTurno() (bloqueo) y en el tooltip de los
 // cal-block de turnos ya tomados (vistas LISTA y SEMANA de Reservas).
 function turnosRestantesSemana(ds,data,email){
-  const LIMITE=3;
+  const LIMITE=PARAMS.cuota_semanal_alumno;
   const targetEmail=email||session?.email;
   const todasReservas=data||{};
   const [fy,fm,fd]=ds.split('-').map(Number);
@@ -4991,11 +5145,11 @@ function renderMisTurnos(data){
 function puedeAlumnoCancelar(r){
   // pilotos siempre pueden cancelar
   if((r.rol||'alumno')==='piloto') return true;
-  // alumnos: no pueden cancelar si faltan menos de 12 horas (v6.98)
+  // alumnos: no pueden cancelar si faltan menos de PARAMS.cancelacion_alumno_horas (v6.98: 12hs; v7.43: configurable)
   const[y,m,d]=r.fecha.split('-').map(Number);
   const[hh,mm]=(r.hora||'00:00').split(':').map(Number);
   const fechaTurno=new Date(y,m-1,d,hh,mm,0).getTime();
-  return (fechaTurno - (Date.now()+_serverOffsetMs)) >= 12*60*60*1000;
+  return (fechaTurno - (Date.now()+_serverOffsetMs)) >= PARAMS.cancelacion_alumno_horas*60*60*1000;
 }
 
 // FIX v5.97: el modal de motivo de cancelación estaba anidado dentro de
@@ -6888,9 +7042,10 @@ window.selectCfgAvion=function(key){
 
 window.showCfgTab=function(tab){
   if(tab==='sistema'&&session?.user!=='admin'&&session?.user!=='administrador') return;
+  if(tab==='parametros'&&session?.user!=='admin'&&session?.user!=='administrador') return; // v7.43: mismo gate que Sistema
   if(tab==='auditoria-fpl'&&session?.user!=='admin') return;
   if(session?.soloUsuarios&&tab!=='usuarios'&&tab!=='sistema'&&tab!=='auditoria') return;
-  ['horarios','dias','instructores','usuarios','consultas','auditoria','auditoria-fpl','sistema'].forEach(t=>{
+  ['horarios','dias','instructores','usuarios','consultas','auditoria','auditoria-fpl','parametros','sistema'].forEach(t=>{
     const panel=document.getElementById('cfg-'+t);
     const btn=document.getElementById('cfg-tab-'+t);
     if(panel)panel.style.display=t===tab?'block':'none';
@@ -6913,11 +7068,61 @@ window.showCfgTab=function(tab){
   }
   if(tab==='auditoria')cargarAuditoria();
   if(tab==='auditoria-fpl')cargarAuditoriaFpl();
+  if(tab==='parametros')pintarFormParametros();
   if(tab==='sistema'){
     const zona=document.getElementById('card-zona-peligrosa');
     if(zona) zona.style.display=session?.user==='admin'?'block':'none';
   }
 };
+
+// v7.43: pinta los inputs de Config→Parámetros con PARAMS (valores efectivos en
+// uso, ya validados por aplicarParametros() — nunca un NaN/vacío en pantalla,
+// aunque el nodo de Firebase esté roto). Se llama al entrar al tab; si PARAMS
+// cambia mientras el tab está abierto (otro admin editando al mismo tiempo,
+// caso raro), no se re-pinta solo — evita pisarle a este admin lo que esté
+// tipeando. Se vuelve a pintar la próxima vez que se entre al tab.
+function pintarFormParametros(){
+  for(const k of Object.keys(PARAMS_DEFAULT)){
+    const inp=document.getElementById('param-'+k);
+    if(inp) inp.value=PARAMS[k];
+  }
+  document.getElementById('params-status').textContent='';
+}
+
+async function guardarParametros(){
+  const nuevos={};
+  for(const k of Object.keys(PARAMS_DEFAULT)){
+    const inp=document.getElementById('param-'+k);
+    const v=Number(inp.value);
+    if(!_paramValido(v)){
+      const label=inp.closest('.field')?.querySelector('label')?.textContent||k;
+      mostrarEstadoParametros('⚠ "'+label+'" debe ser un número mayor que 0.','error');
+      return;
+    }
+    nuevos[k]=v;
+  }
+  // Regla documentada en el propio workflow de GitHub Actions (vencimiento-turnos.yml):
+  // el vencimiento del turno pendiente tiene que ocurrir ANTES de que ya no se
+  // pudiera ni pedir un turno nuevo — si no, un turno podría "vencer" después de
+  // que la ventana de anticipación ya lo hacía imposible, lo cual no tiene sentido.
+  if(nuevos.cron_vencimiento_turno_horas>=nuevos.anticipacion_alumno_horas){
+    mostrarEstadoParametros('⚠ El vencimiento del cron ('+nuevos.cron_vencimiento_turno_horas+'h) debe ser MENOR que la anticipación mínima del alumno ('+nuevos.anticipacion_alumno_horas+'h).','error');
+    return;
+  }
+  mostrarEstadoParametros('Guardando...','info');
+  try{
+    await fbUpdate('parametros',nuevos);
+    mostrarEstadoParametros('✓ Parámetros guardados.','ok');
+  }catch(e){
+    console.error(e);
+    mostrarEstadoParametros('⚠ No se pudo guardar — revisá tu conexión e intentá de nuevo.','error');
+  }
+}
+function mostrarEstadoParametros(msg,tipo){
+  const el=document.getElementById('params-status');
+  el.textContent=msg;
+  el.style.color=tipo==='error'?'var(--red)':tipo==='ok'?'var(--green)':'var(--text3)';
+}
 
 function renderToggleAvion(avion){
   const wrap=document.getElementById('avion-toggle-wrap');

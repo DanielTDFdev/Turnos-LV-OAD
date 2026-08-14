@@ -21,20 +21,26 @@ Corre desde GitHub Actions (cron). En cada ejecución:
 
 Solo usa la librería estándar de Python (urllib, json, datetime). No requiere pip.
 
-Por qué EXPIRE_HOURS debe ser < 12:
-  El alumno puede reservar hasta 12 h antes del vuelo. Si el vencimiento dispara
-  a las 12 h (o más) antes, un turno pedido en el límite nacería ya vencido. Con
-  6 h queda una ventana de 6 h (desde las 12 h-antes hasta las 6 h-antes) para que
-  un instructor confirme. Más chico el número = más tarde se cae = más ventana.
+Por qué EXPIRE_HOURS debe ser < anticipación mínima del alumno:
+  El alumno puede reservar hasta esa anticipación antes del vuelo (hoy 12 h,
+  configurable desde turnos.html → Config → Parámetros → anticipacion_alumno_horas).
+  Si el vencimiento dispara a esa misma cantidad de horas (o más) antes, un turno
+  pedido en el límite nacería ya vencido. Con 6 h (default) queda una ventana de
+  6 h para que un instructor confirme. Más chico el número = más tarde se cae =
+  más ventana.
 
-Configuración por variables de entorno (las setea el workflow):
+Configuración — PRIMERO intenta leer /parametros de Firebase (mismo nodo que edita
+Config→Parámetros en turnos.html: cron_vencimiento_turno_horas). Si no está seteado
+ahí o falla la lectura, cae a la variable de entorno de siempre — el cron nunca se
+frena por esto. Variables de entorno (las setea el workflow):
   FIREBASE_DB_URL      URL de la Realtime DB (sin barra final)
   EMAILJS_SERVICE_ID   service_xxx de la cuenta server-side (dcamargo70)
   EMAILJS_TEMPLATE_ID  template del aviso de vencimiento al alumno (NUEVO)
   EMAILJS_PUBLIC_KEY   public key (user_id) de esa cuenta
   EMAILJS_PRIVATE_KEY  private key (accessToken) — SECRET, viene de GitHub Secrets
   CLUB_EMAIL           mail del club (va como Reply-To, variable {{email}})
-  EXPIRE_HOURS         ventana de vencimiento en horas (default 6, DEBE ser < 12)
+  EXPIRE_HOURS         ventana de vencimiento en horas — fallback si /parametros
+                        no tiene cron_vencimiento_turno_horas (default 6)
   TZ_OFFSET            offset horario local respecto de UTC (default -3, Argentina)
   FPL_PURGE_HOURS      antigüedad (h) para borrar borradores FPL externos (default 1)
   DRY_RUN              "1" para probar sin enviar, sin marcar, sin auditar (default "0")
@@ -260,16 +266,51 @@ def fpl_purga_externos(ahora_utc):
     return errores
 
 
+def fb_get_parametros():
+    """v_params: lee /parametros de Firebase (mismo nodo que edita Config→Parámetros
+    en turnos.html). Si falla o el nodo no existe, devuelve {} — el caller usa los
+    defaults de siempre (env vars). Nunca frena el cron por esto (pedido de Daniel:
+    "que no se frene")."""
+    try:
+        data = fb_get("parametros")
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print("AVISO: no se pudo leer /parametros de Firebase ({}) — se usan los "
+              "valores de variables de entorno de siempre.".format(e))
+        return {}
+
+
 def main():
     faltan = faltan_config()
     if faltan:
         print("ERROR: faltan variables de entorno:", ", ".join(faltan))
         sys.exit(1)
 
-    if EXPIRE_HOURS >= 12:
-        print("ERROR: EXPIRE_HOURS={:g} es >= 12. Debe ser MENOR que la anticipación "
-              "mínima del alumno (12 h), si no los turnos nacen vencidos. Abortando."
-              .format(EXPIRE_HOURS))
+    global EXPIRE_HOURS
+    params = fb_get_parametros()
+
+    anticipacion_alumno_horas = 12  # default de siempre, ver docstring del módulo
+    v = params.get("anticipacion_alumno_horas")
+    if isinstance(v, (int, float)) and v > 0:
+        anticipacion_alumno_horas = v
+    else:
+        print("AVISO: 'anticipacion_alumno_horas' ausente/inválido en /parametros — "
+              "usando default {:g}h para la validación cruzada.".format(anticipacion_alumno_horas))
+
+    v = params.get("cron_vencimiento_turno_horas")
+    if isinstance(v, (int, float)) and v > 0:
+        if v != EXPIRE_HOURS:
+            print("EXPIRE_HOURS: usando {:g}h desde /parametros (env var era {:g}h)."
+                  .format(v, EXPIRE_HOURS))
+        EXPIRE_HOURS = v
+    else:
+        print("AVISO: 'cron_vencimiento_turno_horas' ausente/inválido en /parametros — "
+              "usando EXPIRE_HOURS={:g}h de la variable de entorno.".format(EXPIRE_HOURS))
+
+    if EXPIRE_HOURS >= anticipacion_alumno_horas:
+        print("ERROR: EXPIRE_HOURS={:g} es >= anticipación mínima del alumno ({:g}h). "
+              "Debe ser MENOR, si no los turnos nacen vencidos. Abortando."
+              .format(EXPIRE_HOURS, anticipacion_alumno_horas))
         sys.exit(1)
 
     ahora_local = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=TZ_OFFSET)
