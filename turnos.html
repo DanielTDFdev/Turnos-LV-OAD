@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.44
+  FECHA   : 2026-08-14
+  CAMBIOS : FIX: botón "GUARDAR PARÁMETROS" (Config→Parámetros, v7.43) no hacía nada
+            al tocarlo. Causa: guardarParametros() se declaró como función normal
+            dentro del <script type="module"> — a diferencia de un script clásico, las
+            funciones de un módulo NO quedan expuestas en window automáticamente, y el
+            onclick="guardarParametros()" inline del botón no encontraba la función
+            (ReferenceError silencioso, solo visible en la consola del navegador).
+            Mismo patrón que ya usan showCfgTab/agregarInstructor/etc en este archivo:
+            window.guardarParametros=async function(){...}. Nada más cambió — el resto
+            de la lógica (validación, guardado en /parametros) era correcto.
   VERSION : 7.43
   FECHA   : 2026-08-14
   CAMBIOS : Pedido de Daniel: parámetros de reglas de negocio que vivían hardcodeados
@@ -2537,7 +2548,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.43</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.44</div>
   </div>
 
 </div>
@@ -7089,7 +7100,7 @@ function pintarFormParametros(){
   document.getElementById('params-status').textContent='';
 }
 
-async function guardarParametros(){
+window.guardarParametros=async function(){
   const nuevos={};
   for(const k of Object.keys(PARAMS_DEFAULT)){
     const inp=document.getElementById('param-'+k);
@@ -7117,7 +7128,7 @@ async function guardarParametros(){
     console.error(e);
     mostrarEstadoParametros('⚠ No se pudo guardar — revisá tu conexión e intentá de nuevo.','error');
   }
-}
+};
 function mostrarEstadoParametros(msg,tipo){
   const el=document.getElementById('params-status');
   el.textContent=msg;
