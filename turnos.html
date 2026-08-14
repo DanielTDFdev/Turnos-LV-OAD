@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.42
+  FECHA   : 2026-08-14
+  CAMBIOS : Pedido de Daniel: la card "Disponibilidad de Instructores" se muda de
+            Config→Horarios (donde vivía desde v7.38) a Config→Instructores — tiene
+            más sentido ahí, junto a la lista de instructores en vez de junto a los
+            horarios por avión. Sin cambios de datos/lógica/permisos: sigue siendo
+            solo lectura para admin/administrador + instructores reales
+            (esInstructorReal()), renderAdmDispSelector() sigue leyendo /instructores
+            igual que antes. Se movió el bloque HTML completo y el disparador de carga
+            de showCfgTab('horarios') a showCfgTab('instructores') — reutiliza el mismo
+            trigger ya probado que usa renderInstructoresList() en esa pestaña.
   VERSION : 7.41
   FECHA   : 2026-08-13
   CAMBIOS : Borrado admin de turno ahora también borra /vuelo_tracks/{key} si existía
@@ -2509,7 +2520,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.41</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.42</div>
   </div>
 
 </div>
@@ -3005,8 +3016,47 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         </div>
         <div id="horarios-config"></div>
       </div>
+    </div>
 
-      <!-- VISTA DISPONIBILIDAD INSTRUCTORES — admin + instructores reales (solo lectura, v7.38) -->
+    <!-- DÍAS BLOQUEADOS (con selector de avión) -->
+    <div id="cfg-dias" class="cfg-panel" style="display:none">
+      <div class="card">
+        <h3>Bloquear Días por Avión</h3>
+        <div style="display:flex;gap:6px;margin-bottom:.75rem;flex-wrap:wrap" id="cfg-dias-avion-tabs"></div>
+        <div id="avion-toggle-wrap"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;">
+          <button onclick="mesAnterior()" style="font-size:13px;padding:5px 14px">◀</button>
+          <span id="cal-mes-label" style="font-family:var(--font-mono);font-size:13px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase"></span>
+          <button onclick="mesSiguiente()" style="font-size:13px;padding:5px 14px">▶</button>
+        </div>
+        <div id="cal-mes-grid"></div>
+        <div style="display:flex;gap:16px;margin-top:.85rem;font-family:var(--font-mono);font-size:11px;color:var(--text3);flex-wrap:wrap;">
+          <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(248,81,73,.2);border:1px solid rgba(248,81,73,.4);display:inline-block"></span>BLOQUEADO</span>
+          <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);display:inline-block"></span>FERIADO</span>
+          <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.2);display:inline-block"></span>HOY</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="cfg-instructores" class="cfg-panel" style="display:none">
+      <div class="card">
+        <h3>Instructores</h3>
+        <div id="instructores-list"></div>
+        <div class="row" style="margin-top:1rem">
+          <div class="field"><label>Usuario</label><input type="text" id="new-inst-user" placeholder="usuario"></div>
+          <div class="field"><label>Contraseña</label><input type="text" id="new-inst-pass" placeholder="contraseña"></div>
+          <div class="field"><label>Nombre</label><input type="text" id="new-inst-nombre" placeholder="Nombre"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Email <span style="font-size:10px;color:var(--text3)">(para recordatorios)</span></label><input type="email" id="new-inst-email" placeholder="instructor@email.com" autocapitalize="off" autocomplete="off"></div>
+          <div class="field"><label>Celular <span style="font-size:10px;color:var(--text3)">(opcional)</span></label><input type="tel" id="new-inst-cel" placeholder="Ej: +54 9 2964 000000"></div>
+        </div>
+        <button onclick="agregarInstructor()">AGREGAR INSTRUCTOR</button>
+      </div>
+
+      <!-- VISTA DISPONIBILIDAD INSTRUCTORES — admin + instructores reales (solo lectura).
+           v7.42: mudada acá desde Config→Horarios (v7.38), pedido de Daniel — tiene más
+           sentido junto a la lista de instructores que junto a los horarios por avión. -->
       <div id="card-disp-instructores" class="card" style="margin-top:1rem;display:none">
         <h3>Disponibilidad de Instructores</h3>
         <p style="font-family:var(--font-mono);font-size:11px;color:var(--text3);margin-bottom:.75rem;letter-spacing:.05em">
@@ -3044,43 +3094,6 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- DÍAS BLOQUEADOS (con selector de avión) -->
-    <div id="cfg-dias" class="cfg-panel" style="display:none">
-      <div class="card">
-        <h3>Bloquear Días por Avión</h3>
-        <div style="display:flex;gap:6px;margin-bottom:.75rem;flex-wrap:wrap" id="cfg-dias-avion-tabs"></div>
-        <div id="avion-toggle-wrap"></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;">
-          <button onclick="mesAnterior()" style="font-size:13px;padding:5px 14px">◀</button>
-          <span id="cal-mes-label" style="font-family:var(--font-mono);font-size:13px;color:var(--amber);letter-spacing:.12em;text-transform:uppercase"></span>
-          <button onclick="mesSiguiente()" style="font-size:13px;padding:5px 14px">▶</button>
-        </div>
-        <div id="cal-mes-grid"></div>
-        <div style="display:flex;gap:16px;margin-top:.85rem;font-family:var(--font-mono);font-size:11px;color:var(--text3);flex-wrap:wrap;">
-          <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(248,81,73,.2);border:1px solid rgba(248,81,73,.4);display:inline-block"></span>BLOQUEADO</span>
-          <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);display:inline-block"></span>FERIADO</span>
-          <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.2);display:inline-block"></span>HOY</span>
-        </div>
-      </div>
-    </div>
-
-    <div id="cfg-instructores" class="cfg-panel" style="display:none">
-      <div class="card">
-        <h3>Instructores</h3>
-        <div id="instructores-list"></div>
-        <div class="row" style="margin-top:1rem">
-          <div class="field"><label>Usuario</label><input type="text" id="new-inst-user" placeholder="usuario"></div>
-          <div class="field"><label>Contraseña</label><input type="text" id="new-inst-pass" placeholder="contraseña"></div>
-          <div class="field"><label>Nombre</label><input type="text" id="new-inst-nombre" placeholder="Nombre"></div>
-        </div>
-        <div class="row">
-          <div class="field"><label>Email <span style="font-size:10px;color:var(--text3)">(para recordatorios)</span></label><input type="email" id="new-inst-email" placeholder="instructor@email.com" autocapitalize="off" autocomplete="off"></div>
-          <div class="field"><label>Celular <span style="font-size:10px;color:var(--text3)">(opcional)</span></label><input type="tel" id="new-inst-cel" placeholder="Ej: +54 9 2964 000000"></div>
-        </div>
-        <button onclick="agregarInstructor()">AGREGAR INSTRUCTOR</button>
       </div>
     </div>
 
@@ -6883,21 +6896,20 @@ window.showCfgTab=function(tab){
     if(panel)panel.style.display=t===tab?'block':'none';
     if(btn)btn.classList.toggle('active',t===tab);
   });
-  if(tab==='instructores')renderInstructoresList();
+  if(tab==='instructores'){
+    renderInstructoresList();
+    // v7.42: mudado desde 'horarios' (v7.38) — pedido de Daniel, tiene más
+    // sentido junto a la lista de instructores. Sigue siendo de SOLO
+    // LECTURA para todos. Ningún otro gate oculto: renderAdmDispSelector()
+    // solo lee /instructores (reglas abiertas), no vuelve a chequear rol.
+    const puedeVerDisp=session?.user==='admin'||session?.user==='administrador'||esInstructorReal();
+    const cardDisp=document.getElementById('card-disp-instructores');
+    if(cardDisp){ cardDisp.style.display=puedeVerDisp?'block':'none'; if(puedeVerDisp){admDispOffset=0;admDispSemanaOffset=0;admDispVista='lista';admDispInst=null;admDispRenderVistaToggleUI('lista');const lw=document.getElementById('adm-disp-lista-wrap');if(lw)lw.style.display='';const sw=document.getElementById('adm-disp-semana-wrap');if(sw)sw.style.display='none';renderAdmDispSelector();const g=document.getElementById('adm-disp-grid');if(g)g.innerHTML='<div class="empty">// Cargando...</div>';} }
+  }
   if(tab==='usuarios')renderAlumnosList();
   if(tab==='dias'){calMesActual=ahoraServidor();calMesActual.setDate(1);buildCfgAvionTabs();renderToggleAvion(activeDiasAvion);renderCalMes();}
   if(tab==='horarios'){
     buildCfgAvionTabs();renderHorariosConfig();
-    // v7.38: pedido de Daniel — esta card era visible solo para admin/administrador;
-    // ahora también para instructores reales (esInstructorReal()), que necesitan ver
-    // la disponibilidad de sus colegas al coordinar turnos. Sigue siendo de SOLO
-    // LECTURA para todos (el botón TODAS/NINGUNA de edición de horarios por avión, más
-    // arriba en la misma pestaña, es un control distinto — no se toca acá). Ningún
-    // otro gate oculto: renderAdmDispSelector() solo lee /instructores (reglas
-    // abiertas), no vuelve a chequear rol.
-    const puedeVerDisp=session?.user==='admin'||session?.user==='administrador'||esInstructorReal();
-    const cardDisp=document.getElementById('card-disp-instructores');
-    if(cardDisp){ cardDisp.style.display=puedeVerDisp?'block':'none'; if(puedeVerDisp){admDispOffset=0;admDispSemanaOffset=0;admDispVista='lista';admDispInst=null;admDispRenderVistaToggleUI('lista');const lw=document.getElementById('adm-disp-lista-wrap');if(lw)lw.style.display='';const sw=document.getElementById('adm-disp-semana-wrap');if(sw)sw.style.display='none';renderAdmDispSelector();const g=document.getElementById('adm-disp-grid');if(g)g.innerHTML='<div class="empty">// Cargando...</div>';} }
   }
   if(tab==='auditoria')cargarAuditoria();
   if(tab==='auditoria-fpl')cargarAuditoriaFpl();
