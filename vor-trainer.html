@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v1.5 · FIX: gate() nunca ocultaba #gate-msg ("VALIDANDO SESIÓN…") al validar
+         correctamente, quedaba superpuesto arriba del contenido. Además el
+         <span class="ver"> del header quedó en v1.0 desde el inicio — venía
+         bumpeando versión solo en el comentario, no en el string visible
+         (regla de "bump en dos lugares" que no seguí en este archivo hasta
+         ahora). De acá en más ambos lugares se actualizan juntos.
+  v1.4 · FIX triángulos TO/FROM invertidos: la punta apuntaba hacia el centro
+         en vez de hacia afuera. Ahora TO apunta hacia arriba (afuera) y FROM
+         hacia abajo (afuera), como el instrumento real.
   v1.3 · FIX alineación de números: v1.2 los dejaba siempre horizontales
          (nunca rotaban), lo cual tampoco es fiel al instrumento real. El bug
          real de v1.0 no era "los números se invierten" (eso es correcto y
@@ -151,7 +160,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v1.0</span>
+      <span class="ver">v1.5</span>
       <a class="back" href="portal-alumno.html">← PORTAL</a>
     </div>
   </header>
@@ -229,6 +238,7 @@ function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
     setTimeout(()=>{ location.href='turnos.html'; },900);
     return;
   }
+  document.getElementById('gate-msg').style.display='none';
   document.getElementById('app-wrap').style.display='block';
   nuevoEjercicio();
 })();
@@ -332,8 +342,8 @@ function renderVOR(){
     <line x1="${cx}" y1="${cy-45}" x2="${cx}" y2="${cy+45}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
     <circle cx="${cx}" cy="${cy}" r="5" fill="none" stroke="white" stroke-width="1.5"/>
     <line x1="${needleX}" y1="${cy-48}" x2="${needleX}" y2="${cy+48}" stroke="white" stroke-width="5"/>
-    ${cdi.flag==='TO'?`<polygon points="${cx-8},${cy-58} ${cx+8},${cy-58} ${cx},${cy-46}" fill="#39d353"/>`:''}
-    ${cdi.flag==='FROM'?`<polygon points="${cx-8},${cy+58} ${cx+8},${cy+58} ${cx},${cy+46}" fill="#f0a500"/>`:''}
+    ${cdi.flag==='TO'?`<polygon points="${cx-8},${cy-46} ${cx+8},${cy-46} ${cx},${cy-58}" fill="#39d353"/>`:''}
+    ${cdi.flag==='FROM'?`<polygon points="${cx-8},${cy+46} ${cx+8},${cy+46} ${cx},${cy+58}" fill="#f0a500"/>`:''}
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
   document.getElementById('vor-svg').innerHTML=svg;
