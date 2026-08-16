@@ -2,6 +2,9 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.19 ·  Botón "◈ VOR TRAINER" en el header, linkea a vor-trainer.html (archivo
+           standalone nuevo, no una tab embebida). Simulador interactivo de
+           lectura VOR/OBS/CDI para alumnos.
   v1.18 ·  Ícono y manifest propios para la PWA (antes compartía el manifest.json
            y los íconos de turnos.html). Ahora usa manifest-portal.json e
            icon-portal-192/512/512-maskable.png, con el logo "Portal Alumnos"
@@ -307,7 +310,8 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.18</span>
+      <span class="ver">v1.19</span>
+      <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
     </div>
