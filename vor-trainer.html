@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v1.2 · Los números del anillo (giro direccional y VOR/OBS) ya NO se invierten
+         al girar la tarjeta — antes rotaban como grupo junto con las marcas
+         (fiel al instrumento mecánico real, donde SÍ se invierten en la parte
+         inferior, pero incómodo de leer en pantalla). Ahora cada número se
+         posiciona en el ángulo rotado pero se dibuja sin transform propio,
+         igual que un HSI/glass cockpit moderno. Nuevo helper compassRing()
+         compartido entre renderHeading() y renderVOR().
   v1.1 · FIX CRÍTICO: gate() llamaba a nuevoEjercicio() de forma síncrona, que
          leía radialReal/headingReal/etc. antes de que los let de estado se
          declararan más abajo en el script → ReferenceError (temporal dead zone)
@@ -261,29 +268,34 @@ function clasificarAccion(heading, radial){
   return 'cross';
 }
 
-// ── SVG: GIRO DIRECCIONAL ───────────────────────────────────────
-function renderHeading(){
-  const cx=130,cy=130,r=115;
+// ── HELPER: anillo de compás con etiquetas siempre legibles (no se invierten) ──
+function compassRing(cx,cy,r,rotationDeg,labelFn){
   let ticks='', labels='';
   for(let d=0; d<360; d+=10){
     const major=(d%30===0);
     const len=major?14:8;
-    const a=(d)*Math.PI/180;
-    const x1=cx+Math.sin(a)*r, y1=cy-Math.cos(a)*r;
-    const x2=cx+Math.sin(a)*(r-len), y2=cy-Math.cos(a)*(r-len);
+    const screenA=norm360(d+rotationDeg);
+    const rad=screenA*Math.PI/180;
+    const x1=cx+Math.sin(rad)*r, y1=cy-Math.cos(rad)*r;
+    const x2=cx+Math.sin(rad)*(r-len), y2=cy-Math.cos(rad)*(r-len);
     ticks+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="white" stroke-width="'+(major?2:1)+'"/>';
     if(major){
-      const lx=cx+Math.sin(a)*(r-26), ly=cy-Math.cos(a)*(r-26);
-      const lbl=d===0?'N':d===90?'E':d===180?'S':d===270?'W':String(d/10).padStart(2,'0');
-      labels+='<text x="'+lx+'" y="'+ly+'" fill="white" font-size="15" font-family="Share Tech Mono" text-anchor="middle" dominant-baseline="middle" font-weight="bold">'+lbl+'</text>';
+      const lx=cx+Math.sin(rad)*(r-26), ly=cy-Math.cos(rad)*(r-26);
+      labels+='<text x="'+lx+'" y="'+ly+'" fill="white" font-size="14" font-family="Share Tech Mono" text-anchor="middle" dominant-baseline="middle" font-weight="bold">'+labelFn(d)+'</text>';
     }
   }
+  return {ticks,labels};
+}
+
+// ── SVG: GIRO DIRECCIONAL ───────────────────────────────────────
+function renderHeading(){
+  const cx=130,cy=130,r=115;
+  const {ticks,labels}=compassRing(cx,cy,r,-headingReal,d=>
+    d===0?'N':d===90?'E':d===180?'S':d===270?'W':String(d/10).padStart(2,'0'));
   const svg=`
   <svg width="260" height="260" viewBox="0 0 260 260">
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
-    <g transform="rotate(${-headingReal} ${cx} ${cy})">
-      ${ticks}${labels}
-    </g>
+    ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
     <polygon points="${cx},${cy-58} ${cx-26},${cy+40} ${cx},${cy+26} ${cx+26},${cy+40}"
       fill="none" stroke="#f85149" stroke-width="4" stroke-linejoin="round"/>
@@ -296,24 +308,12 @@ function renderHeading(){
 function renderVOR(){
   const cdi=computeCDI(obs,radialReal);
   const cx=130,cy=130,r=115;
-  let ticks='', labels='';
-  for(let d=0; d<360; d+=10){
-    const major=(d%30===0);
-    const len=major?14:8;
-    const a=d*Math.PI/180;
-    const x1=cx+Math.sin(a)*r, y1=cy-Math.cos(a)*r;
-    const x2=cx+Math.sin(a)*(r-len), y2=cy-Math.cos(a)*(r-len);
-    ticks+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="white" stroke-width="'+(major?2:1)+'"/>';
-    if(major){
-      const lx=cx+Math.sin(a)*(r-26), ly=cy-Math.cos(a)*(r-26);
-      labels+='<text x="'+lx+'" y="'+ly+'" fill="white" font-size="14" font-family="Share Tech Mono" text-anchor="middle" dominant-baseline="middle" font-weight="bold">'+String(d/10).padStart(2,'0')+'</text>';
-    }
-  }
+  const {ticks,labels}=compassRing(cx,cy,r,-obs,d=>String(d/10).padStart(2,'0'));
   const needleX=cx+(cdi.defl/10)*45;
   const svg=`
   <svg width="260" height="260" viewBox="0 0 260 260" id="vor-instrument" style="cursor:grab;touch-action:none">
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
-    <g transform="rotate(${-obs} ${cx} ${cy})">${ticks}${labels}</g>
+    ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
     <line x1="${cx-45}" y1="${cy}" x2="${cx+45}" y2="${cy}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
     <line x1="${cx}" y1="${cy-45}" x2="${cx}" y2="${cy+45}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
