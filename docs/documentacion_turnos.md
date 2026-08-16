@@ -1,10 +1,10 @@
 # Documentación técnica — Sistema de Turnos (turnos.html)
 
 **Aeroclub Río Grande (SAWE) — Tierra del Fuego, Argentina**
-Versión documentada: **turnos.html v7.44** · **fpl.html v3.28** · **portal-alumno.html v1.18** · **peso-balance.html v1.8** · **reporte.html v1.4** · **vuelo.html v5.27** · **vuelo-piloto.html v4.5** · Fecha: 2026-08-14
+Versión documentada: **turnos.html v7.45** · **fpl.html v3.28** · **portal-alumno.html v1.19** · **peso-balance.html v1.8** · **reporte.html v1.4** · **vuelo.html v5.27** · **vuelo-piloto.html v4.5** · **vor-trainer.html v2.7** · Fecha: 2026-08-15
 
 > Documento de referencia: describe qué hace cada parte del sistema. Mantener actualizado cuando se agreguen funciones.
-> Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una calculadora de peso y balance (`peso-balance.html`, §24), un **reporte de actividad** (`reporte.html`, §25), una **app de registro de vuelo para instructores** (`vuelo.html`, §26) y su equivalente **para pilotos** (`vuelo-piloto.html`, §27), soporte **PWA** en los seis archivos principales (instalables como app en el celular). Los **procesos server-side** en GitHub Actions se describen en §20 y §21.
+> Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una calculadora de peso y balance (`peso-balance.html`, §24), un **reporte de actividad** (`reporte.html`, §25), una **app de registro de vuelo para instructores** (`vuelo.html`, §26), su equivalente **para pilotos** (`vuelo-piloto.html`, §27) y un **simulador VOR/OBS** de acceso libre (`vor-trainer.html`, §29), soporte **PWA** en los archivos principales (instalables como app en el celular). Los **procesos server-side** en GitHub Actions se describen en §20 y §21.
 
 ---
 
@@ -1118,3 +1118,48 @@ Los workflows `.yml` (`vencimiento-turnos.yml`, `recordatorio-instructor.yml`) *
 
 ### Bootstrap del nodo
 El nodo `/parametros` no se sembró por script — no hay acceso de red desde este entorno a `*.firebaseio.com` para escribir directo. Se autosiembra solo: como el formulario precarga con `PARAMS` (que cae a `PARAMS_DEFAULT`, y esos defaults son exactamente los valores reales de producción a la fecha), el primer click en GUARDAR desde Config→Parámetros crea el nodo con los valores correctos sin que haga falta ninguna migración manual.
+
+## 29. Simulador VOR/OBS (`vor-trainer.html`)
+
+Pedido de Daniel (2026-08-15): app standalone para que los alumnos practiquen lectura de VOR/OBS/CDI — identificar el radial en el que está un avión y clasificar su acción (ingresando/alejándose/cortando ese radial) usando únicamente los instrumentos, sin ver la posición real hasta verificar.
+
+### Concepto del ejercicio
+El sistema genera un escenario aleatorio: un avión con **radial** (bearing real desde el VOR, oculto) y **heading** (rumbo del avión, mostrado en un giro direccional) al azar. El alumno debe:
+1. Girar el **OBS** (drag sobre el instrumento o botones ±1°/±10°) hasta centrar la aguja del **CDI**, leer la bandera **TO/FROM**, y deducir el radial.
+2. Comparar ese radial contra el **heading** mostrado en el giro direccional (instrumento separado, de solo lectura) para clasificar la acción del avión.
+3. Ingresar radial + acción y verificar. Se revela un mapa en planta con la posición real, símbolo VOR estándar (hexágono con punto central — no el triángulo que se usó en una versión intermedia), y los 4 rumbos cardinales de referencia.
+
+**Por qué el heading no sirve para leer el VOR:** el CDI/OBS depende exclusivamente de la posición del avión respecto al radial seleccionado, nunca de su rumbo — confusión común en alumnos reales. El heading solo entra en juego para la segunda parte del ejercicio (clasificar la acción), comparando heading real contra el radial leído.
+
+### Física del CDI (verificada contra ejemplos reales, no inventada)
+```
+raw = normalizar180(OBS − radial)
+si |raw| ≤ 90   → bandera FROM, desviación = clamp(raw, −10, 10)
+si |raw| > 90   → bandera TO,   d = normalizar180(raw−180), desviación = clamp(−d, −10, 10)
+```
+Desviación positiva = aguja a la derecha. Cada punto = 2°, fondo de escala 10° (estándar VOR real). Fórmula contrastada contra 3 ejemplos de referencia (foro PPRuNe + IFR Magazine) antes de implementarla — ver conversación de esa sesión para el detalle de la verificación numérica.
+
+### Clasificación de la acción (ingresando / alejándose / cortando)
+Tolerancia `TOL_ACCION=60°` (ajustada de 20° a pedido de Daniel):
+- heading ≈ radial+180° (±60°) → **"Ingresando por radial X"**
+- heading ≈ radial (±60°) → **"Alejándose por radial X"**
+- caso contrario → **"Cortando radial X"**
+
+Validación del radial ingresado por el alumno: tolerancia `TOL_RADIAL=5°` (a ojo el CDI no da más precisión que eso). El feedback de verificación muestra radial real, radial ingresado, **heading real del avión** (agregado para poder entender por qué el resultado dio "cortando"), y la acción correcta vs la elegida.
+
+### Instrumentos (SVG generado en JS, sin librerías)
+- **Giro direccional:** tarjeta de rumbos + avión fijo apuntando arriba (estilo Sigma-Tek real), solo lectura.
+- **VOR/OBS:** tarjeta rotable (drag o botones), aguja CDI, indicador TO/FROM (texto + triángulo) fijo a la derecha del círculo central — no arriba/abajo del dial como en la primera versión.
+- **Números del anillo (ambos instrumentos):** cada `<text>` rota individualmente según su propio ángulo de pantalla (radialmente alineado, como el instrumento real) — a diferencia de rotar el grupo entero (hacía que TODOS los números se invirtieran a la vez al girar) o dejarlos siempre horizontales (no realista).
+- **Símbolo VOR en el mapa:** hexágono con punto central — símbolo estándar FAA/ICAO, verificado contra legend de cartas sectionales e IFR enroute charts (no es un pentágono ni un triángulo).
+
+### Acceso
+**Libre, sin login** — decisión explícita de Daniel para que lo pueda usar cualquiera, no solo alumnos con cuenta. Si `sessionStorage['lvoad-session']` tiene una sesión válida (llegó desde `turnos.html`/portal), se muestra un botón "← VOLVER" a `turnos.html`; si no hay sesión, el botón queda oculto. No usa Firebase — puntaje (aciertos/intentos) solo dura la sesión del navegador, se resetea al recargar.
+
+**Puntos de entrada:** botón "📡 VOR Trainer" en `links-row` de `turnos.html` (alumno-screen e inst-screen, junto a Portal Alumnos/Plan de Vuelo/Peso y Balance) y botón en el header de `portal-alumno.html`.
+
+### Aprendizajes de esta sesión (bugs reales, no solo ajustes estéticos)
+1. **TDZ (temporal dead zone):** el gate inicial llamaba a una función que leía variables de estado `let` declaradas **después** en el script → `ReferenceError` que cortaba todo el script (mismo patrón ya documentado para `turnos.html` con `SESSION_TIMEOUT_MS`). Confirma que la regla "declarar antes de la IIFE síncrona" aplica a cualquier archivo nuevo, no es específica de `turnos.html`.
+2. **Listeners de drag duplicados:** `attachDrag()` se llamaba en cada render (cada movimiento del dedo dispara un render), y cada llamada agregaba listeners nuevos de `mousemove`/`touchmove` a `window` sin sacar los anteriores → drag errático tras unos segundos de uso, mucho más perceptible en mobile. Fix: listeners de `window` a nivel módulo, se agregan una sola vez.
+3. **Referencia a nodo DOM stale:** el `<svg>` del instrumento se reemplaza entero en cada render (`innerHTML`); cachear la referencia al nodo entre eventos de un mismo drag rompe `getBoundingClientRect()` apenas ocurre el primer render (nodo desconectado devuelve `0,0,0,0`, el centro de referencia salta a la esquina de la pantalla). Fix: re-consultar el nodo vivo por `getElementById` en cada evento, nunca cachear entre renders.
+4. **Sentido del drag invertido:** sumar el delta del dedo directo a `obs` rotaba el dial en sentido contrario al dedo, porque el render usa `rotationDeg=−obs`. Fix: restar el delta (`obs = startObs − delta`) para que el punto tocado quede "pegado" al dedo (drag-to-rotate estándar).
