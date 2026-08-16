@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v1.8 · Símbolo de estación VOR en el mapa: era un triángulo, se cambia a
+         hexágono con punto central — símbolo estándar FAA/ICAO (verificado,
+         no un pentágono: hexágono, confirmado contra legend de cartas
+         sectionales FAA e IFR enroute charts).
   v1.7 · Acceso libre, sin login: se sacó el gate que redirigía a turnos.html
          si no había sesión. Ahora se muestra la app siempre. Si detecta una
          sesión válida en sessionStorage (llegó desde turnos.html/portal),
@@ -164,7 +168,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v1.7</span>
+      <span class="ver">v1.8</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -407,6 +411,13 @@ function renderMap(){
   });
   const obsx=cx+Math.sin(obs*Math.PI/180)*rMax, obsy=cy-Math.cos(obs*Math.PI/180)*rMax;
   const obsx2=cx-Math.sin(obs*Math.PI/180)*rMax, obsy2=cy+Math.cos(obs*Math.PI/180)*rMax;
+  // Símbolo estándar VOR: hexágono con punto central (FAA/ICAO)
+  const hexR=10;
+  const hexPts=[];
+  for(let i=0;i<6;i++){
+    const a=(60*i-30)*Math.PI/180;
+    hexPts.push((cx+Math.sin(a)*hexR)+','+(cy-Math.cos(a)*hexR));
+  }
   const svg=`
   <svg width="300" height="300" viewBox="0 0 300 300">
     <circle cx="${cx}" cy="${cy}" r="${rMax+10}" fill="#000"/>
@@ -414,7 +425,8 @@ function renderMap(){
     ${quad}
     <line x1="${obsx2}" y1="${obsy2}" x2="${obsx}" y2="${obsy}" stroke="#00c8d4" stroke-width="1.5" stroke-dasharray="5,5"/>
     <line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="#f0a500" stroke-width="2"/>
-    <polygon points="${cx},${cy-9} ${cx-9},${cy+7} ${cx+9},${cy+7}" fill="#00c8d4"/>
+    <polygon points="${hexPts.join(' ')}" fill="none" stroke="#00c8d4" stroke-width="2"/>
+    <circle cx="${cx}" cy="${cy}" r="2" fill="#00c8d4"/>
     <g transform="translate(${px},${py}) rotate(${headingReal})">
       <polygon points="0,-15 -10,10 0,4 10,10" fill="none" stroke="#f85149" stroke-width="3" stroke-linejoin="round"/>
     </g>
