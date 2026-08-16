@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v2.2 · Reordenado el bloque de control OBS: el readout "OBS xxx°" (antes un
+         <span> metido en el medio de la fila de botones, causaba wrap
+         desprolijo en mobile) pasa a ser un <div> en su propia línea, centrado,
+         arriba de los 4 botones. Botones también centrados con justify-content,
+         y en @media(max-width:480px) se reduce tamaño/padding para que entren
+         más cómodos en pantalla angosta.
   v2.1 · FIX: en mobile (drag táctil), obs quedaba como float con muchos
          decimales (ej. "OBS 151.9125770416753°") porque el ángulo se tomaba
          directo del dedo sin redondear. Redondeado en el handler de drag y,
@@ -135,11 +141,16 @@ h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:
 @media(max-width:760px){.grid-instr{grid-template-columns:1fr}}
 .instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
 .instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
-.obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
 .obs-controls button{font-family:var(--font-mono);font-size:13px;font-weight:600;background:var(--bg4);color:var(--cyan);
   border:1px solid var(--border2);border-radius:var(--radius);padding:8px 14px;cursor:pointer}
 .obs-controls button:hover{background:rgba(0,200,212,.12)}
-.obs-readout{font-family:var(--font-mono);font-size:15px;color:var(--amber);letter-spacing:.1em}
+.obs-readout{font-family:var(--font-mono);font-size:15px;color:var(--amber);letter-spacing:.1em;text-align:center;margin-bottom:2px}
+@media(max-width:480px){
+  .obs-controls{gap:6px}
+  .obs-controls button{font-size:12px;padding:7px 10px}
+  .obs-readout{font-size:14px}
+}
 .flag-readout{font-family:var(--font-mono);font-size:13px;letter-spacing:.1em;padding:4px 10px;border-radius:var(--radius);border:1px solid var(--border)}
 .flag-readout.to{color:var(--green);border-color:var(--green);background:rgba(57,211,83,.08)}
 .flag-readout.from{color:var(--amber);border-color:var(--amber);background:rgba(240,165,0,.08)}
@@ -177,7 +188,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v2.1</span>
+      <span class="ver">v2.2</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -192,10 +203,10 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
       <div class="instr-box">
         <div class="instr-label">VOR / OBS — girá para centrar la aguja</div>
         <div id="vor-svg"></div>
+        <div class="obs-readout" id="obs-readout">OBS 000°</div>
         <div class="obs-controls">
           <button onclick="turnOBS(-10)">◄◄ 10°</button>
           <button onclick="turnOBS(-1)">◄ 1°</button>
-          <span class="obs-readout" id="obs-readout">OBS 000°</span>
           <button onclick="turnOBS(1)">1° ►</button>
           <button onclick="turnOBS(10)">10° ►►</button>
         </div>
