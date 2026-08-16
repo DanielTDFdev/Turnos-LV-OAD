@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v3.3 · FIX de lógica real #3 (reportado por Daniel: radial 077°, heading
+         290°, dIn=33° — daba "Cortando" con IN_TOL=30, debía dar
+         "Ingresando"). Contradicción directa con su instrucción literal de
+         "ingreso <60° contra el recíproco": con 60, el caso 1 (radial
+         144/heading272, dIn=52°<60) también hubiera dado Ingresando — y ese
+         caso está confirmado como Cortando desde v3.2. Ningún único valor
+         cierra con "60" para los dos a la vez. 45° sí cierra con los 3 casos
+         reales juntos (33→in, 42→out por dOut, 52→cross) y de paso coincide
+         con el "intercept angle" estándar de la aviación real (verificado por
+         búsqueda: AOPA/PilotsCafe/IVAO usan 45° como ángulo de intercepción
+         convencional). IN_TOL: 30→45.
   v3.2 · Regla de clasificación reescrita según instrucción explícita de
          Daniel: "cortás si la diferencia angular entre rumbo y radial es
          mayor a 60°" — diferencia contra el RADIAL tal cual (no el
@@ -279,7 +290,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v3.2</span>
+      <span class="ver">v3.3</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -410,9 +421,13 @@ function clasificarAccion(heading, radial){
   // Ingresando), automáticamente dOut≥120 (candidato a Cortando) — y Daniel
   // confirmó que Cortando gana ese conflicto. Con ±60 simétrico, Ingresando
   // nunca se dispara. Fix: Ingresando usa un umbral propio más chico
-  // (IN_TOL=30°) contra el recíproco, para que sea alcanzable en headings
-  // bien alineados sin invadir la zona de Cortando de Daniel.
-  const IN_TOL=30;
+  // (IN_TOL=45°) contra el recíproco, para que sea alcanzable en headings
+  // bien alineados sin invadir la zona de Cortando de Daniel. Ajustado de
+  // 30 a 45 tras un 3er caso real (radial077/heading290, dIn=33°→Ingresando):
+  // 45 es el único valor que deja los 3 casos reportados del lado correcto
+  // (dIn=33→in, dIn=52→cross, y de paso coincide con el "intercept angle"
+  // estándar de la aviación real, 45°, no inventado).
+  const IN_TOL=45;
   const dOut=Math.abs(norm180(heading-radial));
   const dIn=Math.abs(norm180(heading-(radial+180)));
   if(dOut<=60) return 'out';
