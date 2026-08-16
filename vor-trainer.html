@@ -1,5 +1,572 @@
 <!DOCTYPE html>
+<!--<!DOCTYPE html>
 <!--
+==================================================================================
+  VOR TRAINER — Aeroclub Río Grande
+  v2.9 · FIX de lógica real (reportado por Daniel: radial 144°, heading 272°,
+         daba "Ingresando" cuando debía dar "Cortando"): TOL_ACCION (60°) mal
+         interpretado en v2.0 — se usaba como tolerancia de ALINEACIÓN directa
+         (dIn≤60 → in), cuando en realidad Daniel lo definió como el semi-ancho
+         de la zona de CORTE alrededor del perpendicular al radial. Fix: zona
+         de alineado ahora usa ALIGN_TOL=90−TOL_ACCION=30° (dIn≤30→in,
+         dOut≤30→out), todo lo demás (30°–90° de cualquiera de los dos ejes,
+         que es exactamente ±60° del perpendicular) → cross. Verificado con 6
+         casos límite, incluido el escenario exacto reportado.
+  v2.8 · FIX: header ("VOR TRAINER / AEROCLUB RÍO GRANDE") quedaba tapado por
+         la barra de estado del iPhone (notch/reloj) en algunos contextos
+         (PWA instalada / browser chrome auto-oculto). Faltaba
+         viewport-fit=cover en el <meta viewport> (sin eso, env(safe-area-inset-*)
+         siempre vale 0) y padding-top con safe-area-inset-top en .wrap.
+         Verificado por separado: la física del CDI y la clasificación de
+         acción (radial 144°, heading 272°, OBS 324° — el escenario exacto
+         reportado) están correctas, no había bug de lógica ahí.
+  v2.7 · Feedback de verificación: agregado el heading real del avión (para
+         poder entender por qué una acción dio "Cortando" en vez de
+         ingresando/alejándose).
+  v2.6 · FIX sentido del drag: giraba al revés del dedo (arrastrar hacia abajo
+         del lado derecho rotaba el dial hacia la izquierda). La fórmula sumaba
+         el delta del dedo directo a obs, pero como el render usa
+         rotationDeg=-obs, sumar delta hacía que el dial rotara en sentido
+         CONTRARIO al dedo. Fix: obs = startObs - delta (restar en vez de
+         sumar) — ahora el punto que tocás queda "pegado" al dedo, como un
+         drag-to-rotate estándar. Verificado numéricamente: tocar a 90°
+         (derecha) y arrastrar a ~128° (abajo-derecha, giro horario de ~38°)
+         ahora rota el dial +38° en el mismo sentido.
+  v2.5 · FIX CRÍTICO de drag (el real, v2.4 no lo resolvió del todo): el <svg
+         id="vor-instrument"> se reemplaza ENTERO en cada renderVOR() (nuevo
+         nodo cada vez, innerHTML). v2.4 cacheaba la referencia al nodo en
+         _dragDown() y la reusaba durante todo el drag — quedaba "stale" apenas
+         ocurría el primer render posterior: getBoundingClientRect() sobre un
+         nodo ya desconectado del DOM devuelve 0,0,0,0, el centro de referencia
+         saltaba a la esquina superior izquierda de la pantalla → el "twitch"
+         inicial + drag muerto después que reportó Daniel. Fix real: se re-
+         consulta el nodo VIVO por getElementById('vor-instrument') en CADA
+         evento (down y move), nunca se cachea entre renders.
+  v2.4 · FIX CRÍTICO de drag (afectaba más a mobile): attachDrag() se llamaba
+         en cada render de renderVOR() — y renderVOR() se dispara en cada
+         movimiento del dedo durante el drag. Cada llamada agregaba listeners
+         NUEVOS de mousemove/touchmove/mouseup/touchend a window SIN sacar los
+         anteriores (el nodo <svg> viejo se destruye al reemplazar innerHTML,
+         pero los listeners en window quedaban vivos igual). Resultado: tras
+         unos segundos de arrastre había decenas de listeners duplicados
+         compitiendo con startAngle/startObs de closures viejas → drag
+         errático/trabado, mucho más perceptible en mobile por el volumen de
+         eventos touchmove. Fix: estado de drag y listeners de window ahora
+         viven a nivel módulo, se agregan UNA sola vez; attachDrag() solo
+         re-engancha mousedown/touchstart al <svg> nuevo de cada render.
+  v2.3 · FIX: en iOS, tocar los botones OBS rápido (doble tap) disparaba el
+         zoom nativo de Safari. Agregado touch-action:manipulation a todos
+         los <button>.
+  v2.2 · Reordenado el bloque de control OBS: el readout "OBS xxx grados" (antes un
+         <span> metido en el medio de la fila de botones, causaba wrap
+         desprolijo en mobile) pasa a ser un <div> en su propia línea, centrado,
+         arriba de los 4 botones. Botones también centrados con justify-content,
+         y en @media(max-width:480px) se reduce tamaño/padding para que entren
+         más cómodos en pantalla angosta.
+  v2.1 · FIX: en mobile (drag táctil), obs quedaba como float con muchos
+         decimales (ej. "OBS 151.9125770416753°") porque el ángulo se tomaba
+         directo del dedo sin redondear. Redondeado en el handler de drag y,
+         como defensa adicional, también en turnOBS().
+  v2.0 · Tolerancia de clasificación ingresando/alejándose/cortando: ±20° → ±60°.
+  v1.9 · Indicador TO/FROM del VOR/OBS: se saca el triángulo suelto arriba/abajo
+         del dial y se mueve a un cuadro fijo a la derecha del círculo central,
+         con el texto "TO"/"FROM" y el triángulo correspondiente a la derecha
+         del texto (mismo criterio visual que el instrumento real de referencia).
+  v1.8 · Símbolo de estación VOR en el mapa: era un triángulo, se cambia a
+         hexágono con punto central — símbolo estándar FAA/ICAO (verificado,
+         no un pentágono: hexágono, confirmado contra legend de cartas
+         sectionales FAA e IFR enroute charts).
+  v1.7 · Acceso libre, sin login: se sacó el gate que redirigía a turnos.html
+         si no había sesión. Ahora se muestra la app siempre. Si detecta una
+         sesión válida en sessionStorage (llegó desde turnos.html/portal),
+         muestra el botón "← VOLVER" a turnos.html; si no hay sesión, el botón
+         queda oculto. Se saca también el botón fijo "← PORTAL" (portal-alumno
+         sigue requiriendo login, no tiene sentido linkearlo desde acá sin
+         saber si el visitante tiene cuenta).
+  v1.6 · Mapa "POSICIÓN REAL": agregadas marcas y etiquetas de los 4 rumbos
+         cardinales (360/090/180/270) como referencia visual.
+  v1.5 · FIX: gate() nunca ocultaba #gate-msg ("VALIDANDO SESIÓN…") al validar
+         correctamente, quedaba superpuesto arriba del contenido. Además el
+         <span class="ver"> del header quedó en v1.0 desde el inicio — venía
+         bumpeando versión solo en el comentario, no en el string visible
+         (regla de "bump en dos lugares" que no seguí en este archivo hasta
+         ahora). De acá en más ambos lugares se actualizan juntos.
+  v1.4 · FIX triángulos TO/FROM invertidos: la punta apuntaba hacia el centro
+         en vez de hacia afuera. Ahora TO apunta hacia arriba (afuera) y FROM
+         hacia abajo (afuera), como el instrumento real.
+  v1.3 · FIX alineación de números: v1.2 los dejaba siempre horizontales
+         (nunca rotaban), lo cual tampoco es fiel al instrumento real. El bug
+         real de v1.0 no era "los números se invierten" (eso es correcto y
+         esperado) sino que TODOS se invertían simultáneamente al girar,
+         porque heredaban una rotación de grupo uniforme partiendo de una
+         orientación base horizontal idéntica para todos. Ahora cada <text>
+         lleva su propio transform="rotate(screenA)" con el mismo ángulo que
+         define su posición — así cada número queda alineado radialmente
+         contra el centro (como el instrumento real) y solo se invierte el
+         que está momentáneamente abajo, no todo el anillo a la vez.
+  v1.2 · Los números del anillo (giro direccional y VOR/OBS) ya NO se invierten
+         al girar la tarjeta — antes rotaban como grupo junto con las marcas
+         (fiel al instrumento mecánico real, donde SÍ se invierten en la parte
+         inferior, pero incómodo de leer en pantalla). Ahora cada número se
+         posiciona en el ángulo rotado pero se dibuja sin transform propio,
+         igual que un HSI/glass cockpit moderno. Nuevo helper compassRing()
+         compartido entre renderHeading() y renderVOR().
+  v1.1 · FIX CRÍTICO: gate() llamaba a nuevoEjercicio() de forma síncrona, que
+         leía radialReal/headingReal/etc. antes de que los let de estado se
+         declararan más abajo en el script → ReferenceError (temporal dead zone)
+         que cortaba TODO el script, incluyendo los onclick de los botones OBS.
+         Mismo patrón de bug ya documentado para turnos.html (SESSION_TIMEOUT_MS).
+         Fix: estado + norm360/norm180 ahora declarados ANTES del gate().
+  v1.0 · Primera versión. Simulador interactivo de lectura VOR/OBS/CDI para
+         alumnos. Genera un escenario aleatorio (radial + heading del avión,
+         posición en planta oculta), el alumno gira el OBS (drag o botones
+         ±1°/±10°) hasta centrar la aguja, lee la bandera TO/FROM, ingresa el
+         radial deducido y clasifica la acción del avión (Ingresando / Alejándose
+         / Cortando ese radial, según el heading — independiente de la lectura
+         del VOR). Al verificar, se revela el mapa en planta con la posición real.
+
+  Física implementada (verificada contra ejemplos reales de referencia):
+    raw = normalizar180(OBS - radial)
+    si |raw| <= 90 → bandera FROM, desviación = clamp(raw, -10, 10)
+    si |raw| > 90  → bandera TO,   d = normalizar180(raw-180),
+                      desviación = clamp(-d, -10, 10)
+    (desviación positiva = aguja a la derecha; cada punto = 2°, fondo de escala 10°)
+
+  Clasificación de acción (tolerancia ±20°, configurable en TOL_ACCION):
+    heading ≈ radial+180 (±TOL)  → "Ingresando por radial X"
+    heading ≈ radial (±TOL)      → "Alejándose por radial X"
+    caso contrario                → "Cortando radial X"
+
+  Validación de respuesta: radial ±5°, acción exacta. Ambas deben acertarse
+  para considerar el ejercicio correcto.
+
+  Acceso: mismo gate que portal-alumno.html (sessionStorage 'lvoad-session',
+  rol alumno o tipo instructor). No usa Firebase — puntaje solo de sesión.
+==================================================================================
+-->
+<html lang="es">
+<head>
+<script>if(localStorage.getItem('lvoad-theme')==='light')document.documentElement.classList.add('light');</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>VOR Trainer · Aeroclub Río Grande</title>
+<meta name="theme-color" content="#0a0c0f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0c0f;--bg2:#111418;--bg3:#161b22;--bg4:#1c2330;
+  --text:#c8d8e8;--text2:#7a9bb8;--text3:#3d5a72;
+  --amber:#f0a500;--amber2:#ffc840;--amber-dim:#7a5200;
+  --cyan:#00c8d4;--cyan-dim:#003d42;
+  --green:#39d353;--red:#f85149;
+  --border:rgba(0,200,212,0.15);--border2:rgba(0,200,212,0.35);
+  --radius:4px;--radius-lg:6px;
+  --font-mono:'Share Tech Mono',monospace;
+  --font-ui:'Rajdhani',sans-serif;
+}
+:root.light{
+  --bg:#f0f4f8;--bg2:#e2e8f0;--bg3:#ffffff;--bg4:#d1dce8;
+  --text:#1a2a3a;--text2:#3a5a78;--text3:#7a9ab8;
+  --amber:#b87000;--amber2:#c87800;--amber-dim:#f5d080;
+  --cyan:#0090a0;--cyan-dim:#b0e8ee;
+  --green:#1a8a30;--red:#c0392b;
+  --border:rgba(0,144,160,0.2);--border2:rgba(0,144,160,0.45);
+}
+body{font-family:var(--font-ui);font-size:15px;color:var(--text);background:var(--bg);min-height:100vh;letter-spacing:.02em;overflow-x:hidden;max-width:100vw}
+html{overflow-x:hidden;max-width:100vw}
+.wrap{max-width:1180px;margin:0 auto;padding:calc(18px + env(safe-area-inset-top)) 16px 80px}
+header.bar{display:flex;align-items:center;gap:14px;border:1px solid var(--border2);
+  background:linear-gradient(180deg,var(--bg3),var(--bg2));padding:12px 16px;border-radius:var(--radius-lg);
+  margin-bottom:18px;box-shadow:0 0 0 1px #000 inset,0 0 22px rgba(0,200,212,.07)}
+header.bar .dot{width:11px;height:11px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);animation:pulse 2.4s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+header.bar h1{font-size:20px;letter-spacing:2.5px;font-weight:700;text-transform:uppercase}
+header.bar h1 small{color:var(--amber);letter-spacing:2px;display:block;font-size:11px;font-family:var(--font-mono);margin-top:2px}
+header.bar .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
+header.bar .ver{font-family:var(--font-mono);font-size:11px;color:var(--text3);border:1px solid var(--border);border-radius:4px;padding:2px 7px;letter-spacing:1px}
+.back{font-family:var(--font-mono);font-size:12px;color:var(--text2);text-decoration:none;border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;white-space:nowrap;background:none;cursor:pointer}
+.back:hover{color:var(--cyan);border-color:var(--cyan)}
+.card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;margin-bottom:16px;position:relative}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.4}
+h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:.16em;text-transform:uppercase;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+.grid-instr{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:760px){.grid-instr{grid-template-columns:1fr}}
+.instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
+.instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
+.obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+button{touch-action:manipulation}
+.obs-controls button{font-family:var(--font-mono);font-size:13px;font-weight:600;background:var(--bg4);color:var(--cyan);
+  border:1px solid var(--border2);border-radius:var(--radius);padding:8px 14px;cursor:pointer}
+.obs-controls button:hover{background:rgba(0,200,212,.12)}
+.obs-readout{font-family:var(--font-mono);font-size:15px;color:var(--amber);letter-spacing:.1em;text-align:center;margin-bottom:2px}
+@media(max-width:480px){
+  .obs-controls{gap:6px}
+  .obs-controls button{font-size:12px;padding:7px 10px}
+  .obs-readout{font-size:14px}
+}
+.flag-readout{font-family:var(--font-mono);font-size:13px;letter-spacing:.1em;padding:4px 10px;border-radius:var(--radius);border:1px solid var(--border)}
+.flag-readout.to{color:var(--green);border-color:var(--green);background:rgba(57,211,83,.08)}
+.flag-readout.from{color:var(--amber);border-color:var(--amber);background:rgba(240,165,0,.08)}
+.answer-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px}
+@media(max-width:760px){.answer-grid{grid-template-columns:1fr}}
+.field label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px}
+.field input,.field select{width:100%;background:var(--bg4);border:1px solid var(--border);border-radius:var(--radius);
+  color:var(--text);padding:10px 10px;font-family:var(--font-ui);font-size:15px}
+.field input:focus,.field select:focus{outline:none;border-color:var(--cyan)}
+.action-btns{display:flex;gap:8px;flex-wrap:wrap}
+.action-btns button{flex:1;min-width:140px;font-family:var(--font-mono);font-size:12px;letter-spacing:.05em;
+  background:var(--bg4);color:var(--text2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 8px;cursor:pointer}
+.action-btns button.sel{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.1)}
+button.primary{font-family:var(--font-mono);font-size:14px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  background:linear-gradient(135deg,rgba(0,200,212,.18),rgba(0,200,212,.06));color:var(--cyan);border:1px solid var(--cyan);
+  border-radius:var(--radius);padding:12px 20px;cursor:pointer;width:100%;margin-top:14px}
+button.primary:hover{background:rgba(0,200,212,.22)}
+button.primary:disabled{opacity:.4;cursor:not-allowed}
+.feedback{margin-top:14px;padding:14px;border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;letter-spacing:.03em;display:none}
+.feedback.ok{background:rgba(57,211,83,.08);border:1px solid var(--green);color:var(--green)}
+.feedback.bad{background:rgba(248,81,73,.08);border:1px solid var(--red);color:var(--red)}
+.feedback b{display:block;margin-bottom:6px;font-size:14px}
+.score{font-family:var(--font-mono);font-size:12px;color:var(--text2);letter-spacing:.06em}
+.score b{color:var(--cyan)}
+.map-wrap{display:flex;justify-content:center;margin-top:16px}
+#map-panel{display:none}
+.hint{font-family:var(--font-mono);font-size:11px;color:var(--text3);text-align:center;margin-top:4px}
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app-wrap" style="display:none">
+  <header class="bar">
+    <div class="dot"></div>
+    <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
+    <div class="sp">
+      <span class="score" id="score-label"></span>
+      <span class="ver">v2.9</span>
+      <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>// INSTRUMENTOS</h2>
+    <div class="grid-instr">
+      <div class="instr-box">
+        <div class="instr-label">Giro Direccional (heading del avión)</div>
+        <div id="hdg-svg"></div>
+      </div>
+      <div class="instr-box">
+        <div class="instr-label">VOR / OBS — girá para centrar la aguja</div>
+        <div id="vor-svg"></div>
+        <div class="obs-readout" id="obs-readout">OBS 000°</div>
+        <div class="obs-controls">
+          <button onclick="turnOBS(-10)">◄◄ 10°</button>
+          <button onclick="turnOBS(-1)">◄ 1°</button>
+          <button onclick="turnOBS(1)">1° ►</button>
+          <button onclick="turnOBS(10)">10° ►►</button>
+        </div>
+        <div class="flag-readout" id="flag-readout">— </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>// TU RESPUESTA</h2>
+    <div class="answer-grid">
+      <div class="field">
+        <label>Radial en el que está el avión</label>
+        <input type="number" id="in-radial" min="0" max="359" placeholder="Ej: 047">
+      </div>
+      <div class="field">
+        <label>Acción del avión</label>
+        <div class="action-btns">
+          <button data-a="in" onclick="selectAccion('in')">INGRESANDO</button>
+          <button data-a="out" onclick="selectAccion('out')">ALEJÁNDOSE</button>
+          <button data-a="cross" onclick="selectAccion('cross')">CORTANDO</button>
+        </div>
+      </div>
+    </div>
+    <button class="primary" id="btn-verificar" onclick="verificar()">VERIFICAR</button>
+    <div class="feedback" id="feedback"></div>
+  </div>
+
+  <div class="card" id="map-panel">
+    <h2>// POSICIÓN REAL</h2>
+    <div class="map-wrap"><div id="map-svg"></div></div>
+    <div class="hint">Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste</div>
+    <button class="primary" onclick="nuevoEjercicio()">NUEVO EJERCICIO</button>
+  </div>
+</div>
+
+<script>
+// ── ESTADO (declarado ANTES del gate() porque gate() llama a nuevoEjercicio()
+// de forma síncrona — si estas variables fueran let/const declaradas después,
+// sería un ReferenceError de temporal dead zone que cortaría todo el script) ──
+const TOL_ACCION=60;   // tolerancia grados para clasificar ingresando/alejándose
+const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
+let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
+
+function norm360(d){ d=d%360; if(d<0)d+=360; return d; }
+function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
+
+// ── ACCESO LIBRE (sin login) ───────────────────────────────────────
+// Se muestra la app siempre. Si detectamos una sesión válida en
+// sessionStorage (llegó desde turnos.html/portal), mostramos el botón
+// "← VOLVER" a turnos.html; si no hay sesión, ese botón se oculta.
+(function initAccess(){
+  let s=null;
+  try{ s=JSON.parse(sessionStorage.getItem('lvoad-session')||'null'); }catch(_){ s=null; }
+  const autenticado=!!(s && ((s.tipo==='alumno'&&s.rol==='alumno') || s.tipo==='instructor'));
+  document.getElementById('btn-volver').style.display=autenticado?'inline-block':'none';
+  document.getElementById('app-wrap').style.display='block';
+  nuevoEjercicio();
+})();
+
+function nuevoEjercicio(){
+  radialReal=Math.floor(Math.random()*360);
+  headingReal=Math.floor(Math.random()*360);
+  distNM=6+Math.floor(Math.random()*10);
+  obs=0; accionSel=null; // intentos/aciertos se acumulan en verificar()
+  document.getElementById('in-radial').value='';
+  document.querySelectorAll('.action-btns button').forEach(b=>b.classList.remove('sel'));
+  document.getElementById('feedback').style.display='none';
+  document.getElementById('map-panel').style.display='none';
+  document.getElementById('btn-verificar').disabled=false;
+  renderHeading();
+  renderVOR();
+  updateScore();
+}
+
+function selectAccion(a){
+  accionSel=a;
+  document.querySelectorAll('.action-btns button').forEach(b=>b.classList.toggle('sel',b.dataset.a===a));
+}
+
+function turnOBS(delta){ obs=Math.round(norm360(obs+delta)); renderVOR(); }
+
+function updateScore(){
+  document.getElementById('score-label').innerHTML='Aciertos: <b>'+aciertos+'</b> / '+intentos;
+}
+
+// ── FÍSICA VOR ──────────────────────────────────────────────────
+function computeCDI(obsCourse, radial){
+  const raw=norm180(obsCourse-radial);
+  if(Math.abs(raw)<=90){
+    return {flag:'FROM', defl:Math.max(-10,Math.min(10,raw))};
+  } else {
+    const d=norm180(raw-180);
+    return {flag:'TO', defl:Math.max(-10,Math.min(10,-d))};
+  }
+}
+
+function clasificarAccion(heading, radial){
+  // TOL_ACCION (60°) es el semi-ancho de la zona de CORTE alrededor del
+  // perpendicular al radial — no la tolerancia de alineación directa (eso era
+  // el bug: usaba TOL_ACCION como umbral de "alineado", cuando en realidad
+  // define el umbral de "corte". La zona de alineado (in/out) es el
+  // complemento: ALIGN_TOL = 90 - TOL_ACCION.
+  const ALIGN_TOL=90-TOL_ACCION;
+  const dOut=Math.abs(norm180(heading-radial));
+  const dIn=Math.abs(norm180(heading-(radial+180)));
+  if(dIn<=ALIGN_TOL) return 'in';
+  if(dOut<=ALIGN_TOL) return 'out';
+  return 'cross';
+}
+
+// ── HELPER: anillo de compás con números alineados radialmente contra el
+// centro (como el instrumento real) — cada <text> rota según SU PROPIO ángulo
+// de pantalla, no como grupo rígido (eso hacía que TODOS se invirtieran a la
+// vez al girar) ni siempre horizontal (eso los dejaba "norte-sur" fijos) ──
+function compassRing(cx,cy,r,rotationDeg,labelFn){
+  let ticks='', labels='';
+  for(let d=0; d<360; d+=10){
+    const major=(d%30===0);
+    const len=major?14:8;
+    const screenA=norm360(d+rotationDeg);
+    const rad=screenA*Math.PI/180;
+    const x1=cx+Math.sin(rad)*r, y1=cy-Math.cos(rad)*r;
+    const x2=cx+Math.sin(rad)*(r-len), y2=cy-Math.cos(rad)*(r-len);
+    ticks+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="white" stroke-width="'+(major?2:1)+'"/>';
+    if(major){
+      const lx=cx+Math.sin(rad)*(r-26), ly=cy-Math.cos(rad)*(r-26);
+      labels+='<text x="'+lx+'" y="'+ly+'" transform="rotate('+screenA+' '+lx+' '+ly+')" fill="white" font-size="14" font-family="Share Tech Mono" text-anchor="middle" dominant-baseline="middle" font-weight="bold">'+labelFn(d)+'</text>';
+    }
+  }
+  return {ticks,labels};
+}
+
+// ── SVG: GIRO DIRECCIONAL ───────────────────────────────────────
+function renderHeading(){
+  const cx=130,cy=130,r=115;
+  const {ticks,labels}=compassRing(cx,cy,r,-headingReal,d=>
+    d===0?'N':d===90?'E':d===180?'S':d===270?'W':String(d/10).padStart(2,'0'));
+  const svg=`
+  <svg width="260" height="260" viewBox="0 0 260 260">
+    <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
+    ${ticks}${labels}
+    <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
+    <polygon points="${cx},${cy-58} ${cx-26},${cy+40} ${cx},${cy+26} ${cx+26},${cy+40}"
+      fill="none" stroke="#f85149" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
+  </svg>`;
+  document.getElementById('hdg-svg').innerHTML=svg;
+}
+
+// ── SVG: VOR / OBS ───────────────────────────────────────────────
+function renderVOR(){
+  const cdi=computeCDI(obs,radialReal);
+  const cx=130,cy=130,r=115;
+  const {ticks,labels}=compassRing(cx,cy,r,-obs,d=>String(d/10).padStart(2,'0'));
+  const needleX=cx+(cdi.defl/10)*45;
+  const svg=`
+  <svg width="260" height="260" viewBox="0 0 260 260" id="vor-instrument" style="cursor:grab;touch-action:none">
+    <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
+    ${ticks}${labels}
+    <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
+    <line x1="${cx-45}" y1="${cy}" x2="${cx+45}" y2="${cy}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
+    <line x1="${cx}" y1="${cy-45}" x2="${cx}" y2="${cy+45}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
+    <circle cx="${cx}" cy="${cy}" r="5" fill="none" stroke="white" stroke-width="1.5"/>
+    <line x1="${needleX}" y1="${cy-48}" x2="${needleX}" y2="${cy+48}" stroke="white" stroke-width="5"/>
+    <rect x="${cx+46}" y="${cy-12}" width="62" height="24" rx="3" fill="#0a0c0f" stroke="${cdi.flag==='TO'?'#39d353':'#f0a500'}" stroke-width="1.5"/>
+    <text x="${cx+52}" y="${cy}" text-anchor="start" dominant-baseline="middle" font-family="Share Tech Mono" font-size="13" font-weight="bold" fill="${cdi.flag==='TO'?'#39d353':'#f0a500'}">${cdi.flag}</text>
+    ${cdi.flag==='TO'?`<polygon points="${cx+92},${cy+5} ${cx+104},${cy+5} ${cx+98},${cy-6}" fill="#39d353"/>`:''}
+    ${cdi.flag==='FROM'?`<polygon points="${cx+92},${cy-5} ${cx+104},${cy-5} ${cx+98},${cy+6}" fill="#f0a500"/>`:''}
+    <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
+  </svg>`;
+  document.getElementById('vor-svg').innerHTML=svg;
+  document.getElementById('obs-readout').textContent='OBS '+String(obs).padStart(3,'0')+'°';
+  const fl=document.getElementById('flag-readout');
+  fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
+  fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  attachDrag();
+}
+
+// ── DRAG DEL OBS (estado y listeners de window a nivel módulo — se agregan
+// UNA SOLA VEZ). El <svg id="vor-instrument"> se reemplaza por completo en
+// cada renderVOR() (nuevo nodo cada vez), así que NUNCA guardamos una
+// referencia al nodo entre eventos — cachearla (como hacía la versión
+// anterior) queda "stale" apenas ocurre el primer render post-touchstart:
+// getBoundingClientRect() sobre un nodo ya desconectado del DOM devuelve
+// 0,0,0,0, el centro de referencia salta a la esquina superior izquierda de
+// la pantalla, y el drag queda roto (el "twitch" inicial + nada después que
+// reportaste). Ahora se re-consulta el nodo VIVO por ID en cada evento. ──
+let _dragging=false, _startAngle=0, _startObs=0;
+function _liveSvg(){ return document.getElementById('vor-instrument'); }
+function _angleFromCenter(svg,clientX,clientY){
+  const rect=svg.getBoundingClientRect();
+  const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+  const dx=clientX-cx, dy=clientY-cy;
+  return norm360(Math.atan2(dx,-dy)*180/Math.PI);
+}
+function _dragDown(e){
+  const svg=_liveSvg();
+  if(!svg) return;
+  _dragging=true;
+  const p=e.touches?e.touches[0]:e;
+  _startAngle=_angleFromCenter(svg,p.clientX,p.clientY);
+  _startObs=obs;
+  svg.style.cursor='grabbing';
+}
+function _dragMove(e){
+  if(!_dragging) return;
+  const svg=_liveSvg();
+  if(!svg) return;
+  const p=e.touches?e.touches[0]:e;
+  const cur=_angleFromCenter(svg,p.clientX,p.clientY);
+  obs=Math.round(norm360(_startObs-(cur-_startAngle)));
+  renderVOR();
+}
+function _dragUp(){ _dragging=false; }
+window.addEventListener('mousemove',_dragMove);
+window.addEventListener('mouseup',_dragUp);
+window.addEventListener('touchmove',_dragMove,{passive:true});
+window.addEventListener('touchend',_dragUp);
+
+// re-engancha SOLO mousedown/touchstart al <svg> nuevo de cada render
+// (el nodo anterior se destruye junto con sus listeners al reemplazar innerHTML)
+function attachDrag(){
+  const svg=document.getElementById('vor-instrument');
+  if(!svg) return;
+  svg.addEventListener('mousedown',_dragDown);
+  svg.addEventListener('touchstart',_dragDown,{passive:true});
+}
+
+// ── SVG: MAPA EN PLANTA ──────────────────────────────────────────
+function renderMap(){
+  const cx=150,cy=150,rMax=125;
+  const px=cx+Math.sin(radialReal*Math.PI/180)*rMax*0.85;
+  const py=cy-Math.cos(radialReal*Math.PI/180)*rMax*0.85;
+  const rings=[0.35,0.6,0.85].map(f=>`<circle cx="${cx}" cy="${cy}" r="${rMax*f}" fill="none" stroke="#333" stroke-width="1"/>`).join('');
+  // Cuadrantes de referencia: 360/090/180/270
+  let quad='';
+  [0,90,180,270].forEach(d=>{
+    const rad=d*Math.PI/180;
+    const x1=cx+Math.sin(rad)*rMax, y1=cy-Math.cos(rad)*rMax;
+    const x2=cx+Math.sin(rad)*(rMax-14), y2=cy-Math.cos(rad)*(rMax-14);
+    const lx=cx+Math.sin(rad)*(rMax-30), ly=cy-Math.cos(rad)*(rMax-30);
+    quad+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="#7a9bb8" stroke-width="1.5"/>';
+    quad+='<text x="'+lx+'" y="'+ly+'" transform="rotate('+d+' '+lx+' '+ly+')" fill="#7a9bb8" font-size="12" font-family="Share Tech Mono" text-anchor="middle" dominant-baseline="middle" font-weight="bold">'+(d===0?'360':String(d).padStart(3,'0'))+'</text>';
+  });
+  const obsx=cx+Math.sin(obs*Math.PI/180)*rMax, obsy=cy-Math.cos(obs*Math.PI/180)*rMax;
+  const obsx2=cx-Math.sin(obs*Math.PI/180)*rMax, obsy2=cy+Math.cos(obs*Math.PI/180)*rMax;
+  // Símbolo estándar VOR: hexágono con punto central (FAA/ICAO)
+  const hexR=10;
+  const hexPts=[];
+  for(let i=0;i<6;i++){
+    const a=(60*i-30)*Math.PI/180;
+    hexPts.push((cx+Math.sin(a)*hexR)+','+(cy-Math.cos(a)*hexR));
+  }
+  const svg=`
+  <svg width="300" height="300" viewBox="0 0 300 300">
+    <circle cx="${cx}" cy="${cy}" r="${rMax+10}" fill="#000"/>
+    ${rings}
+    ${quad}
+    <line x1="${obsx2}" y1="${obsy2}" x2="${obsx}" y2="${obsy}" stroke="#00c8d4" stroke-width="1.5" stroke-dasharray="5,5"/>
+    <line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="#f0a500" stroke-width="2"/>
+    <polygon points="${hexPts.join(' ')}" fill="none" stroke="#00c8d4" stroke-width="2"/>
+    <circle cx="${cx}" cy="${cy}" r="2" fill="#00c8d4"/>
+    <g transform="translate(${px},${py}) rotate(${headingReal})">
+      <polygon points="0,-15 -10,10 0,4 10,10" fill="none" stroke="#f85149" stroke-width="3" stroke-linejoin="round"/>
+    </g>
+    <text x="${px+16}" y="${py-10}" fill="#f0a500" font-size="12" font-family="Share Tech Mono">R${String(radialReal).padStart(3,'0')}° / HDG${String(headingReal).padStart(3,'0')}°</text>
+    <circle cx="${cx}" cy="${cy}" r="${rMax+10}" fill="none" stroke="#333" stroke-width="2"/>
+  </svg>`;
+  document.getElementById('map-svg').innerHTML=svg;
+}
+
+// ── VERIFICACIÓN ──────────────────────────────────────────────────
+function verificar(){
+  const val=document.getElementById('in-radial').value;
+  if(val===''||accionSel===null){
+    alert('Ingresá el radial y elegí una acción.');
+    return;
+  }
+  intentos++;
+  const radialIn=parseInt(val,10);
+  const errRadial=Math.abs(norm180(radialIn-radialReal));
+  const okRadial=errRadial<=TOL_RADIAL;
+  const accionCorrecta=clasificarAccion(headingReal,radialReal);
+  const okAccion=accionSel===accionCorrecta;
+  const ok=okRadial&&okAccion;
+  if(ok) aciertos++;
+  updateScore();
+  const map={in:'Ingresando',out:'Alejándose',cross:'Cortando'};
+  const fb=document.getElementById('feedback');
+  fb.className='feedback '+(ok?'ok':'bad');
+  fb.style.display='block';
+  fb.innerHTML='<b>'+(ok?'✓ CORRECTO':'✗ INCORRECTO')+'</b>'+
+    'Radial real: '+String(radialReal).padStart(3,'0')+'° (ingresaste '+String(radialIn).padStart(3,'0')+'°, tolerancia ±'+TOL_RADIAL+'°)<br>'+
+    'Heading del avión: '+String(headingReal).padStart(3,'0')+'°<br>'+
+    'Acción real: '+map[accionCorrecta]+' por radial '+String(radialReal).padStart(3,'0')+'° (elegiste: '+map[accionSel]+')';
+  document.getElementById('btn-verificar').disabled=true;
+  document.getElementById('map-panel').style.display='block';
+  renderMap();
+}
+</script>
+</body>
+</html>
+
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
   v2.7 · Feedback de verificación: agregado el heading real del avión (para
