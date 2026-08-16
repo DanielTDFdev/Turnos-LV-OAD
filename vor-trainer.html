@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v2.5 · FIX CRÍTICO de drag (el real, v2.4 no lo resolvió del todo): el <svg
+         id="vor-instrument"> se reemplaza ENTERO en cada renderVOR() (nuevo
+         nodo cada vez, innerHTML). v2.4 cacheaba la referencia al nodo en
+         _dragDown() y la reusaba durante todo el drag — quedaba "stale" apenas
+         ocurría el primer render posterior: getBoundingClientRect() sobre un
+         nodo ya desconectado del DOM devuelve 0,0,0,0, el centro de referencia
+         saltaba a la esquina superior izquierda de la pantalla → el "twitch"
+         inicial + drag muerto después que reportó Daniel. Fix real: se re-
+         consulta el nodo VIVO por getElementById('vor-instrument') en CADA
+         evento (down y move), nunca se cachea entre renders.
   v2.4 · FIX CRÍTICO de drag (afectaba más a mobile): attachDrag() se llamaba
          en cada render de renderVOR() — y renderVOR() se dispara en cada
          movimiento del dedo durante el drag. Cada llamada agregaba listeners
@@ -204,7 +214,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v2.4</span>
+      <span class="ver">v2.5</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -397,32 +407,37 @@ function renderVOR(){
 }
 
 // ── DRAG DEL OBS (estado y listeners de window a nivel módulo — se agregan
-// UNA SOLA VEZ. Antes vivían dentro de attachDrag() y como esa función se
-// llama en cada render (cada movimiento del dedo dispara un render), cada
-// llamada agregaba listeners NUEVOS a window sin sacar los anteriores:
-// después de arrastrar un rato había decenas de listeners duplicados
-// compitiendo con startAngle/startObs viejos → drag errático/trabado,
-// más notorio en mobile por el volumen de eventos touchmove) ──
-let _dragging=false, _startAngle=0, _startObs=0, _dragSvg=null;
-function _angleFromCenter(clientX,clientY){
-  const rect=_dragSvg.getBoundingClientRect();
+// UNA SOLA VEZ). El <svg id="vor-instrument"> se reemplaza por completo en
+// cada renderVOR() (nuevo nodo cada vez), así que NUNCA guardamos una
+// referencia al nodo entre eventos — cachearla (como hacía la versión
+// anterior) queda "stale" apenas ocurre el primer render post-touchstart:
+// getBoundingClientRect() sobre un nodo ya desconectado del DOM devuelve
+// 0,0,0,0, el centro de referencia salta a la esquina superior izquierda de
+// la pantalla, y el drag queda roto (el "twitch" inicial + nada después que
+// reportaste). Ahora se re-consulta el nodo VIVO por ID en cada evento. ──
+let _dragging=false, _startAngle=0, _startObs=0;
+function _liveSvg(){ return document.getElementById('vor-instrument'); }
+function _angleFromCenter(svg,clientX,clientY){
+  const rect=svg.getBoundingClientRect();
   const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
   const dx=clientX-cx, dy=clientY-cy;
   return norm360(Math.atan2(dx,-dy)*180/Math.PI);
 }
 function _dragDown(e){
-  _dragSvg=document.getElementById('vor-instrument');
-  if(!_dragSvg) return;
+  const svg=_liveSvg();
+  if(!svg) return;
   _dragging=true;
   const p=e.touches?e.touches[0]:e;
-  _startAngle=_angleFromCenter(p.clientX,p.clientY);
+  _startAngle=_angleFromCenter(svg,p.clientX,p.clientY);
   _startObs=obs;
-  _dragSvg.style.cursor='grabbing';
+  svg.style.cursor='grabbing';
 }
 function _dragMove(e){
-  if(!_dragging||!_dragSvg) return;
+  if(!_dragging) return;
+  const svg=_liveSvg();
+  if(!svg) return;
   const p=e.touches?e.touches[0]:e;
-  const cur=_angleFromCenter(p.clientX,p.clientY);
+  const cur=_angleFromCenter(svg,p.clientX,p.clientY);
   obs=Math.round(norm360(_startObs+(cur-_startAngle)));
   renderVOR();
 }
