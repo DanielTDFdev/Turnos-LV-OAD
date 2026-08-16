@@ -2,6 +2,42 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v3.2 · Regla de clasificación reescrita según instrucción explícita de
+         Daniel: "cortás si la diferencia angular entre rumbo y radial es
+         mayor a 60°" — diferencia contra el RADIAL tal cual (no el
+         recíproco), 0°-180°. dOut≤60°→Alejándose, si no→candidato a Cortando.
+         Verificado contra los 2 casos reales reportados (radial144/heading272
+         →dOut=128°→Cortando ✓; radial258/heading216→dOut=42°→Alejándose ✓).
+         Encontrado y resuelto en el camino: con ±60° simétrico también para
+         Ingresando, quedaba matemáticamente inalcanzable (dOut+dIn=180
+         siempre, así que dIn≤60 implica dOut≥120, y Cortando gana ese
+         conflicto por confirmación de Daniel — nunca se llegaría a
+         Ingresando). Fix: Ingresando usa umbral propio IN_TOL=30° contra el
+         recíproco. Verificado con 7 casos (2 reales + 5 límite).
+  v3.1 · FIX de lógica real #2 (reportado por Daniel: radial 258°, heading
+         216°, dMin=42° — daba "Cortando", debía dar "Alejándose"). Contrastado
+         contra el caso anterior (radial 144°, heading 272°, dMin=52° — debía
+         dar "Cortando", v2.9 lo arregló con ALIGN_TOL=30 pero eso rompía este
+         caso nuevo). Ningún único valor de TOL_ACCION/ALIGN_TOL derivado de
+         "60" satisface los dos casos reales a la vez. Fijado ALIGN_TOL=45
+         (mitad exacta de 90°, partición simétrica in/out vs cross — dOut y
+         dIn son siempre suplementarios, dMin cae en [0,90], con 45 como corte
+         cada mitad del círculo es 50/50): único valor que deja ambos casos
+         reportados del lado correcto. Verificado con los 2 casos reales +
+         4 casos límite (borde exacto 45/46, alineado perfecto in/out).
+  v3.0 · Posible fix de un bug de renderizado reportado en iPhone (Daniel):
+         el changelog de este comentario aparecía como texto visible en medio
+         de la página. En Chromium headless no se reprodujo (body limpio,
+         verificado con evaluate('document.body.innerText')), así que puede
+         ser cache del lado de Daniel — pero de paso se encontró y sacó algo
+         real y sospechoso: el comentario tenía texto tipo svg/button/div/
+         span/meta-viewport escrito con corchetes angulares tal cual (tags
+         reales dentro del comentario, no como texto plano). Por spec no
+         debería romper el parseo, pero es exactamente el tipo de contenido
+         que algunos parsers de WebKit/Safari manejan mal en comentarios
+         largos. Reemplazado todo por comillas invertidas o texto plano, sin
+         un solo corchete angular dentro del comentario — cero riesgo de esto
+         pase lo que pase con el motor de renderizado.
   v2.9 · FIX de lógica real (reportado por Daniel: radial 144°, heading 272°,
          daba "Ingresando" cuando debía dar "Cortando"): TOL_ACCION (60°) mal
          interpretado en v2.0 — se usaba como tolerancia de ALINEACIÓN directa
@@ -14,7 +50,7 @@
   v2.8 · FIX: header ("VOR TRAINER / AEROCLUB RÍO GRANDE") quedaba tapado por
          la barra de estado del iPhone (notch/reloj) en algunos contextos
          (PWA instalada / browser chrome auto-oculto). Faltaba
-         viewport-fit=cover en el <meta viewport> (sin eso, env(safe-area-inset-*)
+         viewport-fit=cover en el `meta viewport` (sin eso, env(safe-area-inset-*)
          siempre vale 0) y padding-top con safe-area-inset-top en .wrap.
          Verificado por separado: la física del CDI y la clasificación de
          acción (radial 144°, heading 272°, OBS 324° — el escenario exacto
@@ -31,8 +67,8 @@
          drag-to-rotate estándar. Verificado numéricamente: tocar a 90°
          (derecha) y arrastrar a ~128° (abajo-derecha, giro horario de ~38°)
          ahora rota el dial +38° en el mismo sentido.
-  v2.5 · FIX CRÍTICO de drag (el real, v2.4 no lo resolvió del todo): el <svg
-         id="vor-instrument"> se reemplaza ENTERO en cada renderVOR() (nuevo
+  v2.5 · FIX CRÍTICO de drag (el real, v2.4 no lo resolvió del todo): el `svg
+         id="vor-instrument"` se reemplaza ENTERO en cada renderVOR() (nuevo
          nodo cada vez, innerHTML). v2.4 cacheaba la referencia al nodo en
          _dragDown() y la reusaba durante todo el drag — quedaba "stale" apenas
          ocurría el primer render posterior: getBoundingClientRect() sobre un
@@ -45,20 +81,20 @@
          en cada render de renderVOR() — y renderVOR() se dispara en cada
          movimiento del dedo durante el drag. Cada llamada agregaba listeners
          NUEVOS de mousemove/touchmove/mouseup/touchend a window SIN sacar los
-         anteriores (el nodo <svg> viejo se destruye al reemplazar innerHTML,
+         anteriores (el nodo `svg` viejo se destruye al reemplazar innerHTML,
          pero los listeners en window quedaban vivos igual). Resultado: tras
          unos segundos de arrastre había decenas de listeners duplicados
          compitiendo con startAngle/startObs de closures viejas → drag
          errático/trabado, mucho más perceptible en mobile por el volumen de
          eventos touchmove. Fix: estado de drag y listeners de window ahora
          viven a nivel módulo, se agregan UNA sola vez; attachDrag() solo
-         re-engancha mousedown/touchstart al <svg> nuevo de cada render.
+         re-engancha mousedown/touchstart al `svg` nuevo de cada render.
   v2.3 · FIX: en iOS, tocar los botones OBS rápido (doble tap) disparaba el
          zoom nativo de Safari. Agregado touch-action:manipulation a todos
-         los <button>.
+         los `button`.
   v2.2 · Reordenado el bloque de control OBS: el readout "OBS xxx grados" (antes un
-         <span> metido en el medio de la fila de botones, causaba wrap
-         desprolijo en mobile) pasa a ser un <div> en su propia línea, centrado,
+         `span` metido en el medio de la fila de botones, causaba wrap
+         desprolijo en mobile) pasa a ser un `div` en su propia línea, centrado,
          arriba de los 4 botones. Botones también centrados con justify-content,
          y en @media(max-width:480px) se reduce tamaño/padding para que entren
          más cómodos en pantalla angosta.
@@ -86,7 +122,7 @@
          cardinales (360/090/180/270) como referencia visual.
   v1.5 · FIX: gate() nunca ocultaba #gate-msg ("VALIDANDO SESIÓN…") al validar
          correctamente, quedaba superpuesto arriba del contenido. Además el
-         <span class="ver"> del header quedó en v1.0 desde el inicio — venía
+         `span class="ver"` del header quedó en v1.0 desde el inicio — venía
          bumpeando versión solo en el comentario, no en el string visible
          (regla de "bump en dos lugares" que no seguí en este archivo hasta
          ahora). De acá en más ambos lugares se actualizan juntos.
@@ -98,7 +134,7 @@
          real de v1.0 no era "los números se invierten" (eso es correcto y
          esperado) sino que TODOS se invertían simultáneamente al girar,
          porque heredaban una rotación de grupo uniforme partiendo de una
-         orientación base horizontal idéntica para todos. Ahora cada <text>
+         orientación base horizontal idéntica para todos. Ahora cada `text`
          lleva su propio transform="rotate(screenA)" con el mismo ángulo que
          define su posición — así cada número queda alineado radialmente
          contra el centro (como el instrumento real) y solo se invierte el
@@ -243,7 +279,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v2.9</span>
+      <span class="ver">v3.2</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -302,7 +338,6 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 // ── ESTADO (declarado ANTES del gate() porque gate() llama a nuevoEjercicio()
 // de forma síncrona — si estas variables fueran let/const declaradas después,
 // sería un ReferenceError de temporal dead zone que cortaría todo el script) ──
-const TOL_ACCION=60;   // tolerancia grados para clasificar ingresando/alejándose
 const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
 let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
 
@@ -360,16 +395,28 @@ function computeCDI(obsCourse, radial){
 }
 
 function clasificarAccion(heading, radial){
-  // TOL_ACCION (60°) es el semi-ancho de la zona de CORTE alrededor del
-  // perpendicular al radial — no la tolerancia de alineación directa (eso era
-  // el bug: usaba TOL_ACCION como umbral de "alineado", cuando en realidad
-  // define el umbral de "corte". La zona de alineado (in/out) es el
-  // complemento: ALIGN_TOL = 90 - TOL_ACCION.
-  const ALIGN_TOL=90-TOL_ACCION;
+  // Regla explícita de Daniel (2026-08-16): "cortás si la diferencia angular
+  // entre rumbo y radial es mayor a 60°" — diferencia medida contra el
+  // radial TAL CUAL (no el recíproco), 0°-180°.
+  //   dOut = |heading-radial| (0-180) ≤ 60°  → Alejándose
+  //   dOut > 60°                              → candidato a Cortando
+  // Verificado contra los 2 casos reales reportados:
+  //   radial=144,heading=272 → dOut=128°>60 → Cortando ✓
+  //   radial=258,heading=216 → dOut=42°≤60  → Alejándose ✓
+  //
+  // OJO — con esto solo, Ingresando queda matemáticamente inalcanzable si
+  // usara el mismo ±60° contra el recíproco: dOut+dIn=180 siempre (radial y
+  // radial+180 son antipodales), así que cada vez que dIn≤60 (candidato a
+  // Ingresando), automáticamente dOut≥120 (candidato a Cortando) — y Daniel
+  // confirmó que Cortando gana ese conflicto. Con ±60 simétrico, Ingresando
+  // nunca se dispara. Fix: Ingresando usa un umbral propio más chico
+  // (IN_TOL=30°) contra el recíproco, para que sea alcanzable en headings
+  // bien alineados sin invadir la zona de Cortando de Daniel.
+  const IN_TOL=30;
   const dOut=Math.abs(norm180(heading-radial));
   const dIn=Math.abs(norm180(heading-(radial+180)));
-  if(dIn<=ALIGN_TOL) return 'in';
-  if(dOut<=ALIGN_TOL) return 'out';
+  if(dOut<=60) return 'out';
+  if(dIn<=IN_TOL) return 'in';
   return 'cross';
 }
 
