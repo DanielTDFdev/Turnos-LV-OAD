@@ -2,6 +2,22 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.0 · Modo HSI agregado, conmutable con tabs VOR/HSI arriba de los
+         instrumentos (persistido en localStorage, key 'vor-trainer-modo').
+         Fusiona el giro direccional y el VOR/OBS en un solo instrumento: la
+         tarjeta gira mostrando el heading real, con una flecha de curso
+         (course arrow) superpuesta que el alumno gira con obs — misma
+         variable/física/tolerancias que en modo VOR, la punta de la flecha es
+         el extremo TO, la cola es el extremo FROM, la barra de desviación
+         se desliza perpendicular a la flecha (no en eje vertical fijo como
+         el VOR/OBS clásico, porque la flecha misma gira con el heading). Se
+         generalizó el sistema de drag (antes hardcodeado a 'vor-instrument')
+         para funcionar con cualquiera de los dos instrumentos según el modo
+         activo — attachDrag() ahora toma el id como parámetro, _liveSvg()
+         resuelve el id según `modo`. renderInstrumentos() reemplaza las
+         llamadas sueltas a renderHeading()/renderVOR() en nuevoEjercicio(),
+         turnOBS() y _dragMove() para que ambos instrumentos queden siempre
+         sincronizados aunque solo uno esté visible.
   v3.3 · FIX de lógica real #3 (reportado por Daniel: radial 077°, heading
          290°, dIn=33° — daba "Cortando" con IN_TOL=30, debía dar
          "Ingresando"). Contradicción directa con su instrucción literal de
@@ -240,6 +256,12 @@ header.bar .ver{font-family:var(--font-mono);font-size:11px;color:var(--text3);b
 h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:.16em;text-transform:uppercase;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
 .grid-instr{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:760px){.grid-instr{grid-template-columns:1fr}}
+.instr-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--border);padding-bottom:.5rem;margin-bottom:1rem}
+.instr-header h2{border:none;padding:0;margin:0}
+.mode-tabs{display:flex;gap:6px}
+.mode-tabs button{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.08em;background:var(--bg4);color:var(--text2);
+  border:1px solid var(--border);border-radius:var(--radius);padding:6px 14px;cursor:pointer;touch-action:manipulation}
+.mode-tabs button.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.1)}
 .instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
 .instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
 .obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
@@ -290,14 +312,20 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v3.3</span>
+      <span class="ver">v4.0</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
 
   <div class="card">
-    <h2>// INSTRUMENTOS</h2>
-    <div class="grid-instr">
+    <div class="instr-header">
+      <h2>// INSTRUMENTOS</h2>
+      <div class="mode-tabs">
+        <button id="tab-vor" onclick="setModo('vor')">VOR</button>
+        <button id="tab-hsi" onclick="setModo('hsi')">HSI</button>
+      </div>
+    </div>
+    <div class="grid-instr" id="instrumentos-vor">
       <div class="instr-box">
         <div class="instr-label">Giro Direccional (heading del avión)</div>
         <div id="hdg-svg"></div>
@@ -314,6 +342,18 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
         </div>
         <div class="flag-readout" id="flag-readout">— </div>
       </div>
+    </div>
+    <div class="instr-box" id="instrumentos-hsi" style="display:none">
+      <div class="instr-label">HSI — girá el CRS para centrar la aguja</div>
+      <div id="hsi-svg"></div>
+      <div class="obs-readout" id="hsi-crs-readout">CRS 000°</div>
+      <div class="obs-controls">
+        <button onclick="turnOBS(-10)">◄◄ 10°</button>
+        <button onclick="turnOBS(-1)">◄ 1°</button>
+        <button onclick="turnOBS(1)">1° ►</button>
+        <button onclick="turnOBS(10)">10° ►►</button>
+      </div>
+      <div class="flag-readout" id="hsi-flag-readout">— </div>
     </div>
   </div>
 
@@ -351,6 +391,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 // sería un ReferenceError de temporal dead zone que cortaría todo el script) ──
 const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
 let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
+let modo='vor'; // 'vor' | 'hsi' — persistido en localStorage
 
 function norm360(d){ d=d%360; if(d<0)d+=360; return d; }
 function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
@@ -365,8 +406,28 @@ function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
   const autenticado=!!(s && ((s.tipo==='alumno'&&s.rol==='alumno') || s.tipo==='instructor'));
   document.getElementById('btn-volver').style.display=autenticado?'inline-block':'none';
   document.getElementById('app-wrap').style.display='block';
+  let modoGuardado='vor';
+  try{ modoGuardado=localStorage.getItem('vor-trainer-modo')||'vor'; }catch(_){}
+  if(modoGuardado!=='hsi') modoGuardado='vor';
+  setModo(modoGuardado);
   nuevoEjercicio();
 })();
+
+function renderInstrumentos(){
+  renderHeading();
+  renderVOR();
+  renderHSI();
+}
+
+function setModo(m){
+  modo=m;
+  try{ localStorage.setItem('vor-trainer-modo', m); }catch(_){}
+  document.getElementById('instrumentos-vor').style.display = m==='vor' ? 'grid' : 'none';
+  document.getElementById('instrumentos-hsi').style.display = m==='hsi' ? 'flex' : 'none';
+  document.getElementById('tab-vor').classList.toggle('active', m==='vor');
+  document.getElementById('tab-hsi').classList.toggle('active', m==='hsi');
+  renderInstrumentos();
+}
 
 function nuevoEjercicio(){
   radialReal=Math.floor(Math.random()*360);
@@ -378,8 +439,7 @@ function nuevoEjercicio(){
   document.getElementById('feedback').style.display='none';
   document.getElementById('map-panel').style.display='none';
   document.getElementById('btn-verificar').disabled=false;
-  renderHeading();
-  renderVOR();
+  renderInstrumentos();
   updateScore();
 }
 
@@ -388,7 +448,7 @@ function selectAccion(a){
   document.querySelectorAll('.action-btns button').forEach(b=>b.classList.toggle('sel',b.dataset.a===a));
 }
 
-function turnOBS(delta){ obs=Math.round(norm360(obs+delta)); renderVOR(); }
+function turnOBS(delta){ obs=Math.round(norm360(obs+delta)); renderInstrumentos(); }
 
 function updateScore(){
   document.getElementById('score-label').innerHTML='Aciertos: <b>'+aciertos+'</b> / '+intentos;
@@ -500,7 +560,56 @@ function renderVOR(){
   const fl=document.getElementById('flag-readout');
   fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
   fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
-  attachDrag();
+  attachDrag('vor-instrument');
+}
+
+// ── SVG: HSI (Horizontal Situation Indicator) ─────────────────────
+// Fusiona el giro direccional y el VOR/OBS en un solo instrumento: la
+// tarjeta gira mostrando el heading real (igual que el giro direccional),
+// y encima se superpone una flecha de curso (course arrow) que el alumno
+// gira con obs — misma variable, mismos controles, misma física de CDI/
+// TO-FROM que en modo VOR. La cabeza de la flecha (punta) es el extremo
+// "TO"; la cola (recíproco) es el extremo "FROM". La barra de desviación
+// se desliza perpendicular a la flecha, no en el eje vertical fijo como en
+// el VOR/OBS clásico (porque la flecha misma gira con el heading).
+function renderHSI(){
+  const cdi=computeCDI(obs,radialReal);
+  const cx=130,cy=130,r=115;
+  const {ticks,labels}=compassRing(cx,cy,r,-headingReal,d=>
+    d===0?'N':d===90?'E':d===180?'S':d===270?'W':String(d/10).padStart(2,'0'));
+  const courseA=norm360(obs-headingReal); // ángulo de pantalla del curso seleccionado
+  const rad=courseA*Math.PI/180, radRecip=(courseA+180)*Math.PI/180;
+  const shaftLen=88;
+  const hx=cx+Math.sin(rad)*shaftLen, hy=cy-Math.cos(rad)*shaftLen;
+  const tx=cx+Math.sin(radRecip)*shaftLen, ty=cy-Math.cos(radRecip)*shaftLen;
+  const perpA=(courseA+90)*Math.PI/180;
+  const offsetPx=(cdi.defl/10)*38;
+  const ox=Math.sin(perpA)*offsetPx, oy=-Math.cos(perpA)*offsetPx;
+  const barHalf=26;
+  const bx1=cx+ox+Math.sin(rad)*barHalf, by1=cy+oy-Math.cos(rad)*barHalf;
+  const bx2=cx+ox-Math.sin(rad)*barHalf, by2=cy+oy+Math.cos(rad)*barHalf;
+  // triángulo TO en la cabeza, FROM en la cola (cualquiera de los dos existe según flag)
+  const toTri=`<polygon points="${hx+Math.sin(rad)*10},${hy-Math.cos(rad)*10} ${hx+Math.sin(perpA)*7},${hy-Math.cos(perpA)*7} ${hx-Math.sin(perpA)*7},${hy+Math.cos(perpA)*7}" fill="#39d353"/>`;
+  const fromTri=`<polygon points="${tx-Math.sin(rad)*10},${ty+Math.cos(rad)*10} ${tx+Math.sin(perpA)*7},${ty-Math.cos(perpA)*7} ${tx-Math.sin(perpA)*7},${ty+Math.cos(perpA)*7}" fill="#f0a500"/>`;
+  const svg=`
+  <svg width="260" height="260" viewBox="0 0 260 260" id="hsi-instrument" style="cursor:grab;touch-action:none">
+    <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
+    ${ticks}${labels}
+    <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
+    <line x1="${hx}" y1="${hy}" x2="${tx}" y2="${ty}" stroke="#555" stroke-width="2"/>
+    <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="white" stroke-width="6" stroke-linecap="round"/>
+    ${cdi.flag==='TO'?toTri:''}
+    ${cdi.flag==='FROM'?fromTri:''}
+    <polygon points="${cx},${cy-18} ${cx-13},${cy+13} ${cx},${cy+7} ${cx+13},${cy+13}"
+      fill="none" stroke="#f85149" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
+  </svg>`;
+  document.getElementById('hsi-svg').innerHTML=svg;
+  document.getElementById('hsi-crs-readout').textContent='CRS '+String(obs).padStart(3,'0')+'°';
+  const fl=document.getElementById('hsi-flag-readout');
+  fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
+  fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  attachDrag('hsi-instrument');
 }
 
 // ── DRAG DEL OBS (estado y listeners de window a nivel módulo — se agregan
@@ -513,7 +622,7 @@ function renderVOR(){
 // la pantalla, y el drag queda roto (el "twitch" inicial + nada después que
 // reportaste). Ahora se re-consulta el nodo VIVO por ID en cada evento. ──
 let _dragging=false, _startAngle=0, _startObs=0;
-function _liveSvg(){ return document.getElementById('vor-instrument'); }
+function _liveSvg(){ return document.getElementById(modo==='hsi'?'hsi-instrument':'vor-instrument'); }
 function _angleFromCenter(svg,clientX,clientY){
   const rect=svg.getBoundingClientRect();
   const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
@@ -536,7 +645,7 @@ function _dragMove(e){
   const p=e.touches?e.touches[0]:e;
   const cur=_angleFromCenter(svg,p.clientX,p.clientY);
   obs=Math.round(norm360(_startObs-(cur-_startAngle)));
-  renderVOR();
+  renderInstrumentos();
 }
 function _dragUp(){ _dragging=false; }
 window.addEventListener('mousemove',_dragMove);
@@ -546,8 +655,8 @@ window.addEventListener('touchend',_dragUp);
 
 // re-engancha SOLO mousedown/touchstart al <svg> nuevo de cada render
 // (el nodo anterior se destruye junto con sus listeners al reemplazar innerHTML)
-function attachDrag(){
-  const svg=document.getElementById('vor-instrument');
+function attachDrag(instrId){
+  const svg=document.getElementById(instrId);
   if(!svg) return;
   svg.addEventListener('mousedown',_dragDown);
   svg.addEventListener('touchstart',_dragDown,{passive:true});
