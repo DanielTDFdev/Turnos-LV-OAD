@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v1.1 · FIX CRÍTICO: gate() llamaba a nuevoEjercicio() de forma síncrona, que
+         leía radialReal/headingReal/etc. antes de que los let de estado se
+         declararan más abajo en el script → ReferenceError (temporal dead zone)
+         que cortaba TODO el script, incluyendo los onclick de los botones OBS.
+         Mismo patrón de bug ya documentado para turnos.html (SESSION_TIMEOUT_MS).
+         Fix: estado + norm360/norm180 ahora declarados ANTES del gate().
   v1.0 · Primera versión. Simulador interactivo de lectura VOR/OBS/CDI para
          alumnos. Genera un escenario aleatorio (radial + heading del avión,
          posición en planta oculta), el alumno gira el OBS (drag o botones
@@ -184,6 +190,16 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 </div>
 
 <script>
+// ── ESTADO (declarado ANTES del gate() porque gate() llama a nuevoEjercicio()
+// de forma síncrona — si estas variables fueran let/const declaradas después,
+// sería un ReferenceError de temporal dead zone que cortaría todo el script) ──
+const TOL_ACCION=20;   // tolerancia grados para clasificar ingresando/alejándose
+const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
+let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
+
+function norm360(d){ d=d%360; if(d<0)d+=360; return d; }
+function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
+
 // ── GATE DE SESIÓN (mismo patrón que portal-alumno.html) ──────────
 (function gate(){
   let s=null;
@@ -199,14 +215,6 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
   document.getElementById('app-wrap').style.display='block';
   nuevoEjercicio();
 })();
-
-// ── ESTADO ──────────────────────────────────────────────────────
-const TOL_ACCION=20;   // tolerancia grados para clasificar ingresando/alejándose
-const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
-let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
-
-function norm360(d){ d=d%360; if(d<0)d+=360; return d; }
-function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
 
 function nuevoEjercicio(){
   radialReal=Math.floor(Math.random()*360);
