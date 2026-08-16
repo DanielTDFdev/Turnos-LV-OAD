@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v1.9 · Indicador TO/FROM del VOR/OBS: se saca el triángulo suelto arriba/abajo
+         del dial y se mueve a un cuadro fijo a la derecha del círculo central,
+         con el texto "TO"/"FROM" y el triángulo correspondiente a la derecha
+         del texto (mismo criterio visual que el instrumento real de referencia).
   v1.8 · Símbolo de estación VOR en el mapa: era un triángulo, se cambia a
          hexágono con punto central — símbolo estándar FAA/ICAO (verificado,
          no un pentágono: hexágono, confirmado contra legend de cartas
@@ -168,7 +172,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v1.8</span>
+      <span class="ver">v1.9</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -346,8 +350,10 @@ function renderVOR(){
     <line x1="${cx}" y1="${cy-45}" x2="${cx}" y2="${cy+45}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
     <circle cx="${cx}" cy="${cy}" r="5" fill="none" stroke="white" stroke-width="1.5"/>
     <line x1="${needleX}" y1="${cy-48}" x2="${needleX}" y2="${cy+48}" stroke="white" stroke-width="5"/>
-    ${cdi.flag==='TO'?`<polygon points="${cx-8},${cy-46} ${cx+8},${cy-46} ${cx},${cy-58}" fill="#39d353"/>`:''}
-    ${cdi.flag==='FROM'?`<polygon points="${cx-8},${cy+46} ${cx+8},${cy+46} ${cx},${cy+58}" fill="#f0a500"/>`:''}
+    <rect x="${cx+46}" y="${cy-12}" width="62" height="24" rx="3" fill="#0a0c0f" stroke="${cdi.flag==='TO'?'#39d353':'#f0a500'}" stroke-width="1.5"/>
+    <text x="${cx+52}" y="${cy}" text-anchor="start" dominant-baseline="middle" font-family="Share Tech Mono" font-size="13" font-weight="bold" fill="${cdi.flag==='TO'?'#39d353':'#f0a500'}">${cdi.flag}</text>
+    ${cdi.flag==='TO'?`<polygon points="${cx+92},${cy+5} ${cx+104},${cy+5} ${cx+98},${cy-6}" fill="#39d353"/>`:''}
+    ${cdi.flag==='FROM'?`<polygon points="${cx+92},${cy-5} ${cx+104},${cy-5} ${cx+98},${cy+6}" fill="#f0a500"/>`:''}
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
   document.getElementById('vor-svg').innerHTML=svg;
