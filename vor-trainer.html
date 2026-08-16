@@ -2,7 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
-  v2.2 · Reordenado el bloque de control OBS: el readout "OBS xxx°" (antes un
+  v2.3 · FIX: en iOS, tocar los botones OBS rápido (doble tap) disparaba el
+         zoom nativo de Safari. Agregado touch-action:manipulation a todos
+         los <button>.
+  v2.2 · Reordenado el bloque de control OBS: el readout "OBS xxx grados" (antes un
          <span> metido en el medio de la fila de botones, causaba wrap
          desprolijo en mobile) pasa a ser un <div> en su propia línea, centrado,
          arriba de los 4 botones. Botones también centrados con justify-content,
@@ -142,6 +145,7 @@ h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:
 .instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
 .instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
 .obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+button{touch-action:manipulation}
 .obs-controls button{font-family:var(--font-mono);font-size:13px;font-weight:600;background:var(--bg4);color:var(--cyan);
   border:1px solid var(--border2);border-radius:var(--radius);padding:8px 14px;cursor:pointer}
 .obs-controls button:hover{background:rgba(0,200,212,.12)}
@@ -188,7 +192,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v2.2</span>
+      <span class="ver">v2.3</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
