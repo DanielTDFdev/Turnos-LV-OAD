@@ -2,6 +2,7 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v2.0 · Tolerancia de clasificación ingresando/alejándose/cortando: ±20° → ±60°.
   v1.9 · Indicador TO/FROM del VOR/OBS: se saca el triángulo suelto arriba/abajo
          del dial y se mueve a un cuadro fijo a la derecha del círculo central,
          con el texto "TO"/"FROM" y el triángulo correspondiente a la derecha
@@ -172,7 +173,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v1.9</span>
+      <span class="ver">v2.0</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -231,7 +232,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 // ── ESTADO (declarado ANTES del gate() porque gate() llama a nuevoEjercicio()
 // de forma síncrona — si estas variables fueran let/const declaradas después,
 // sería un ReferenceError de temporal dead zone que cortaría todo el script) ──
-const TOL_ACCION=20;   // tolerancia grados para clasificar ingresando/alejándose
+const TOL_ACCION=60;   // tolerancia grados para clasificar ingresando/alejándose
 const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
 let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
 
