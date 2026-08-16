@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v1.7 · Acceso libre, sin login: se sacó el gate que redirigía a turnos.html
+         si no había sesión. Ahora se muestra la app siempre. Si detecta una
+         sesión válida en sessionStorage (llegó desde turnos.html/portal),
+         muestra el botón "← VOLVER" a turnos.html; si no hay sesión, el botón
+         queda oculto. Se saca también el botón fijo "← PORTAL" (portal-alumno
+         sigue requiriendo login, no tiene sentido linkearlo desde acá sin
+         saber si el visitante tiene cuenta).
   v1.6 · Mapa "POSICIÓN REAL": agregadas marcas y etiquetas de los 4 rumbos
          cardinales (360/090/180/270) como referencia visual.
   v1.5 · FIX: gate() nunca ocultaba #gate-msg ("VALIDANDO SESIÓN…") al validar
@@ -151,19 +158,14 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 </head>
 <body>
 
-<div id="gate-msg" style="max-width:480px;margin:80px auto;text-align:center;font-family:var(--font-mono);color:var(--text2)">
-  <h2 style="border:none">// VALIDANDO SESIÓN…</h2>
-  <p>Si no tenés sesión activa, te redirige a <b>turnos.html</b>.</p>
-</div>
-
 <div class="wrap" id="app-wrap" style="display:none">
   <header class="bar">
     <div class="dot"></div>
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v1.6</span>
-      <a class="back" href="portal-alumno.html">← PORTAL</a>
+      <span class="ver">v1.7</span>
+      <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
 
@@ -228,19 +230,15 @@ let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accion
 function norm360(d){ d=d%360; if(d<0)d+=360; return d; }
 function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
 
-// ── GATE DE SESIÓN (mismo patrón que portal-alumno.html) ──────────
-(function gate(){
+// ── ACCESO LIBRE (sin login) ───────────────────────────────────────
+// Se muestra la app siempre. Si detectamos una sesión válida en
+// sessionStorage (llegó desde turnos.html/portal), mostramos el botón
+// "← VOLVER" a turnos.html; si no hay sesión, ese botón se oculta.
+(function initAccess(){
   let s=null;
   try{ s=JSON.parse(sessionStorage.getItem('lvoad-session')||'null'); }catch(_){ s=null; }
-  let ok=false;
-  if(s && s.tipo==='alumno' && s.rol==='alumno') ok=true;
-  else if(s && s.tipo==='instructor') ok=true;
-  if(!ok){
-    document.getElementById('gate-msg').style.display='block';
-    setTimeout(()=>{ location.href='turnos.html'; },900);
-    return;
-  }
-  document.getElementById('gate-msg').style.display='none';
+  const autenticado=!!(s && ((s.tipo==='alumno'&&s.rol==='alumno') || s.tipo==='instructor'));
+  document.getElementById('btn-volver').style.display=autenticado?'inline-block':'none';
   document.getElementById('app-wrap').style.display='block';
   nuevoEjercicio();
 })();

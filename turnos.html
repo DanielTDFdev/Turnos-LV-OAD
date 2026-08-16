@@ -1,5 +1,11 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.45
+  FECHA   : 2026-08-15
+  CAMBIOS : Link "📡 VOR Trainer" (vor-trainer.html) en links-row de alumno-screen
+            e inst-screen, junto a Portal Alumnos/Plan de Vuelo/Peso y Balance.
+            Simulador interactivo de lectura VOR/OBS/CDI (archivo nuevo, standalone,
+            acceso libre sin login).
   VERSION : 7.44
   FECHA   : 2026-08-14
   CAMBIOS : FIX: botón "GUARDAR PARÁMETROS" (Config→Parámetros, v7.43) no hacía nada
@@ -2548,7 +2554,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.44</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.45</div>
   </div>
 
 </div>
@@ -2637,6 +2643,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <a href="portal-alumno.html" class="portal-link" id="al-portal-link">🎓 Portal Alumnos</a>
     <a href="fpl.html?volver=turnos.html" class="fpl-link">✈ Plan de Vuelo</a>
     <a href="peso-balance.html?volver=turnos.html" class="wb-link">⚖ Peso y Balance</a>
+    <a href="vor-trainer.html" class="wb-link">📡 VOR Trainer</a>
   </div>
   <div class="tab-bar">
     <button class="nav-btn active" id="al-tab-mis"    onclick="showAlumnoTab('mis-turnos')">Mis Turnos</button>
@@ -2790,6 +2797,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <a href="portal-alumno.html" class="portal-link" id="inst-portal-link">🎓 Portal Alumnos</a>
     <a href="fpl.html?volver=turnos.html" class="fpl-link">✈ Plan de Vuelo</a>
     <a href="peso-balance.html?volver=turnos.html" class="wb-link">⚖ Peso y Balance</a>
+    <a href="vor-trainer.html" class="wb-link">📡 VOR Trainer</a>
   </div>
   <div class="tab-bar">
     <button class="nav-btn active" id="inst-tab-res"   onclick="showInstTab('reservas')">Reservas</button>
