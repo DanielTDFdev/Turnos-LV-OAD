@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v1.3 · FIX alineación de números: v1.2 los dejaba siempre horizontales
+         (nunca rotaban), lo cual tampoco es fiel al instrumento real. El bug
+         real de v1.0 no era "los números se invierten" (eso es correcto y
+         esperado) sino que TODOS se invertían simultáneamente al girar,
+         porque heredaban una rotación de grupo uniforme partiendo de una
+         orientación base horizontal idéntica para todos. Ahora cada <text>
+         lleva su propio transform="rotate(screenA)" con el mismo ángulo que
+         define su posición — así cada número queda alineado radialmente
+         contra el centro (como el instrumento real) y solo se invierte el
+         que está momentáneamente abajo, no todo el anillo a la vez.
   v1.2 · Los números del anillo (giro direccional y VOR/OBS) ya NO se invierten
          al girar la tarjeta — antes rotaban como grupo junto con las marcas
          (fiel al instrumento mecánico real, donde SÍ se invierten en la parte
@@ -268,7 +278,10 @@ function clasificarAccion(heading, radial){
   return 'cross';
 }
 
-// ── HELPER: anillo de compás con etiquetas siempre legibles (no se invierten) ──
+// ── HELPER: anillo de compás con números alineados radialmente contra el
+// centro (como el instrumento real) — cada <text> rota según SU PROPIO ángulo
+// de pantalla, no como grupo rígido (eso hacía que TODOS se invirtieran a la
+// vez al girar) ni siempre horizontal (eso los dejaba "norte-sur" fijos) ──
 function compassRing(cx,cy,r,rotationDeg,labelFn){
   let ticks='', labels='';
   for(let d=0; d<360; d+=10){
@@ -281,7 +294,7 @@ function compassRing(cx,cy,r,rotationDeg,labelFn){
     ticks+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="white" stroke-width="'+(major?2:1)+'"/>';
     if(major){
       const lx=cx+Math.sin(rad)*(r-26), ly=cy-Math.cos(rad)*(r-26);
-      labels+='<text x="'+lx+'" y="'+ly+'" fill="white" font-size="14" font-family="Share Tech Mono" text-anchor="middle" dominant-baseline="middle" font-weight="bold">'+labelFn(d)+'</text>';
+      labels+='<text x="'+lx+'" y="'+ly+'" transform="rotate('+screenA+' '+lx+' '+ly+')" fill="white" font-size="14" font-family="Share Tech Mono" text-anchor="middle" dominant-baseline="middle" font-weight="bold">'+labelFn(d)+'</text>';
     }
   }
   return {ticks,labels};
