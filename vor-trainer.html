@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v2.6 · FIX sentido del drag: giraba al revés del dedo (arrastrar hacia abajo
+         del lado derecho rotaba el dial hacia la izquierda). La fórmula sumaba
+         el delta del dedo directo a obs, pero como el render usa
+         rotationDeg=-obs, sumar delta hacía que el dial rotara en sentido
+         CONTRARIO al dedo. Fix: obs = startObs - delta (restar en vez de
+         sumar) — ahora el punto que tocás queda "pegado" al dedo, como un
+         drag-to-rotate estándar. Verificado numéricamente: tocar a 90°
+         (derecha) y arrastrar a ~128° (abajo-derecha, giro horario de ~38°)
+         ahora rota el dial +38° en el mismo sentido.
   v2.5 · FIX CRÍTICO de drag (el real, v2.4 no lo resolvió del todo): el <svg
          id="vor-instrument"> se reemplaza ENTERO en cada renderVOR() (nuevo
          nodo cada vez, innerHTML). v2.4 cacheaba la referencia al nodo en
@@ -214,7 +223,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v2.5</span>
+      <span class="ver">v2.6</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -438,7 +447,7 @@ function _dragMove(e){
   if(!svg) return;
   const p=e.touches?e.touches[0]:e;
   const cur=_angleFromCenter(svg,p.clientX,p.clientY);
-  obs=Math.round(norm360(_startObs+(cur-_startAngle)));
+  obs=Math.round(norm360(_startObs-(cur-_startAngle)));
   renderVOR();
 }
 function _dragUp(){ _dragging=false; }
