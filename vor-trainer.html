@@ -1,7 +1,19 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v2.4 · FIX CRÍTICO de drag (afectaba más a mobile): attachDrag() se llamaba
+         en cada render de renderVOR() — y renderVOR() se dispara en cada
+         movimiento del dedo durante el drag. Cada llamada agregaba listeners
+         NUEVOS de mousemove/touchmove/mouseup/touchend a window SIN sacar los
+         anteriores (el nodo <svg> viejo se destruye al reemplazar innerHTML,
+         pero los listeners en window quedaban vivos igual). Resultado: tras
+         unos segundos de arrastre había decenas de listeners duplicados
+         compitiendo con startAngle/startObs de closures viejas → drag
+         errático/trabado, mucho más perceptible en mobile por el volumen de
+         eventos touchmove. Fix: estado de drag y listeners de window ahora
+         viven a nivel módulo, se agregan UNA sola vez; attachDrag() solo
+         re-engancha mousedown/touchstart al <svg> nuevo de cada render.
   v2.3 · FIX: en iOS, tocar los botones OBS rápido (doble tap) disparaba el
          zoom nativo de Safari. Agregado touch-action:manipulation a todos
          los <button>.
@@ -192,7 +204,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v2.3</span>
+      <span class="ver">v2.4</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -384,39 +396,49 @@ function renderVOR(){
   attachDrag();
 }
 
+// ── DRAG DEL OBS (estado y listeners de window a nivel módulo — se agregan
+// UNA SOLA VEZ. Antes vivían dentro de attachDrag() y como esa función se
+// llama en cada render (cada movimiento del dedo dispara un render), cada
+// llamada agregaba listeners NUEVOS a window sin sacar los anteriores:
+// después de arrastrar un rato había decenas de listeners duplicados
+// compitiendo con startAngle/startObs viejos → drag errático/trabado,
+// más notorio en mobile por el volumen de eventos touchmove) ──
+let _dragging=false, _startAngle=0, _startObs=0, _dragSvg=null;
+function _angleFromCenter(clientX,clientY){
+  const rect=_dragSvg.getBoundingClientRect();
+  const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+  const dx=clientX-cx, dy=clientY-cy;
+  return norm360(Math.atan2(dx,-dy)*180/Math.PI);
+}
+function _dragDown(e){
+  _dragSvg=document.getElementById('vor-instrument');
+  if(!_dragSvg) return;
+  _dragging=true;
+  const p=e.touches?e.touches[0]:e;
+  _startAngle=_angleFromCenter(p.clientX,p.clientY);
+  _startObs=obs;
+  _dragSvg.style.cursor='grabbing';
+}
+function _dragMove(e){
+  if(!_dragging||!_dragSvg) return;
+  const p=e.touches?e.touches[0]:e;
+  const cur=_angleFromCenter(p.clientX,p.clientY);
+  obs=Math.round(norm360(_startObs+(cur-_startAngle)));
+  renderVOR();
+}
+function _dragUp(){ _dragging=false; }
+window.addEventListener('mousemove',_dragMove);
+window.addEventListener('mouseup',_dragUp);
+window.addEventListener('touchmove',_dragMove,{passive:true});
+window.addEventListener('touchend',_dragUp);
+
+// re-engancha SOLO mousedown/touchstart al <svg> nuevo de cada render
+// (el nodo anterior se destruye junto con sus listeners al reemplazar innerHTML)
 function attachDrag(){
   const svg=document.getElementById('vor-instrument');
   if(!svg) return;
-  let dragging=false, startAngle=0, startObs=0;
-  function angleFromCenter(clientX,clientY){
-    const rect=svg.getBoundingClientRect();
-    const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
-    const dx=clientX-cx, dy=clientY-cy;
-    let deg=Math.atan2(dx,-dy)*180/Math.PI;
-    return norm360(deg);
-  }
-  function down(e){
-    dragging=true;
-    const p=e.touches?e.touches[0]:e;
-    startAngle=angleFromCenter(p.clientX,p.clientY);
-    startObs=obs;
-    svg.style.cursor='grabbing';
-  }
-  function move(e){
-    if(!dragging) return;
-    const p=e.touches?e.touches[0]:e;
-    const cur=angleFromCenter(p.clientX,p.clientY);
-    let delta=cur-startAngle;
-    obs=Math.round(norm360(startObs+delta));
-    renderVOR();
-  }
-  function up(){ dragging=false; }
-  svg.addEventListener('mousedown',down);
-  window.addEventListener('mousemove',move);
-  window.addEventListener('mouseup',up);
-  svg.addEventListener('touchstart',down,{passive:true});
-  window.addEventListener('touchmove',move,{passive:true});
-  window.addEventListener('touchend',up);
+  svg.addEventListener('mousedown',_dragDown);
+  svg.addEventListener('touchstart',_dragDown,{passive:true});
 }
 
 // ── SVG: MAPA EN PLANTA ──────────────────────────────────────────
