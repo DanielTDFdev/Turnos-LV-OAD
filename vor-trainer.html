@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.3 · HSI: la flecha de curso ahora tiene cabeza (triángulo) y cola (marca
+         en T) FIJAS, siempre visibles pase lo que pase con TO/FROM — antes
+         no había forma distintiva en las puntas, solo una línea recta. La
+         línea del brazo va PARTIDA (dos tramos con un hueco cerca del
+         centro) y el indicador TO/FROM (triangulito verde/ámbar) vive en ese
+         hueco, apuntando hacia la cabeza (TO) o hacia la cola (FROM), como
+         en la referencia real.
+  v4.2 · HSI: indicador TO/FROM movido de la punta del brazo al medio (cerca
+         del avioncito central), como en la referencia real — antes estaba en
+         el extremo exterior de la flecha de curso.
+  v4.1 · HSI: línea central (flecha de curso) más gruesa (2→3.5) y ambas
+         líneas (flecha + barra de desviación) en verde.
   v4.0 · Modo HSI agregado, conmutable con tabs VOR/HSI arriba de los
          instrumentos (persistido en localStorage, key 'vor-trainer-modo').
          Fusiona el giro direccional y el VOR/OBS en un solo instrumento: la
@@ -312,7 +324,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.0</span>
+      <span class="ver">v4.3</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -580,24 +592,41 @@ function renderHSI(){
   const courseA=norm360(obs-headingReal); // ángulo de pantalla del curso seleccionado
   const rad=courseA*Math.PI/180, radRecip=(courseA+180)*Math.PI/180;
   const shaftLen=88;
-  const hx=cx+Math.sin(rad)*shaftLen, hy=cy-Math.cos(rad)*shaftLen;
-  const tx=cx+Math.sin(radRecip)*shaftLen, ty=cy-Math.cos(radRecip)*shaftLen;
+  const hx=cx+Math.sin(rad)*shaftLen, hy=cy-Math.cos(rad)*shaftLen; // punta de la cabeza
+  const tx=cx+Math.sin(radRecip)*shaftLen, ty=cy-Math.cos(radRecip)*shaftLen; // punta de la cola
   const perpA=(courseA+90)*Math.PI/180;
   const offsetPx=(cdi.defl/10)*38;
   const ox=Math.sin(perpA)*offsetPx, oy=-Math.cos(perpA)*offsetPx;
   const barHalf=26;
   const bx1=cx+ox+Math.sin(rad)*barHalf, by1=cy+oy-Math.cos(rad)*barHalf;
   const bx2=cx+ox-Math.sin(rad)*barHalf, by2=cy+oy+Math.cos(rad)*barHalf;
-  // triángulo TO en la cabeza, FROM en la cola (cualquiera de los dos existe según flag)
-  const toTri=`<polygon points="${hx+Math.sin(rad)*10},${hy-Math.cos(rad)*10} ${hx+Math.sin(perpA)*7},${hy-Math.cos(perpA)*7} ${hx-Math.sin(perpA)*7},${hy+Math.cos(perpA)*7}" fill="#39d353"/>`;
-  const fromTri=`<polygon points="${tx-Math.sin(rad)*10},${ty+Math.cos(rad)*10} ${tx+Math.sin(perpA)*7},${ty-Math.cos(perpA)*7} ${tx-Math.sin(perpA)*7},${ty+Math.cos(perpA)*7}" fill="#f0a500"/>`;
+
+  // La flecha SIEMPRE tiene cabeza y cola fijas (triángulo en la punta,
+  // marca en T en la cola), visibles pase lo que pase con TO/FROM. La línea
+  // del brazo va PARTIDA — dos tramos con un hueco en el medio — y el
+  // indicador TO/FROM (un triangulito) vive justo en ese hueco, apuntando
+  // hacia la cabeza (TO) o hacia la cola (FROM).
+  const gapR=32; // radio donde arrancan los tramos del brazo (fin del hueco central)
+  const hgx=cx+Math.sin(rad)*gapR, hgy=cy-Math.cos(rad)*gapR;
+  const tgx=cx+Math.sin(radRecip)*gapR, tgy=cy-Math.cos(radRecip)*gapR;
+  const headShaft=`<line x1="${hgx}" y1="${hgy}" x2="${hx}" y2="${hy}" stroke="#39d353" stroke-width="3.5"/>`;
+  const tailShaft=`<line x1="${tgx}" y1="${tgy}" x2="${tx}" y2="${ty}" stroke="#39d353" stroke-width="3.5"/>`;
+  const headArrow=`<polygon points="${hx+Math.sin(rad)*12},${hy-Math.cos(rad)*12} ${hx+Math.sin(perpA)*8},${hy-Math.cos(perpA)*8} ${hx-Math.sin(perpA)*8},${hy+Math.cos(perpA)*8}" fill="#39d353"/>`;
+  const tailCap=`<line x1="${tx+Math.sin(perpA)*8}" y1="${ty-Math.cos(perpA)*8}" x2="${tx-Math.sin(perpA)*8}" y2="${ty+Math.cos(perpA)*8}" stroke="#39d353" stroke-width="3.5"/>`;
+
+  // Indicador TO/FROM: triángulo chico en el hueco central, apuntando hacia
+  // la cabeza (TO) o hacia la cola (FROM).
+  const tfR=15;
+  const toTri=`<polygon points="${cx+Math.sin(rad)*(tfR+8)},${cy-Math.cos(rad)*(tfR+8)} ${cx+Math.sin(rad)*(tfR-8)+Math.sin(perpA)*7},${cy-Math.cos(rad)*(tfR-8)-Math.cos(perpA)*7} ${cx+Math.sin(rad)*(tfR-8)-Math.sin(perpA)*7},${cy-Math.cos(rad)*(tfR-8)+Math.cos(perpA)*7}" fill="#39d353"/>`;
+  const fromTri=`<polygon points="${cx+Math.sin(radRecip)*(tfR+8)},${cy-Math.cos(radRecip)*(tfR+8)} ${cx+Math.sin(radRecip)*(tfR-8)+Math.sin(perpA)*7},${cy-Math.cos(radRecip)*(tfR-8)-Math.cos(perpA)*7} ${cx+Math.sin(radRecip)*(tfR-8)-Math.sin(perpA)*7},${cy-Math.cos(radRecip)*(tfR-8)+Math.cos(perpA)*7}" fill="#f0a500"/>`;
+
   const svg=`
   <svg width="260" height="260" viewBox="0 0 260 260" id="hsi-instrument" style="cursor:grab;touch-action:none">
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
-    <line x1="${hx}" y1="${hy}" x2="${tx}" y2="${ty}" stroke="#555" stroke-width="2"/>
-    <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="white" stroke-width="6" stroke-linecap="round"/>
+    ${headShaft}${tailShaft}${headArrow}${tailCap}
+    <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#39d353" stroke-width="6" stroke-linecap="round"/>
     ${cdi.flag==='TO'?toTri:''}
     ${cdi.flag==='FROM'?fromTri:''}
     <polygon points="${cx},${cy-18} ${cx-13},${cy+13} ${cx},${cy+7} ${cx+13},${cy+13}"
