@@ -1,7 +1,12 @@
 <!DOCTYPE html>
-<!-- 
+<!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.6 · HSI: FIX — el triángulo TO/FROM había quedado fijo en pantalla en
+         v4.4 (no rotaba con el curso). Ahora es solidario a la flecha de
+         curso (usa rad/radRecip como head/tailShaft), desfasado hacia el
+         costado (offset perpA) para nunca cruzarse con la línea del brazo,
+         igual que en un HSI real (ref. King KI 525A aportada por Daniel).
   v4.5 · HSI: símbolo del avión en el centro pasa de un delta/triángulo
          genérico a una representación simplificada de avión visto desde
          arriba (fuselaje + alas + cola, mismo rojo #f85149 de antes).
@@ -333,7 +338,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.5</span>
+      <span class="ver">v4.6</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -623,13 +628,21 @@ function renderHSI(){
   const headArrow=`<polygon points="${hx+Math.sin(rad)*12},${hy-Math.cos(rad)*12} ${hx+Math.sin(perpA)*8},${hy-Math.cos(perpA)*8} ${hx-Math.sin(perpA)*8},${hy+Math.cos(perpA)*8}" fill="#39d353"/>`;
   const tailCap=`<line x1="${tx+Math.sin(perpA)*8}" y1="${ty-Math.cos(perpA)*8}" x2="${tx-Math.sin(perpA)*8}" y2="${ty+Math.cos(perpA)*8}" stroke="#39d353" stroke-width="3.5"/>`;
 
-  // Indicador TO/FROM: triángulo blanco FIJO (no rota con el curso),
-  // desfasado a la derecha del centro — TO apunta hacia arriba, FROM hacia
-  // abajo. Antes vivía sobre la línea de curso (rotaba con obs) y era del
-  // mismo tamaño que el resto de las marcas; ahora es fijo y más grande.
-  const tfx=cx+20;
-  const toTri=`<polygon points="${tfx},${cy-13} ${tfx-9},${cy+7} ${tfx+9},${cy+7}" fill="#ffffff"/>`;
-  const fromTri=`<polygon points="${tfx},${cy+13} ${tfx-9},${cy-7} ${tfx+9},${cy-7}" fill="#ffffff"/>`;
+  // Indicador TO/FROM: triángulo blanco SOLIDARIO a la flecha de curso —
+  // gira junto con ella (usa rad/radRecip, igual que head/tailShaft), pero
+  // desfasado hacia el costado (offset en la dirección perpA) para que
+  // nunca se cruce con la línea del brazo, como en la referencia real
+  // (King KI 525A). Antes quedaba fijo en pantalla (no rotaba con obs) —
+  // corregido a pedido de Daniel.
+  const tfR=13, tfSide=10, tfHalf=7, tfDepth=12;
+  const toBaseX=cx+Math.sin(rad)*tfR+Math.sin(perpA)*tfSide;
+  const toBaseY=cy-Math.cos(rad)*tfR-Math.cos(perpA)*tfSide;
+  const toApexX=toBaseX+Math.sin(rad)*tfDepth, toApexY=toBaseY-Math.cos(rad)*tfDepth;
+  const toTri=`<polygon points="${toApexX},${toApexY} ${toBaseX+Math.sin(perpA)*tfHalf},${toBaseY-Math.cos(perpA)*tfHalf} ${toBaseX-Math.sin(perpA)*tfHalf},${toBaseY+Math.cos(perpA)*tfHalf}" fill="#ffffff"/>`;
+  const frBaseX=cx+Math.sin(radRecip)*tfR+Math.sin(perpA)*tfSide;
+  const frBaseY=cy-Math.cos(radRecip)*tfR-Math.cos(perpA)*tfSide;
+  const frApexX=frBaseX+Math.sin(radRecip)*tfDepth, frApexY=frBaseY-Math.cos(radRecip)*tfDepth;
+  const fromTri=`<polygon points="${frApexX},${frApexY} ${frBaseX+Math.sin(perpA)*tfHalf},${frBaseY-Math.cos(perpA)*tfHalf} ${frBaseX-Math.sin(perpA)*tfHalf},${frBaseY+Math.cos(perpA)*tfHalf}" fill="#ffffff"/>`;
 
   const svg=`
   <svg width="260" height="260" viewBox="0 0 260 260" id="hsi-instrument" style="cursor:grab;touch-action:none">
