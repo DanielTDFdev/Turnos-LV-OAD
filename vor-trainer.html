@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.12 · Pedido de Daniel: "feedback explicado" al verificar un ejercicio. Antes
+         VERIFICAR solo mostraba el resultado final (radial real, heading, acción
+         correcta) sin explicar el razonamiento — el alumno que fallaba no entendía
+         POR QUÉ. Ahora, además del resumen de siempre, se agrega un bloque
+         "◈ CÓMO SE LLEGA A ESTE RESULTADO" con dos partes:
+         (1) Radial: muestra el OBS que tenía puesto al verificar, si la aguja
+             estaba centrada o no, la bandera TO/FROM resultante, y aplica la
+             regla explícita (FROM⇒radial=OBS, TO⇒radial=OBS+180°) para mostrar
+             qué radial se deduce de ESA lectura — compara contra lo que
+             efectivamente escribió y contra el radial real.
+         (2) Acción: muestra los dos ángulos que decide todo (dOut contra el
+             radial, dIn contra su recíproco) con sus valores numéricos reales del
+             ejercicio y qué umbral (60°/45°) definió el resultado — no solo
+             "correcto: Cortando" sino el cálculo que lo prueba.
+         Refactor: clasificarAccion() ahora delega en la nueva explicarAccion()
+         (misma lógica exacta, sin cambios de comportamiento) para no duplicar la
+         regla en dos lugares.
   v4.11 · HSI: FIX sobre v4.10 — el afinamiento de la cola era lineal en
          todo su largo, se notaba desde ~70%. Ahora se mantiene ancho
          constante (3.5, igual que la cabeza) hasta el 95% del recorrido, y
@@ -360,6 +377,13 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 .feedback.ok{background:rgba(57,211,83,.08);border:1px solid var(--green);color:var(--green)}
 .feedback.bad{background:rgba(248,81,73,.08);border:1px solid var(--red);color:var(--red)}
 .feedback b{display:block;margin-bottom:6px;font-size:14px}
+.explain{margin-top:12px;padding-top:12px;border-top:1px dashed rgba(255,255,255,.18);font-family:var(--font-mono);font-size:12px;letter-spacing:.02em;color:var(--text2);line-height:1.65}
+.explain b{display:block;margin-bottom:5px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan)}
+.explain .paso{margin-bottom:10px}
+.explain .paso:last-child{margin-bottom:0}
+.explain .ok-step{color:var(--green)}
+.explain .bad-step{color:var(--red)}
+.explain .warn-step{color:var(--amber)}
 .score{font-family:var(--font-mono);font-size:12px;color:var(--text2);letter-spacing:.06em}
 .score b{color:var(--cyan)}
 .map-wrap{display:flex;justify-content:center;margin-top:16px}
@@ -381,7 +405,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.11</span>
+      <span class="ver">v4.12</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -535,33 +559,49 @@ function computeCDI(obsCourse, radial){
 }
 
 function clasificarAccion(heading, radial){
-  // Regla explícita de Daniel (2026-08-16): "cortás si la diferencia angular
-  // entre rumbo y radial es mayor a 60°" — diferencia medida contra el
-  // radial TAL CUAL (no el recíproco), 0°-180°.
-  //   dOut = |heading-radial| (0-180) ≤ 60°  → Alejándose
-  //   dOut > 60°                              → candidato a Cortando
-  // Verificado contra los 2 casos reales reportados:
-  //   radial=144,heading=272 → dOut=128°>60 → Cortando ✓
-  //   radial=258,heading=216 → dOut=42°≤60  → Alejándose ✓
-  //
-  // OJO — con esto solo, Ingresando queda matemáticamente inalcanzable si
-  // usara el mismo ±60° contra el recíproco: dOut+dIn=180 siempre (radial y
-  // radial+180 son antipodales), así que cada vez que dIn≤60 (candidato a
-  // Ingresando), automáticamente dOut≥120 (candidato a Cortando) — y Daniel
-  // confirmó que Cortando gana ese conflicto. Con ±60 simétrico, Ingresando
-  // nunca se dispara. Fix: Ingresando usa un umbral propio más chico
-  // (IN_TOL=45°) contra el recíproco, para que sea alcanzable en headings
-  // bien alineados sin invadir la zona de Cortando de Daniel. Ajustado de
-  // 30 a 45 tras un 3er caso real (radial077/heading290, dIn=33°→Ingresando):
-  // 45 es el único valor que deja los 3 casos reportados del lado correcto
-  // (dIn=33→in, dIn=52→cross, y de paso coincide con el "intercept angle"
-  // estándar de la aviación real, 45°, no inventado).
+  return explicarAccion(heading, radial).resultado;
+}
+
+// v4.12: misma regla de clasificarAccion() de arriba, pero devuelve también los
+// ángulos intermedios (dOut/dIn) y el motivo en texto — para que verificar() pueda
+// mostrarle al alumno el cálculo real, no solo la etiqueta final.
+//
+// Regla explícita de Daniel (2026-08-16): "cortás si la diferencia angular entre
+// rumbo y radial es mayor a 60°" — diferencia medida contra el radial TAL CUAL (no
+// el recíproco), 0°-180°.
+//   dOut = |heading-radial| (0-180) ≤ 60°  → Alejándose
+//   dOut > 60°                              → candidato a Cortando
+// Verificado contra los 2 casos reales reportados:
+//   radial=144,heading=272 → dOut=128°>60 → Cortando ✓
+//   radial=258,heading=216 → dOut=42°≤60  → Alejándose ✓
+//
+// OJO — con esto solo, Ingresando queda matemáticamente inalcanzable si usara el
+// mismo ±60° contra el recíproco: dOut+dIn=180 siempre (radial y radial+180 son
+// antipodales), así que cada vez que dIn≤60 (candidato a Ingresando), automáticamente
+// dOut≥120 (candidato a Cortando) — y Daniel confirmó que Cortando gana ese
+// conflicto. Con ±60 simétrico, Ingresando nunca se dispara. Fix: Ingresando usa un
+// umbral propio más chico (IN_TOL=45°) contra el recíproco, para que sea alcanzable
+// en headings bien alineados sin invadir la zona de Cortando de Daniel. Ajustado de
+// 30 a 45 tras un 3er caso real (radial077/heading290, dIn=33°→Ingresando): 45 es el
+// único valor que deja los 3 casos reportados del lado correcto (dIn=33→in,
+// dIn=52→cross, y de paso coincide con el "intercept angle" estándar de la aviación
+// real, 45°, no inventado).
+function explicarAccion(heading, radial){
   const IN_TOL=45;
   const dOut=Math.abs(norm180(heading-radial));
   const dIn=Math.abs(norm180(heading-(radial+180)));
-  if(dOut<=60) return 'out';
-  if(dIn<=IN_TOL) return 'in';
-  return 'cross';
+  let resultado, motivo;
+  if(dOut<=60){
+    resultado='out';
+    motivo='dOut = |heading−radial| = '+dOut.toFixed(0)+'°, que es ≤ 60° → ALEJÁNDOSE.';
+  } else if(dIn<=IN_TOL){
+    resultado='in';
+    motivo='dOut = '+dOut.toFixed(0)+'° (> 60°, así que no es Alejándose). dIn = |heading−(radial+180)| = '+dIn.toFixed(0)+'°, que es ≤ '+IN_TOL+'° → INGRESANDO.';
+  } else {
+    resultado='cross';
+    motivo='dOut = '+dOut.toFixed(0)+'° (> 60°) y dIn = '+dIn.toFixed(0)+'° (> '+IN_TOL+'°) — no entra en ninguna de las dos zonas → CORTANDO.';
+  }
+  return {resultado,dOut,dIn,motivo};
 }
 
 // ── HELPER: anillo de compás con números alineados radialmente contra el
@@ -823,19 +863,49 @@ function verificar(){
   const radialIn=parseInt(val,10);
   const errRadial=Math.abs(norm180(radialIn-radialReal));
   const okRadial=errRadial<=TOL_RADIAL;
-  const accionCorrecta=clasificarAccion(headingReal,radialReal);
+  const expAccion=explicarAccion(headingReal,radialReal);
+  const accionCorrecta=expAccion.resultado;
   const okAccion=accionSel===accionCorrecta;
   const ok=okRadial&&okAccion;
   if(ok) aciertos++;
   updateScore();
   const map={in:'Ingresando',out:'Alejándose',cross:'Cortando'};
+  const p3=n=>String(n).padStart(3,'0');
   const fb=document.getElementById('feedback');
   fb.className='feedback '+(ok?'ok':'bad');
   fb.style.display='block';
   fb.innerHTML='<b>'+(ok?'✓ CORRECTO':'✗ INCORRECTO')+'</b>'+
-    'Radial real: '+String(radialReal).padStart(3,'0')+'° (ingresaste '+String(radialIn).padStart(3,'0')+'°, tolerancia ±'+TOL_RADIAL+'°)<br>'+
-    'Heading del avión: '+String(headingReal).padStart(3,'0')+'°<br>'+
-    'Acción real: '+map[accionCorrecta]+' por radial '+String(radialReal).padStart(3,'0')+'° (elegiste: '+map[accionSel]+')';
+    'Radial real: '+p3(radialReal)+'° (ingresaste '+p3(radialIn)+'°, tolerancia ±'+TOL_RADIAL+'°)<br>'+
+    'Heading del avión: '+p3(headingReal)+'°<br>'+
+    'Acción real: '+map[accionCorrecta]+' por radial '+p3(radialReal)+'° (elegiste: '+map[accionSel]+')';
+
+  // v4.12 — pedido de Daniel: "feedback explicado", el paso a paso de CÓMO se llega
+  // al resultado, no solo cuál es. Reusa el `obs` que el alumno tenía puesto en el
+  // instrumento AL MOMENTO de tocar VERIFICAR (no se resetea hasta nuevoEjercicio()).
+  const cdiUser=computeCDI(obs,radialReal);
+  const centrado=Math.abs(cdiUser.defl)<0.6;
+  const radialSegunLectura=cdiUser.flag==='FROM'?obs:norm360(obs+180);
+  const explain=document.createElement('div');
+  explain.className='explain';
+  explain.innerHTML=
+    '<div class="paso"><b>◈ Cómo leer el radial</b>'+
+      'Tenías el OBS en '+p3(obs)+'°. Con ese OBS, la aguja queda '+
+      (centrado?'<span class="ok-step">centrada</span>':'<span class="warn-step">desviada '+Math.abs(cdiUser.defl).toFixed(1)+'° del centro</span>')+
+      ' y la bandera marca <b style="color:inherit;display:inline;text-transform:none;letter-spacing:0">'+cdiUser.flag+'</b>.<br>'+
+      'Regla: bandera FROM ⇒ radial = OBS. Bandera TO ⇒ radial = OBS + 180°.<br>'+
+      'Con tu OBS y esa bandera, el radial que se deduce es <b style="color:inherit;display:inline;text-transform:none;letter-spacing:0">'+p3(radialSegunLectura)+'°</b>'+
+      (centrado?'':' — pero como la aguja NO estaba centrada, esa lectura no es confiable: primero hay que girar el OBS hasta que la desviación sea 0.')+'<br>'+
+      'Vos escribiste '+p3(radialIn)+'° y el radial real del ejercicio era '+p3(radialReal)+'° → '+
+      (okRadial?'<span class="ok-step">diferencia de '+errRadial.toFixed(0)+'°, dentro de la tolerancia.</span>':'<span class="bad-step">diferencia de '+errRadial.toFixed(0)+'°, fuera de la tolerancia (±'+TOL_RADIAL+'°).</span>')+
+    '</div>'+
+    '<div class="paso"><b>◈ Cómo clasificar la acción</b>'+
+      'Heading real: '+p3(headingReal)+'°. Radial: '+p3(radialReal)+'°.<br>'+
+      expAccion.motivo+'<br>'+
+      'Resultado: '+map[accionCorrecta]+' — elegiste '+map[accionSel]+' → '+
+      (okAccion?'<span class="ok-step">correcto.</span>':'<span class="bad-step">incorrecto.</span>')+
+    '</div>';
+  fb.appendChild(explain);
+
   document.getElementById('btn-verificar').disabled=true;
   document.getElementById('map-panel').style.display='block';
   renderMap();
