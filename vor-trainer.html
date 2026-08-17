@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.21 · Pedido de Daniel: en la cartilla del VOR/OBS, los rumbos 00/09/18/27
+         (00°/90°/180°/270°) pasan a mostrarse como N/E/S/W — mismo criterio que
+         ya usaba el Giro Direccional y el HSI (ambos con headingReal), ahora
+         también en renderVOR() (que labela contra `obs`, no headingReal).
   v4.20 · Pedido de Daniel sobre v4.19: "está enorme, un 40% más chico". Mismo
          transform, factor de escala 0.224123→0.134474 (×0.6) y traslación
          recalculada para mantenerlo centrado en (cx,cy).
@@ -471,7 +475,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.20</span>
+      <span class="ver">v4.21</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -720,7 +724,8 @@ function renderHeading(){
 function renderVOR(){
   const cdi=computeCDI(obs,radialReal);
   const cx=130,cy=130,r=115;
-  const {ticks,labels}=compassRing(cx,cy,r,-obs,d=>String(d/10).padStart(2,'0'));
+  const {ticks,labels}=compassRing(cx,cy,r,-obs,d=>
+    d===0?'N':d===90?'E':d===180?'S':d===270?'W':String(d/10).padStart(2,'0'));
   const needleX=cx+(cdi.defl/10)*45;
   const svg=`
   <svg width="260" height="260" viewBox="0 0 260 260" id="vor-instrument" style="cursor:grab;touch-action:none">
