@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.9 · HSI: cola de la flecha de curso — la marca en T (barrita horizontal
+         perpendicular) reemplazada por una punta fina (triangulito angosto,
+         half-width 4 vs los 8 de la cabeza) para que se note "puntiaguda"
+         sin confundirse con otra punta de flecha real.
   v4.8 · Logo+copyright ("© 2026 by DAC") ahora viven DENTRO del header
          box (antes v4.7 los había puesto como bloque aparte debajo). Header
          pasa de flex a grid de 3 columnas (1fr auto 1fr): dot+título a la
@@ -367,7 +371,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.8</span>
+      <span class="ver">v4.9</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -655,7 +659,7 @@ function renderHSI(){
   const headShaft=`<line x1="${hgx}" y1="${hgy}" x2="${hx}" y2="${hy}" stroke="#39d353" stroke-width="3.5"/>`;
   const tailShaft=`<line x1="${tgx}" y1="${tgy}" x2="${tx}" y2="${ty}" stroke="#39d353" stroke-width="3.5"/>`;
   const headArrow=`<polygon points="${hx+Math.sin(rad)*12},${hy-Math.cos(rad)*12} ${hx+Math.sin(perpA)*8},${hy-Math.cos(perpA)*8} ${hx-Math.sin(perpA)*8},${hy+Math.cos(perpA)*8}" fill="#39d353"/>`;
-  const tailCap=`<line x1="${tx+Math.sin(perpA)*8}" y1="${ty-Math.cos(perpA)*8}" x2="${tx-Math.sin(perpA)*8}" y2="${ty+Math.cos(perpA)*8}" stroke="#39d353" stroke-width="3.5"/>`;
+  const tailCap=`<polygon points="${tx-Math.sin(rad)*7},${ty+Math.cos(rad)*7} ${tx+Math.sin(perpA)*4},${ty-Math.cos(perpA)*4} ${tx-Math.sin(perpA)*4},${ty+Math.cos(perpA)*4}" fill="#39d353"/>`;
 
   // Indicador TO/FROM: triángulo blanco SOLIDARIO a la flecha de curso —
   // gira junto con ella (usa rad/radRecip, igual que head/tailShaft), pero
