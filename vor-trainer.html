@@ -2,6 +2,61 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.20 · Pedido de Daniel sobre v4.19: "está enorme, un 40% más chico". Mismo
+         transform, factor de escala 0.224123→0.134474 (×0.6) y traslación
+         recalculada para mantenerlo centrado en (cx,cy).
+  v4.19 · Giro Direccional: reemplazo del rombo/delta por el trazado real de avión
+         que armó Daniel (vectorizado con potrace a partir de su PNG de referencia
+         — auto-trace, no calcado a mano, así que no hay riesgo del bug de
+         asimetría de v4.16). El path RAW de potrace vive en la constante AVION_D
+         (coordenadas en su propio sistema); renderHeading() lo posiciona con un
+         transform (translate+scale+la transform propia de potrace) calculado para
+         que el bounding box completo del avión quede centrado en (cx,cy) y el
+         punto más lejano del centro no supere r=118 (dial de fondo es r+14=129,
+         deja margen). Mismo control de siempre: se extrajo el contenido literal
+         del archivo ya editado (no la copia de prueba) y se renderizó de nuevo
+         antes de dar por bueno el cambio.
+  v4.18 · REVERT a pedido de Daniel: los 3 intentos de rehacer el avión del Giro
+         Direccional (v4.14/v4.15/v4.16/v4.17) no convencieron ("no se parece en
+         nada"). Se vuelve al polígono delta/rombo rojo original de v4.13 (el que
+         ya estaba antes de tocar nada), tal cual. Las entradas v4.14-v4.17 quedan
+         en el changelog como historial, pero su resultado NO está en este archivo.
+  v4.17 · Rehecho desde cero (Daniel: "no se parece en nada, y está muy grande").
+         Cambio de enfoque: en vez de un solo <path> con muchos vértices a mano
+         (frágil, fácil perder simetría como pasó en v4.16), ahora son 5 formas
+         simples superpuestas del mismo color — nariz (triángulo fino), ala
+         principal (rombo ancho), fuselaje (rectángulo fino), cola (rombo chico) y
+         deriva (triángulo fino) — más fácil de razonar y de verificar. Tamaño
+         reducido further (nariz de 105 a 88, ala de 104 a 102 pero mucho más
+         angosta en profundidad, total nariz-a-deriva de ~183 a 154) para que
+         quede con margen dentro del dial, no pegado al anillo de grados. Cada
+         iteración (5 en total) se generó como SVG standalone, se renderizó a PNG
+         con rsvg-convert y se inspeccionó antes de aplicar — y la aplicada al
+         archivo se re-extrajo por regex y se volvió a renderizar para confirmar
+         que el archivo real coincide con lo verificado (mismo control que v4.16).
+  v4.16 · FIX real sobre v4.15: el "ya lo verifiqué antes" de v4.15 verificó un SVG
+         de prueba aparte, pero al trasladar el path al archivo real se perdió UN
+         vértice (el hombro izquierdo, espejo del derecho) al escribir el
+         str_replace — quedó asimétrico (reportado por Daniel con captura: ala
+         izquierda deforme). Esta vez la verificación fue sobre el path TAL CUAL
+         quedó en el archivo (extraído con regex sustituyendo cx/cy por sus
+         valores reales, no reescrito de memoria) antes de darlo por bueno.
+  v4.15 · FIX/rehecho sobre v4.14: el trazado de avión del intento anterior no se
+         parecía en nada a la referencia real (nariz desproporcionada, alas mal
+         ubicadas). Esta vez se armó y se VERIFICÓ visualmente antes de aplicar:
+         se generó el SVG standalone, se renderizó a PNG con rsvg-convert y se
+         inspeccionó la imagen resultado contra la foto de referencia de Daniel
+         antes de tocar el archivo — recién ahí se aplicaron las coordenadas ya
+         validadas. Ala principal más ancha y más cerca de los bordes del dial,
+         nariz más corta, cola con dos alas chicas simétricas — mismo espíritu
+         que la referencia (giro direccional mecánico real).
+  v4.14 · Giro Direccional: el símbolo del avión central pasa del delta/rombo rojo
+         genérico a un trazado de avión (fuselaje+alas+cola) en naranja/ámbar
+         (#f0a500), calcado sobre foto de referencia real de un giro direccional
+         mecánico aportada por Daniel — mismo criterio que ya tenía el avioncito
+         central del HSI (v4.5), pero acá con más detalle (ala principal ancha,
+         cola/estabilizador más chico, deriva puntiaguda, punto central). No toca
+         el instrumento HSI (ese avioncito es otro <g> aparte, sin cambios).
   v4.13 · Ajuste sobre el "feedback explicado" de v4.12: el resumen de arriba (antes
          3 líneas sueltas: "Radial real", "Heading del avión", "Acción real...
          elegiste...") pasa a 2 líneas fijas siempre, sea correcto o no: "Tu
@@ -416,7 +471,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.13</span>
+      <span class="ver">v4.20</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -496,6 +551,12 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
 let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
 let modo='vor'; // 'vor' | 'hsi' — persistido en localStorage
+
+// v4.19 — trazado del avión del Giro Direccional: vectorizado por Daniel a partir de
+// un PNG de referencia (fighter-jet-style, contorno hueco) con potrace (auto-trace, no
+// calcado a mano — evita el bug de asimetría de v4.16). Coordenadas RAW de potrace
+// (sistema propio, se corrigen con el transform que arma renderHeading() al usarlo).
+const AVION_D="M6190 11573 c-8 -3 -26 -15 -38 -27 -55 -49 -53 -13 -52 -864 l2 -788 -56 -190 c-30 -104 -85 -292 -121 -419 -37 -126 -109 -376 -161 -555 -90 -311 -158 -546 -425 -1485 -65 -231 -119 -425 -119 -431 0 -6 -116 -84 -257 -174 -244 -155 -789 -504 -898 -575 -27 -18 -108 -70 -180 -115 -71 -46 -242 -156 -380 -245 -684 -443 -968 -633 -982 -658 -27 -48 -29 -43 132 -557 109 -347 162 -520 174 -567 14 -52 60 -93 105 -93 35 0 211 40 641 145 149 36 353 86 455 110 102 24 417 98 700 165 283 66 562 132 619 146 57 13 105 23 107 22 1 -2 37 -147 79 -323 43 -176 99 -408 126 -515 l48 -195 -539 -536 -540 -536 0 -46 c0 -28 13 -83 34 -139 63 -169 233 -642 245 -679 15 -47 59 -88 103 -95 40 -7 94 20 813 405 94 50 174 89 180 88 9 -3 124 -406 125 -438 0 -37 33 -49 131 -49 52 0 99 4 106 8 7 4 25 57 42 117 85 309 101 368 103 371 2 1 138 -70 303 -157 589 -314 638 -339 683 -339 53 0 93 36 117 105 9 28 28 79 41 115 129 352 234 657 234 683 -1 18 -6 41 -13 53 -7 12 -154 160 -327 330 -173 170 -410 404 -527 519 l-213 210 125 514 c69 283 126 516 128 518 9 8 1606 -356 2200 -502 169 -41 319 -75 333 -75 34 0 81 26 95 52 7 12 17 43 24 68 7 25 45 149 84 275 193 619 231 745 231 773 0 18 -9 41 -22 55 -28 30 -429 300 -873 587 -181 117 -404 261 -495 320 -91 59 -239 154 -330 212 -605 385 -767 488 -860 546 -58 36 -112 72 -122 81 -9 9 -35 81 -58 161 -116 407 -394 1375 -435 1515 -210 724 -324 1112 -363 1240 l-47 150 -5 815 c-5 765 -6 817 -23 842 -10 14 -33 33 -52 42 -32 15 -123 21 -155 9z m80 -1979 c0 -3 21 -76 46 -162 25 -86 57 -195 71 -242 13 -47 48 -168 78 -270 30 -102 128 -444 219 -760 90 -316 199 -692 241 -835 102 -349 151 -517 172 -594 13 -45 27 -70 48 -88 17 -14 228 -151 470 -305 242 -155 521 -332 620 -396 383 -244 1482 -958 1520 -987 23 -18 25 -24 16 -50 -5 -16 -42 -136 -81 -265 -81 -265 -171 -554 -174 -557 -1 -1 -150 33 -331 77 -182 44 -359 86 -395 94 -693 161 -1042 240 -1435 326 -322 71 -375 80 -406 71 -49 -15 -67 -38 -84 -107 -8 -33 -41 -170 -74 -306 -33 -135 -94 -388 -136 -561 -41 -173 -77 -321 -80 -329 -15 -39 26 -89 275 -333 140 -137 378 -371 528 -519 l272 -269 -69 -196 c-148 -418 -141 -402 -165 -395 -11 4 -86 42 -166 85 -80 42 -287 152 -460 243 -348 184 -364 189 -420 139 -27 -24 -36 -49 -69 -173 -22 -80 -41 -138 -45 -130 -3 8 -21 73 -41 145 -40 149 -58 174 -127 182 -42 5 -65 -6 -514 -246 -259 -138 -475 -251 -481 -251 -8 0 -187 475 -217 576 -5 17 72 98 456 480 255 252 495 491 535 530 64 62 73 75 73 107 0 70 -293 1283 -316 1308 -28 31 -79 42 -132 30 -26 -6 -297 -70 -602 -142 -305 -71 -667 -157 -805 -189 -137 -32 -432 -102 -654 -155 -223 -52 -408 -92 -412 -88 -4 5 -21 53 -37 108 -16 55 -60 197 -97 315 -37 118 -82 263 -100 322 l-32 108 206 134 c253 164 531 344 756 489 298 193 1029 662 1355 870 173 110 320 208 327 216 7 9 19 39 27 66 428 1501 726 2536 803 2792 15 51 31 93 36 93 4 0 7 -3 7 -6z";
 
 function norm360(d){ d=d%360; if(d<0)d+=360; return d; }
 function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
@@ -647,8 +708,9 @@ function renderHeading(){
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
-    <polygon points="${cx},${cy-58} ${cx-26},${cy+40} ${cx},${cy+26} ${cx+26},${cy+40}"
-      fill="none" stroke="#f85149" stroke-width="4" stroke-linejoin="round"/>
+    <g transform="translate(${cx-84.31},${cy-81.68}) scale(0.134474) translate(0,1254) scale(0.1,-0.1)" fill="#f0a500">
+      <path d="${AVION_D}"/>
+    </g>
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
   document.getElementById('hdg-svg').innerHTML=svg;
