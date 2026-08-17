@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.11 · HSI: FIX sobre v4.10 — el afinamiento de la cola era lineal en
+         todo su largo, se notaba desde ~70%. Ahora se mantiene ancho
+         constante (3.5, igual que la cabeza) hasta el 95% del recorrido, y
+         solo el último 5% se afina hasta la punta (taperFrac=0.95).
+  v4.10 · HSI: FIX sobre v4.9 — el cap de la cola (triangulito) todavía se
+         leía como una mini cabeza de flecha (feedback de Daniel contra
+         referencia real de HSI). Reemplazado: tailShaft pasa de línea de
+         ancho constante a un polígono afilado (triángulo largo y angosto,
+         base=3.5 en el hueco, ápice=0 en la punta de la cola) — un
+         afinamiento gradual tipo aguja, no un cap aparte. tailCap eliminado.
   v4.9 · HSI: cola de la flecha de curso — la marca en T (barrita horizontal
          perpendicular) reemplazada por una punta fina (triangulito angosto,
          half-width 4 vs los 8 de la cabeza) para que se note "puntiaguda"
@@ -371,7 +381,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.9</span>
+      <span class="ver">v4.11</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -657,9 +667,17 @@ function renderHSI(){
   const hgx=cx+Math.sin(rad)*gapR, hgy=cy-Math.cos(rad)*gapR;
   const tgx=cx+Math.sin(radRecip)*gapR, tgy=cy-Math.cos(radRecip)*gapR;
   const headShaft=`<line x1="${hgx}" y1="${hgy}" x2="${hx}" y2="${hy}" stroke="#39d353" stroke-width="3.5"/>`;
-  const tailShaft=`<line x1="${tgx}" y1="${tgy}" x2="${tx}" y2="${ty}" stroke="#39d353" stroke-width="3.5"/>`;
+  // Cola: ancho constante (igual que la cabeza) hasta el 95% de su largo, y
+  // recién en el último 5% se afina hasta la punta — antes se afinaba desde
+  // la base entera (70% visual), pedido de Daniel: que se note "grueso" casi
+  // hasta el final.
+  const taperFrac=0.95;
+  const tsx=tgx+(tx-tgx)*taperFrac, tsy=tgy+(ty-tgy)*taperFrac;
+  const tailShaft=`<line x1="${tgx}" y1="${tgy}" x2="${tsx}" y2="${tsy}" stroke="#39d353" stroke-width="3.5"/>
+    <polygon points="${tsx+Math.sin(perpA)*1.75},${tsy-Math.cos(perpA)*1.75} ${tx},${ty} ${tsx-Math.sin(perpA)*1.75},${tsy+Math.cos(perpA)*1.75}" fill="#39d353"/>`;
   const headArrow=`<polygon points="${hx+Math.sin(rad)*12},${hy-Math.cos(rad)*12} ${hx+Math.sin(perpA)*8},${hy-Math.cos(perpA)*8} ${hx-Math.sin(perpA)*8},${hy+Math.cos(perpA)*8}" fill="#39d353"/>`;
-  const tailCap=`<polygon points="${tx-Math.sin(rad)*7},${ty+Math.cos(rad)*7} ${tx+Math.sin(perpA)*4},${ty-Math.cos(perpA)*4} ${tx-Math.sin(perpA)*4},${ty+Math.cos(perpA)*4}" fill="#39d353"/>`;
+  // (la cola ya termina en punta por el propio tailShaft afilado, arriba —
+  // no hace falta un cap aparte)
 
   // Indicador TO/FROM: triángulo blanco SOLIDARIO a la flecha de curso —
   // gira junto con ella (usa rad/radRecip, igual que head/tailShaft), pero
@@ -682,7 +700,7 @@ function renderHSI(){
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
-    ${headShaft}${tailShaft}${headArrow}${tailCap}
+    ${headShaft}${tailShaft}${headArrow}
     <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#5be38a" stroke-width="6" stroke-linecap="round"/>
     ${cdi.flag==='TO'?toTri:''}
     ${cdi.flag==='FROM'?fromTri:''}
