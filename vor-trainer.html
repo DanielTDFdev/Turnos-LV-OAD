@@ -2,6 +2,25 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.23 · Soporte PWA (instalable como app), a pedido de Daniel con logo nuevo
+         ("SIM VOR", escudo+alas doradas, mismo estilo que los íconos de
+         turnos/vuelo/portal/fpl). Mismo patrón que esas 4 apps:
+         - manifest-vor.json nuevo (start_url/scope/id = /vor-trainer.html,
+           background/theme #0a0c0f) con 3 íconos: icon-vor-192.png,
+           icon-vor-512.png (purpose "any", con las esquinas oscuras del render
+           original — mismo criterio que icon-192.png de turnos.html) e
+           icon-vor-512-maskable.png (purpose "maskable", full-bleed: se rellenó
+           la zona negra de las esquinas con el mismo degradé azul del diseño
+           original en vez de recortarla, para no perder el texto "SIM VOR" ni
+           las alas — el recorte centrado que probé primero perdía contenido).
+         - <head>: apple-touch-icon, <link rel="manifest">, meta
+           apple-mobile-web-app-*, mismo bloque que ya usan las otras 4 apps.
+         - Registro de navigator.serviceWorker.register('/sw.js') al final del
+           script — reusa el sw.js compartido que ya vive en la raíz del repo,
+           no hace falta tocarlo.
+         Pendiente de Daniel: subir manifest-vor.json + los 3 icon-vor-*.png a
+         la raíz del repo junto con este HTML (mismo lugar que icon-192.png,
+         manifest.json, etc.).
   v4.22 · MODO LIBRE — sandbox sin scoring, a pedido de Daniel tras analizar
          luizmonteiro.com/learning_vor_sim.aspx (simulador VOR completo, six-pack
          de instrumentos, DME, holding patterns, wind triangle — mucho más
@@ -378,6 +397,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>VOR Trainer · Aeroclub Río Grande</title>
 <meta name="theme-color" content="#0a0c0f">
+<link rel="apple-touch-icon" href="/icon-vor-192.png">
+<link rel="manifest" href="/manifest-vor.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sim VOR">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -500,7 +524,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.22</span>
+      <span class="ver">v4.23</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -1117,6 +1141,15 @@ function verificar(){
   document.getElementById('btn-verificar').disabled=true;
   document.getElementById('map-panel').style.display='block';
   renderMap();
+}
+
+// Soporte PWA (instalable como app) — mismo patrón que turnos.html/vuelo.html/
+// portal-alumno.html/fpl.html: manifest-vor.json + iconos propios + Service
+// Worker compartido (sw.js, ya vive en la raíz del repo).
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+  });
 }
 </script>
 </body>

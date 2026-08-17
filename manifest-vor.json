@@ -1,0 +1,32 @@
+{
+  "name": "Aeroclub Río Grande - Sim VOR",
+  "short_name": "Sim VOR",
+  "description": "Simulador de instrumentos VOR/HSI del Aeroclub Río Grande",
+  "start_url": "/vor-trainer.html",
+  "id": "/vor-trainer.html",
+  "scope": "/vor-trainer.html",
+  "display": "standalone",
+  "background_color": "#0a0c0f",
+  "theme_color": "#0a0c0f",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-vor-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-vor-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-vor-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
