@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.7 · Logo del aeroclub (logo_aeroclub.png, ya vive en el repo) agregado
+         centrado debajo del header, con "© 2026 by DAC" debajo del logo.
+         Bloque nuevo .brand, no toca el <header class="bar"> existente (dot/
+         título/versión/volver quedan igual) para no repetir el problema de
+         v2.8 (header tapado por safe-area en iPhone).
   v4.6 · HSI: FIX — el triángulo TO/FROM había quedado fijo en pantalla en
          v4.4 (no rotaba con el curso). Ahora es solidario a la flecha de
          curso (usa rad/radRecip como head/tailShaft), desfasado hacia el
@@ -277,6 +282,9 @@ header.bar .sp{margin-left:auto;display:flex;align-items:center;gap:10px}
 header.bar .ver{font-family:var(--font-mono);font-size:11px;color:var(--text3);border:1px solid var(--border);border-radius:4px;padding:2px 7px;letter-spacing:1px}
 .back{font-family:var(--font-mono);font-size:12px;color:var(--text2);text-decoration:none;border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;white-space:nowrap;background:none;cursor:pointer}
 .back:hover{color:var(--cyan);border-color:var(--cyan)}
+.brand{display:flex;flex-direction:column;align-items:center;gap:4px;margin:0 0 18px}
+.brand img{height:46px;width:auto}
+.brand .copy{font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.08em}
 .card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px;margin-bottom:16px;position:relative}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.4}
 h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:.16em;text-transform:uppercase;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
@@ -338,10 +346,15 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.6</span>
+      <span class="ver">v4.7</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
+
+  <div class="brand">
+    <img src="logo_aeroclub.png" alt="Aeroclub Río Grande">
+    <span class="copy">© 2026 by DAC</span>
+  </div>
 
   <div class="card">
     <div class="instr-header">
