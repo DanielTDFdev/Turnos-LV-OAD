@@ -2,6 +2,57 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.29 · Aguja RMI en el HSI, a pedido de Daniel — celeste (#00c8d4), doble línea
+         fina con punta de flecha chica en la cabeza y cola simple sin adorno (a
+         propósito distinta de la flecha de curso, gruesa/sólida/cola en T, para
+         que no se confundan compartiendo el mismo dial). Toggle "📡 RMI" junto al
+         label del HSI, persistido en localStorage (mismo patrón que
+         vor-trainer-modo) — arranca apagada.
+         Muestra el BEARING hacia la estación, no el radial: el radial es la
+         dirección FROM la estación TO el avión, así que el bearing hacia la
+         estación es el recíproco (radialReal+180). Mismo sistema de referencia
+         de pantalla que ya usa el resto del HSI (ángulo = valor − headingReal),
+         así que gira solidaria con la tarjeta.
+         Antes de tocar el archivo: (1) diseño del SVG mostrado a Daniel aparte
+         (renderizado con rsvg-convert) para aprobación de forma y color — dijo
+         "sirve tal cual". (2) Geometría del bearing probada en Node aislado con
+         4 escenarios (alejándose por dos radiales distintos, volviendo directo a
+         la estación, en diagonal) — los 4 dieron el ángulo de pantalla esperado.
+         (3) Ya integrado en el archivo, se re-extrajo la función renderHSI()
+         completa (no una copia de prueba) y se ejecutó con un stub de DOM en
+         Node para capturar el SVG real que genera — se renderizó a PNG dos
+         veces: una con el curso y el bearing coincidiendo (para confirmar que
+         el ángulo daba lo esperado) y otra con OBS distinto del bearing (para
+         confirmar que se distinguen visualmente entre sí sobre el mismo dial).
+  v4.28 · Daniel pidió reordenar los controles de Modo Libre marcando posiciones con
+         flechas a mano sobre una captura. Se interpretó como el orden "1,3,2,4"
+         (usando la numeración que le propuse: 1=dial+spinner, 2=HEADING,
+         3=CRS+FROM, 4=VOLAR) → Dial, CRS+FROM, HEADING, VOLAR. Ese orden YA es
+         el que había para los bloques 2/3/4 (sin cambios ahí); el cambio real es
+         el spinner "EN VUELO" (punto 1 de su dibujo), que se muda de
+         // POSICIÓN al header de // INSTRUMENTOS, al lado de los tabs VOR/HSI —
+         visible sin scrollear sin importar qué instrumento esté mirando, y ya
+         no depende de qué instrumento esté activo (antes vivía pegado a la
+         posición, ahora es mode-independent). Mismo ID de siempre
+         (vuelo-indicator), así que actualizarBotonVolar() no necesitó tocarse,
+         solo el HTML se movió. Ajuste de CSS: dejó de ser position:absolute
+         (ya no ancla contra un .card position:relative) y pasa a ser un ítem
+         más del flex row del header.
+         Pendiente de confirmar con Daniel si esta lectura de las flechas es la
+         correcta o si en realidad pedía mover el bloque CRS+FROM arriba del
+         dial (cambio estructural más grande que no se hizo).
+  v4.27 · Daniel: con heading=radial el avión vuela pero NO se mueve en el mapa (es
+         física real de v4.24 — el radial queda constante volando en línea recta
+         sobre él, solo cambia la distancia, que no se dibuja), así que en ese
+         caso puntual no había ninguna señal de que el sim seguía corriendo.
+         Nuevo indicador "⟳ EN VUELO" (spinner amber + texto), badge fijo arriba
+         a la derecha de la tarjeta // POSICIÓN (el .card ya tenía
+         position:relative, así que se ancla ahí sin romper el layout del <h2>).
+         Depende PURA Y DIRECTAMENTE del booleano `volando`, no de si el avión se
+         ve moverse en pantalla — así que resuelve exactamente el caso reportado
+         además del caso general. Un solo punto de verdad: se togglea dentro de
+         actualizarBotonVolar() (ya la llaman iniciarVuelo() y pausarVuelo()), no
+         se agregó ningún call site nuevo.
   v4.26 · Ergonomía mobile, a pedido de Daniel: en el celular solo entra un
          instrumento a la vez sin scrollear, y para cambiar HEADING en Modo Libre
          "volando" tenía que bajar hasta el final de la página (los controles
@@ -538,6 +589,9 @@ h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:
 .mode-tabs button{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.08em;background:var(--bg4);color:var(--text2);
   border:1px solid var(--border);border-radius:var(--radius);padding:6px 14px;cursor:pointer;touch-action:manipulation}
 .mode-tabs button.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.1)}
+.rmi-toggle{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.08em;background:var(--bg4);color:var(--text2);
+  border:1px solid var(--border);border-radius:var(--radius);padding:6px 14px;cursor:pointer;touch-action:manipulation}
+.rmi-toggle.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.1)}
 .instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
 .instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
 .obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
@@ -570,6 +624,12 @@ button.primary{font-family:var(--font-mono);font-size:14px;font-weight:700;lette
 button.primary:hover{background:rgba(0,200,212,.22)}
 button.primary:disabled{opacity:.4;cursor:not-allowed}
 button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba(240,165,0,.08));color:var(--amber);border-color:var(--amber)}
+.vuelo-indicator{display:none;align-items:center;gap:7px;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;color:var(--amber);text-transform:uppercase;
+  background:rgba(240,165,0,.1);border:1px solid var(--amber-dim);border-radius:var(--radius);padding:4px 10px 4px 8px}
+.vuelo-spinner{width:12px;height:12px;flex:0 0 auto;border-radius:50%;
+  border:2px solid rgba(240,165,0,.25);border-top-color:var(--amber);animation:vuelo-spin .8s linear infinite}
+@keyframes vuelo-spin{to{transform:rotate(360deg)}}
 .feedback{margin-top:14px;padding:14px;border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;letter-spacing:.03em;display:none}
 .feedback.ok{background:rgba(57,211,83,.08);border:1px solid var(--green);color:var(--green)}
 .feedback.bad{background:rgba(248,81,73,.08);border:1px solid var(--red);color:var(--red)}
@@ -602,7 +662,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.26</span>
+      <span class="ver">v4.29</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -625,9 +685,12 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
   <div class="card">
     <div class="instr-header">
       <h2>// INSTRUMENTOS</h2>
-      <div class="mode-tabs">
-        <button id="tab-vor" onclick="setModo('vor')">VOR</button>
-        <button id="tab-hsi" onclick="setModo('hsi')">HSI</button>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="vuelo-indicator" id="vuelo-indicator"><span class="vuelo-spinner"></span>EN VUELO</span>
+        <div class="mode-tabs">
+          <button id="tab-vor" onclick="setModo('vor')">VOR</button>
+          <button id="tab-hsi" onclick="setModo('hsi')">HSI</button>
+        </div>
       </div>
     </div>
     <div class="grid-instr" id="instrumentos-vor">
@@ -649,7 +712,10 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       </div>
     </div>
     <div class="instr-box" id="instrumentos-hsi" style="display:none">
-      <div class="instr-label">HSI — girá el CRS para centrar la aguja</div>
+      <div class="instr-label" style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap">
+        HSI — girá el CRS para centrar la aguja
+        <button id="btn-rmi" class="rmi-toggle" onclick="toggleRMI()" title="Mostrar/ocultar la aguja RMI (bearing hacia la estación)">📡 RMI</button>
+      </div>
       <div id="hsi-svg"></div>
       <div class="obs-readout" id="hsi-crs-readout">CRS 000°</div>
       <div class="obs-controls">
@@ -735,6 +801,7 @@ const VOLAR_TICK_MS=200;
 const VOLAR_KT=900; // velocidad de SIMULACIÓN, no realista — a propósito, para que
                      // cruzar de cuadrante tome ~15-30s reales y sea viable en clase
 let modo='vor'; // 'vor' | 'hsi' — persistido en localStorage
+let mostrarRMI=false; // v4.29 — aguja RMI (bearing hacia la estación) en el HSI, toggle
 
 // v4.19 — trazado del avión del Giro Direccional: vectorizado por Daniel a partir de
 // un PNG de referencia (fighter-jet-style, contorno hueco) con potrace (auto-trace, no
@@ -759,6 +826,8 @@ function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
   try{ modoGuardado=localStorage.getItem('vor-trainer-modo')||'vor'; }catch(_){}
   if(modoGuardado!=='hsi') modoGuardado='vor';
   setModo(modoGuardado);
+  try{ mostrarRMI=localStorage.getItem('vor-trainer-rmi')==='1'; }catch(_){ mostrarRMI=false; }
+  document.getElementById('btn-rmi').classList.toggle('active', mostrarRMI);
   document.getElementById('tab-modo-ejercicio').classList.add('active');
   nuevoEjercicio();
 })();
@@ -777,6 +846,15 @@ function setModo(m){
   document.getElementById('tab-vor').classList.toggle('active', m==='vor');
   document.getElementById('tab-hsi').classList.toggle('active', m==='hsi');
   renderInstrumentos();
+}
+
+// v4.29 — toggle de la aguja RMI (bearing hacia la estación) en el HSI. Solo cambia
+// si se dibuja o no dentro de renderHSI(); no toca la física de nada más.
+function toggleRMI(){
+  mostrarRMI=!mostrarRMI;
+  try{ localStorage.setItem('vor-trainer-rmi', mostrarRMI?'1':'0'); }catch(_){}
+  document.getElementById('btn-rmi').classList.toggle('active', mostrarRMI);
+  renderHSI();
 }
 
 function nuevoEjercicio(){
@@ -857,9 +935,16 @@ function pausarVuelo(){
 }
 function actualizarBotonVolar(){
   const b=document.getElementById('btn-volar');
-  if(!b) return;
-  b.textContent = volando ? '⏸ PAUSA' : '▶ VOLAR';
-  b.classList.toggle('flying', volando);
+  if(b){
+    b.textContent = volando ? '⏸ PAUSA' : '▶ VOLAR';
+    b.classList.toggle('flying', volando);
+  }
+  // v4.27 — Daniel: con heading=radial el avión no se mueve en el mapa (el radial
+  // queda constante, es física real — ver v4.24), así que ahí no había NINGUNA
+  // señal de que el sim seguía corriendo. Este indicador depende pura y
+  // directamente de `volando`, no de si el avión se ve moverse en pantalla.
+  const ind=document.getElementById('vuelo-indicator');
+  if(ind) ind.style.display = volando ? 'flex' : 'none';
 }
 function toggleVelocidad(){
   velocidadMult = velocidadMult===1 ? 4 : (velocidadMult===4 ? 10 : 1);
@@ -1086,6 +1171,36 @@ function renderHSI(){
   const frApexX=frBaseX+Math.sin(radRecip)*tfDepth, frApexY=frBaseY-Math.cos(radRecip)*tfDepth;
   const fromTri=`<polygon points="${frApexX},${frApexY} ${frBaseX+Math.sin(perpA)*tfHalf},${frBaseY-Math.cos(perpA)*tfHalf} ${frBaseX-Math.sin(perpA)*tfHalf},${frBaseY+Math.cos(perpA)*tfHalf}" fill="#ffffff"/>`;
 
+  // v4.29 — aguja RMI (toggle). Muestra el BEARING hacia la estación (no el radial):
+  // el radial es la dirección FROM la estación TO el avión, así que el bearing hacia
+  // la estación es el recíproco. Se dibuja en la misma referencia de pantalla que ya
+  // usa el resto del HSI (courseA = valor - headingReal), así que gira con la
+  // tarjeta igual que la flecha de curso. Diseño: doble línea fina celeste con una
+  // punta de flecha chica en la cabeza y la cola simple sin adorno — a propósito
+  // distinta de la flecha de curso (gruesa, sólida, cola en T) para que no se
+  // confundan a simple vista aunque compartan el dial.
+  let rmiNeedle='';
+  if(mostrarRMI){
+    const bearingEstacion=norm360(radialReal+180);
+    const rmiA=(norm360(bearingEstacion-headingReal))*Math.PI/180;
+    const rmiRecip=rmiA+Math.PI;
+    const rGap=18, rTip=96, rBase=86, rTail=96;
+    const perpRmi=rmiA+Math.PI/2, offRmi=2.2;
+    const oxR=Math.sin(perpRmi)*offRmi, oyR=-Math.cos(perpRmi)*offRmi;
+    const h1x=cx+Math.sin(rmiA)*rGap, h1y=cy-Math.cos(rmiA)*rGap;
+    const h2x=cx+Math.sin(rmiA)*rBase, h2y=cy-Math.cos(rmiA)*rBase;
+    const t1x=cx+Math.sin(rmiRecip)*rGap, t1y=cy-Math.cos(rmiRecip)*rGap;
+    const t2x=cx+Math.sin(rmiRecip)*rTail, t2y=cy-Math.cos(rmiRecip)*rTail;
+    const tipX=cx+Math.sin(rmiA)*rTip, tipY=cy-Math.cos(rmiA)*rTip;
+    rmiNeedle=`<g stroke="#00c8d4" stroke-width="1.5">
+      <line x1="${h1x+oxR}" y1="${h1y+oyR}" x2="${h2x+oxR}" y2="${h2y+oyR}"/>
+      <line x1="${h1x-oxR}" y1="${h1y-oyR}" x2="${h2x-oxR}" y2="${h2y-oyR}"/>
+      <line x1="${t1x+oxR}" y1="${t1y+oyR}" x2="${t2x+oxR}" y2="${t2y+oyR}"/>
+      <line x1="${t1x-oxR}" y1="${t1y-oyR}" x2="${t2x-oxR}" y2="${t2y-oyR}"/>
+    </g>
+    <polygon points="${tipX},${tipY} ${h2x+Math.sin(perpRmi)*6},${h2y-Math.cos(perpRmi)*6} ${h2x-Math.sin(perpRmi)*6},${h2y+Math.cos(perpRmi)*6}" fill="#00c8d4"/>`;
+  }
+
   const svg=`
   <svg width="260" height="260" viewBox="0 0 260 260" id="hsi-instrument" style="cursor:grab;touch-action:none">
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
@@ -1095,6 +1210,7 @@ function renderHSI(){
     <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#5be38a" stroke-width="6" stroke-linecap="round"/>
     ${cdi.flag==='TO'?toTri:''}
     ${cdi.flag==='FROM'?fromTri:''}
+    ${rmiNeedle}
     <g stroke="#f85149" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
       <line x1="${cx}" y1="${cy-15}" x2="${cx}" y2="${cy+12}"/>
       <line x1="${cx-16}" y1="${cy-1}" x2="${cx+16}" y2="${cy-1}"/>
