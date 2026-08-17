@@ -2,6 +2,45 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.26 · Ergonomía mobile, a pedido de Daniel: en el celular solo entra un
+         instrumento a la vez sin scrollear, y para cambiar HEADING en Modo Libre
+         "volando" tenía que bajar hasta el final de la página (los controles
+         vivían en // POSICIÓN) perdiendo de vista el VOR/HSI que estaba mirando.
+         Se evaluó la idea original de Daniel (un set de botones a cada lado del
+         instrumento) pero en un celular angosto no entra texto legible a los
+         costados de un instrumento que ya ocupa casi todo el ancho — se optó por
+         la alternativa de mover los controles en vez de partirlos en dos
+         columnas.
+         Los controles de HEADING (◄◄10°/◄1°/1°►/10°►►) y de vuelo (▶ VOLAR/
+         ⏸ PAUSA + ⏩ velocidad) se mudan de // POSICIÓN a pegados abajo de los
+         instrumentos, dentro de la misma tarjeta // INSTRUMENTOS — así quedan a
+         un scroll corto sin importar cuál instrumento esté mirando (antes había
+         que pasar por // TU RESPUESTA / // MODO y llegar hasta // POSICIÓN).
+         Los controles de OBS ya estaban bien ubicados (pegados debajo de cada
+         instrumento VOR/HSI) — no se tocaron.
+         Cambio quirúrgico: se movió únicamente el HTML, ningún ID cambió
+         (map-heading-controls, vuelo-controls, btn-volar, btn-velocidad) así que
+         ninguna función de JS necesitó tocarse — verificado que las 7 referencias
+         de getElementById relevantes siguen resolviendo contra el HTML.
+  v4.25 · Daniel: "se aleja rápido, en un par de minutos a 1x ya está fuera del
+         scope". Causa real (no era un bug): a más distancia de la estación, el
+         radial cambia cada vez menos grados por minuto para la misma velocidad —
+         geometría normal, pero deja el ejercicio "estancado" después de un rato.
+         Encima el límite de 40NM de v4.24 pausaba y dejaba al alumno colgado sin
+         forma fácil de retomar.
+         Fix: se saca el límite de 40NM+pausa. Ahora, si distNM supera 20NM,
+         _volarTick() re-ancla la distancia a 15NM manteniendo el MISMO radial y
+         heading (silencioso, sin alert ni pausa) — el mapa nunca dibujó la
+         distancia real (el avión siempre se ve al mismo radio visual, ver
+         renderMap()), así que el salto no se nota y el vuelo sigue sin cortes.
+         La pausa por pasar cerca de la estación (<0.5NM) se mantiene igual que en
+         v4.24 — ese sí es un evento que vale la pena que el alumno vea y resuelva.
+         Verificado en el harness aislado de v4.24: 3 minutos simulados a 1x con
+         el escenario real (sale radial 180, vuela heading 070) — el radial sigue
+         evolucionando parejo todo el tramo (180→127→101→90→83→79) sin
+         estancarse, con 5 re-anclajes silenciosos y la distancia siempre acotada
+         entre 8 y 20NM. Se re-extrajo _volarTick() del archivo ya editado
+         (no de la copia de prueba) y coincide con lo verificado.
   v4.24 · Motor de vuelo recto en Modo Libre — prerrequisito técnico para el futuro
          Nivel 3/4 de intercepción de radiales que charlamos con Daniel. El caso
          que dispara esto: para interceptar un radial a más de 90° del radial
@@ -563,7 +602,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.24</span>
+      <span class="ver">v4.26</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -621,6 +660,28 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       </div>
       <div class="flag-readout" id="hsi-flag-readout">— </div>
     </div>
+    <!-- v4.26 — controles de heading y vuelo (Modo Libre), pegados acá abajo de los
+         instrumentos (antes vivían en // POSICIÓN, al final de la página) a pedido
+         de Daniel: en el celular, para tocar HEADING mientras estaba "volando" tenía
+         que bajar hasta el final perdiendo de vista el VOR/HSI. Ahora quedan a un
+         scroll corto sin importar cuál instrumento esté mirando. Mismos IDs de
+         siempre (map-heading-controls, vuelo-controls, btn-volar, btn-velocidad) —
+         solo se movió el HTML, ninguna función de JS cambió. -->
+    <div class="obs-controls" id="map-heading-controls" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+      <span class="instr-label" style="width:100%;text-align:center;margin-bottom:4px">HEADING (rumbo del avión)</span>
+      <button onclick="turnHeadingReal(-10)">◄◄ 10°</button>
+      <button onclick="turnHeadingReal(-1)">◄ 1°</button>
+      <button onclick="turnHeadingReal(1)">1° ►</button>
+      <button onclick="turnHeadingReal(10)">10° ►►</button>
+    </div>
+    <div class="obs-controls" id="vuelo-controls" style="display:none;margin-top:10px">
+      <button class="primary" id="btn-volar" onclick="toggleVolar()" style="flex:1;min-width:140px;width:auto;margin-top:0">▶ VOLAR</button>
+      <button id="btn-velocidad" onclick="toggleVelocidad()" title="Velocidad de simulación (no realista, para ver el efecto rápido)">⏩ 1x</button>
+    </div>
+    <div class="hint" id="vuelo-hint" style="display:none">
+      El avión vuela en línea recta al heading actual (simulación acelerada, no realista).
+      Arrastrar el avión en el mapa pausa el vuelo.
+    </div>
   </div>
 
   <div class="card" id="card-respuesta">
@@ -647,21 +708,6 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     <h2 id="map-panel-title">// POSICIÓN REAL</h2>
     <div class="map-wrap"><div id="map-svg"></div></div>
     <div class="hint" id="map-hint">Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste</div>
-    <div class="obs-controls" id="map-heading-controls" style="display:none;margin-top:10px">
-      <span class="instr-label" style="width:100%;text-align:center;margin-bottom:4px">HEADING (rumbo del avión)</span>
-      <button onclick="turnHeadingReal(-10)">◄◄ 10°</button>
-      <button onclick="turnHeadingReal(-1)">◄ 1°</button>
-      <button onclick="turnHeadingReal(1)">1° ►</button>
-      <button onclick="turnHeadingReal(10)">10° ►►</button>
-    </div>
-    <div class="obs-controls" id="vuelo-controls" style="display:none;margin-top:10px">
-      <button class="primary" id="btn-volar" onclick="toggleVolar()" style="flex:1;min-width:140px;width:auto;margin-top:0">▶ VOLAR</button>
-      <button id="btn-velocidad" onclick="toggleVelocidad()" title="Velocidad de simulación (no realista, para ver el efecto rápido)">⏩ 1x</button>
-    </div>
-    <div class="hint" id="vuelo-hint" style="display:none">
-      El avión vuela en línea recta al heading actual (simulación acelerada, no realista).
-      Arrastrar el avión o el mapa pausa el vuelo.
-    </div>
     <button class="primary" id="btn-nuevo-ejercicio" onclick="nuevoEjercicio()">NUEVO EJERCICIO</button>
   </div>
 </div>
@@ -827,9 +873,21 @@ function _volarTick(){
   posY += distTick*Math.cos(hd);
   const nuevoDist=Math.hypot(posX,posY);
   if(nuevoDist<0.5){ pausarVuelo(); alert('El avión pasó sobre la estación — vuelo en pausa.'); return; }
-  if(nuevoDist>40){ pausarVuelo(); alert('El avión se alejó demasiado de la estación — vuelo en pausa.'); return; }
   distNM=nuevoDist;
   radialReal=Math.round(norm360(Math.atan2(posX,posY)*180/Math.PI));
+  // v4.25 — Daniel notó que a 1x, en un par de minutos la distancia crece tanto que
+  // el radial deja de cambiar a un ritmo útil (geometría real: a más distancia, menos
+  // grados por minuto para la misma velocidad — no es un bug, pero arruina el
+  // ejercicio). Antes acá pausaba a los 40NM y dejaba al alumno "colgado". Ahora en
+  // vez de pausar, re-ancla la distancia a 15NM manteniendo el MISMO radial y heading
+  // — como el mapa nunca dibujó la distancia real (el avión siempre se ve al mismo
+  // radio visual, ver renderMap()), el salto no se nota, y el vuelo sigue sin
+  // interrupciones ni avisos. Pasar cerca de la estación sí sigue pausando (arriba):
+  // ese es un evento real que vale la pena que el alumno vea y resuelva a mano.
+  if(distNM>20){
+    distNM=15;
+    sincronizarPosDesdeRadial();
+  }
   renderMap();
   renderInstrumentos();
 }
