@@ -2,11 +2,17 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.13 · Ajuste sobre el "feedback explicado" de v4.12: el resumen de arriba (antes
+         3 líneas sueltas: "Radial real", "Heading del avión", "Acción real...
+         elegiste...") pasa a 2 líneas fijas siempre, sea correcto o no: "Tu
+         respuesta: <acción> radial <NNN>°" / "Respuesta correcta: <acción> radial
+         <NNN>°" (heading y tolerancia quedan como aclaración entre paréntesis en
+         la segunda línea).
   v4.12 · Pedido de Daniel: "feedback explicado" al verificar un ejercicio. Antes
          VERIFICAR solo mostraba el resultado final (radial real, heading, acción
          correcta) sin explicar el razonamiento — el alumno que fallaba no entendía
          POR QUÉ. Ahora, además del resumen de siempre, se agrega un bloque
-         "◈ CÓMO SE LLEGA A ESTE RESULTADO" con dos partes: 
+         "◈ CÓMO SE LLEGA A ESTE RESULTADO" con dos partes:
          (1) Radial: muestra el OBS que tenía puesto al verificar, si la aguja
              estaba centrada o no, la bandera TO/FROM resultante, y aplica la
              regla explícita (FROM⇒radial=OBS, TO⇒radial=OBS+180°) para mostrar
@@ -19,6 +25,11 @@
          Refactor: clasificarAccion() ahora delega en la nueva explicarAccion()
          (misma lógica exacta, sin cambios de comportamiento) para no duplicar la
          regla en dos lugares.
+         Ajuste sobre el mismo pedido: el resumen de arriba (antes 3 líneas sueltas:
+         "Radial real", "Heading del avión", "Acción real... elegiste...") pasa a
+         2 líneas fijas siempre, sea correcto o no: "Tu respuesta: <acción> radial
+         <NNN>°" / "Respuesta correcta: <acción> radial <NNN>°" (heading y
+         tolerancia quedan como aclaración entre paréntesis en la segunda línea).
   v4.11 · HSI: FIX sobre v4.10 — el afinamiento de la cola era lineal en
          todo su largo, se notaba desde ~70%. Ahora se mantiene ancho
          constante (3.5, igual que la cabeza) hasta el 95% del recorrido, y
@@ -405,7 +416,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.12</span>
+      <span class="ver">v4.13</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -875,9 +886,8 @@ function verificar(){
   fb.className='feedback '+(ok?'ok':'bad');
   fb.style.display='block';
   fb.innerHTML='<b>'+(ok?'✓ CORRECTO':'✗ INCORRECTO')+'</b>'+
-    'Radial real: '+p3(radialReal)+'° (ingresaste '+p3(radialIn)+'°, tolerancia ±'+TOL_RADIAL+'°)<br>'+
-    'Heading del avión: '+p3(headingReal)+'°<br>'+
-    'Acción real: '+map[accionCorrecta]+' por radial '+p3(radialReal)+'° (elegiste: '+map[accionSel]+')';
+    'Tu respuesta: '+map[accionSel]+' radial '+p3(radialIn)+'°<br>'+
+    'Respuesta correcta: '+map[accionCorrecta]+' radial '+p3(radialReal)+'° (heading '+p3(headingReal)+'°, tolerancia radial ±'+TOL_RADIAL+'°)';
 
   // v4.12 — pedido de Daniel: "feedback explicado", el paso a paso de CÓMO se llega
   // al resultado, no solo cuál es. Reusa el `obs` que el alumno tenía puesto en el
