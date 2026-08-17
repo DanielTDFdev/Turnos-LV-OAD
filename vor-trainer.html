@@ -2,6 +2,44 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.24 · Motor de vuelo recto en Modo Libre — prerrequisito técnico para el futuro
+         Nivel 3/4 de intercepción de radiales que charlamos con Daniel. El caso
+         que dispara esto: para interceptar un radial a más de 90° del radial
+         actual hace falta el procedimiento "opuesto y paralelo" (volar paralelo
+         al radial deseado hasta que la bandera TO/FROM cambia — momento en que
+         se cruza el punto perpendicular al radial de partida — y RECIÉN ahí
+         atacar el radial deseado). Esto no se puede armar como ejercicio
+         estático: necesita que el radial real cambie en vivo mientras el avión
+         vuela, para que el alumno vea el momento exacto del cambio de bandera.
+         Nuevo botón ▶ VOLAR / ⏸ PAUSA en Modo Libre + selector de velocidad de
+         simulación (⏩ 1x/4x/10x, NO realista a propósito — a velocidad real
+         cruzar de cuadrante tardaría minutos reales, poco práctico en clase).
+         Mientras vuela, el avión avanza en línea recta al heading actual cada
+         200ms (VOLAR_TICK_MS) y radialReal/distNM se recalculan en cada tick.
+         Físicamente: posX/posY (NM respecto de la estación, X=Este/Y=Norte) son
+         la ÚNICA fuente de verdad de la posición — radialReal/distNM se DERIVAN
+         de ahí en cada tick y nunca al revés, para que el redondeo de
+         radialReal (necesario como entero en el resto del ejercicio) no se
+         acumule tick a tick y la posición real se desvíe con el tiempo.
+         Safety: auto-pausa con aviso si pasa a menos de 0.5NM de la estación
+         (evita que el radial "tiemble" errático al pasar muy cerca) o si se aleja
+         a más de 40NM (evita que quede volando al infinito sin que nadie lo mire).
+         Arrastrar el avión en el mapa mientras vuela lo pausa automáticamente
+         (tiene sentido: el alumno está reposicionando a mano) y resincroniza
+         posX/posY con el radial nuevo, para que si vuelve a apretar VOLAR
+         arranque desde ahí y no desde donde había quedado antes del drag.
+         Al salir de Modo Libre (volver a Ejercicio) se pausa el motor — no puede
+         quedar un setInterval corriendo de fondo mientras se hace un ejercicio.
+         Verificado ANTES de integrar: se extrajo la física a un script Node
+         aislado (sin DOM) y se corrió el escenario real que describió Daniel
+         (sale por radial 180, vuela heading 070 paralelo al radial de ingreso
+         070 deseado) — cruza el radial 90° (el perpendicular exacto al 180 de
+         partida) a los ~91s reales a 1x, tal cual el procedimiento que describió.
+         Se probaron también los casos límite: heading=radial (el radial debe
+         quedar CONSTANTE, solo cambia la distancia — es la firma de estar
+         volando en línea recta a lo largo del radial) y proximidad a la estación
+         (dispara el auto-pause sin NaN ni errores). Los 3 escenarios dieron el
+         resultado esperado antes de tocar el HTML.
   v4.23 · Soporte PWA (instalable como app), a pedido de Daniel con logo nuevo
          ("SIM VOR", escudo+alas doradas, mismo estilo que los íconos de
          turnos/vuelo/portal/fpl). Mismo patrón que esas 4 apps:
@@ -492,6 +530,7 @@ button.primary{font-family:var(--font-mono);font-size:14px;font-weight:700;lette
   border-radius:var(--radius);padding:12px 20px;cursor:pointer;width:100%;margin-top:14px}
 button.primary:hover{background:rgba(0,200,212,.22)}
 button.primary:disabled{opacity:.4;cursor:not-allowed}
+button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba(240,165,0,.08));color:var(--amber);border-color:var(--amber)}
 .feedback{margin-top:14px;padding:14px;border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;letter-spacing:.03em;display:none}
 .feedback.ok{background:rgba(57,211,83,.08);border:1px solid var(--green);color:var(--green)}
 .feedback.bad{background:rgba(248,81,73,.08);border:1px solid var(--red);color:var(--red)}
@@ -524,7 +563,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.23</span>
+      <span class="ver">v4.24</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -615,6 +654,14 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
       <button onclick="turnHeadingReal(1)">1° ►</button>
       <button onclick="turnHeadingReal(10)">10° ►►</button>
     </div>
+    <div class="obs-controls" id="vuelo-controls" style="display:none;margin-top:10px">
+      <button class="primary" id="btn-volar" onclick="toggleVolar()" style="flex:1;min-width:140px;width:auto;margin-top:0">▶ VOLAR</button>
+      <button id="btn-velocidad" onclick="toggleVelocidad()" title="Velocidad de simulación (no realista, para ver el efecto rápido)">⏩ 1x</button>
+    </div>
+    <div class="hint" id="vuelo-hint" style="display:none">
+      El avión vuela en línea recta al heading actual (simulación acelerada, no realista).
+      Arrastrar el avión o el mapa pausa el vuelo.
+    </div>
     <button class="primary" id="btn-nuevo-ejercicio" onclick="nuevoEjercicio()">NUEVO EJERCICIO</button>
   </div>
 </div>
@@ -629,6 +676,18 @@ let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accion
 // sin scoring, el mapa queda visible y arrastrable todo el tiempo, no hay
 // ejercicio ni corrección.
 let modoJuego='ejercicio';
+
+// v4.24 — motor de vuelo recto de Modo Libre (prerrequisito para el futuro Nivel 4
+// de "opuesto y paralelo": esa maniobra necesita que el radial real vaya cambiando
+// en vivo mientras el avión vuela, no alcanza con un punto estático). posX/posY son
+// la posición REAL en NM respecto de la estación (X=Este, Y=Norte) — es la única
+// fuente de verdad de la posición; radialReal/distNM se DERIVAN de ahí en cada tick,
+// nunca al revés (evita que el redondeo de radialReal se acumule tick a tick).
+let posX=0, posY=6; // NM respecto de la estación, sincronizado con radialReal/distNM al entrar a modo libre
+let volando=false, velocidadMult=1, _voloTimer=null;
+const VOLAR_TICK_MS=200;
+const VOLAR_KT=900; // velocidad de SIMULACIÓN, no realista — a propósito, para que
+                     // cruzar de cuadrante tome ~15-30s reales y sea viable en clase
 let modo='vor'; // 'vor' | 'hsi' — persistido en localStorage
 
 // v4.19 — trazado del avión del Giro Direccional: vectorizado por Daniel a partir de
@@ -706,21 +765,71 @@ function setModoJuego(m){
   document.getElementById('modo-libre-desc').style.display = m==='libre' ? 'block' : 'none';
   document.getElementById('card-respuesta').style.display = m==='libre' ? 'none' : 'block';
   document.getElementById('map-heading-controls').style.display = m==='libre' ? 'flex' : 'none';
+  document.getElementById('vuelo-controls').style.display = m==='libre' ? 'flex' : 'none';
+  document.getElementById('vuelo-hint').style.display = m==='libre' ? 'block' : 'none';
   document.getElementById('btn-nuevo-ejercicio').style.display = m==='libre' ? 'none' : 'block';
   document.getElementById('map-panel-title').textContent = m==='libre' ? '// POSICIÓN (arrastrá el avión)' : '// POSICIÓN REAL';
   document.getElementById('map-hint').textContent = m==='libre'
     ? 'Arrastrá el avión (o cualquier punto del mapa) para cambiar el radial.'
     : 'Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste';
   if(m==='libre'){
+    sincronizarPosDesdeRadial(); // por si nuevoEjercicio() cambió distNM mientras estábamos en ejercicio
     document.getElementById('map-panel').style.display='block';
     renderMap();
   } else {
+    pausarVuelo(); // v4.24 — no puede quedar un setInterval corriendo en modo ejercicio
     nuevoEjercicio(); // vuelve todo al estado de siempre (map oculto hasta VERIFICAR)
   }
 }
 
 function turnHeadingReal(delta){
   headingReal=Math.round(norm360(headingReal+delta));
+  renderMap();
+  renderInstrumentos();
+}
+
+// v4.24 — motor de vuelo recto (Modo Libre). posX/posY (NM, estación en el origen)
+// son la ÚNICA fuente de verdad de la posición; radialReal/distNM se recalculan a
+// partir de ahí en cada tick, nunca al revés — así el redondeo de radialReal (que
+// necesitamos como entero para el resto del ejercicio) no se acumula tick a tick.
+function sincronizarPosDesdeRadial(){
+  const rad=radialReal*Math.PI/180;
+  posX=distNM*Math.sin(rad);
+  posY=distNM*Math.cos(rad);
+}
+function toggleVolar(){ volando ? pausarVuelo() : iniciarVuelo(); }
+function iniciarVuelo(){
+  if(volando || modoJuego!=='libre') return;
+  volando=true;
+  actualizarBotonVolar();
+  _voloTimer=setInterval(_volarTick, VOLAR_TICK_MS);
+}
+function pausarVuelo(){
+  volando=false;
+  if(_voloTimer){ clearInterval(_voloTimer); _voloTimer=null; }
+  actualizarBotonVolar();
+}
+function actualizarBotonVolar(){
+  const b=document.getElementById('btn-volar');
+  if(!b) return;
+  b.textContent = volando ? '⏸ PAUSA' : '▶ VOLAR';
+  b.classList.toggle('flying', volando);
+}
+function toggleVelocidad(){
+  velocidadMult = velocidadMult===1 ? 4 : (velocidadMult===4 ? 10 : 1);
+  const b=document.getElementById('btn-velocidad');
+  if(b) b.textContent='⏩ '+velocidadMult+'x';
+}
+function _volarTick(){
+  const distTick = VOLAR_KT*velocidadMult*(VOLAR_TICK_MS/1000)/3600; // NM recorridas en este tick
+  const hd=headingReal*Math.PI/180;
+  posX += distTick*Math.sin(hd);
+  posY += distTick*Math.cos(hd);
+  const nuevoDist=Math.hypot(posX,posY);
+  if(nuevoDist<0.5){ pausarVuelo(); alert('El avión pasó sobre la estación — vuelo en pausa.'); return; }
+  if(nuevoDist>40){ pausarVuelo(); alert('El avión se alejó demasiado de la estación — vuelo en pausa.'); return; }
+  distNM=nuevoDist;
+  radialReal=Math.round(norm360(Math.atan2(posX,posY)*180/Math.PI));
   renderMap();
   renderInstrumentos();
 }
@@ -996,9 +1105,11 @@ function attachDrag(instrId){
 // v4.22 — drag del avión en el mapa (modo libre). Mismo patrón anti-stale que
 // el drag del OBS: nunca se cachea el nodo <svg> entre eventos, se re-consulta
 // por ID en cada uno (renderMap() reemplaza el nodo entero en cada movimiento).
-// Solo cambia el RADIAL (ángulo); la distancia visual al VOR queda fija — distNM
-// no participa de ningún cálculo del instrumento hoy, así que no hace falta
-// tocarla acá.
+// Solo cambia el RADIAL (ángulo); la distancia queda como estaba (distNM no se
+// toca acá). v4.24: si estaba volando, arrastrar pausa el vuelo (tiene sentido —
+// el alumno está reposicionando a mano, no tiene sentido que el motor de vuelo
+// siga sumando sobre esa posición al mismo tiempo) y se resincroniza posX/posY
+// con el radial nuevo para que, si vuelve a apretar VOLAR, arranque desde ahí.
 let _mapDragging=false;
 function _mapLiveSvg(){ return document.getElementById('map-instrument'); }
 function _mapAngleFromCenter(svg,clientX,clientY){
@@ -1011,9 +1122,11 @@ function _mapDragDown(e){
   if(modoJuego!=='libre') return;
   const svg=_mapLiveSvg();
   if(!svg) return;
+  if(volando) pausarVuelo();
   _mapDragging=true;
   const p=e.touches?e.touches[0]:e;
   radialReal=Math.round(_mapAngleFromCenter(svg,p.clientX,p.clientY));
+  sincronizarPosDesdeRadial();
   renderMap();
   renderInstrumentos();
   svg.style.cursor='grabbing';
@@ -1024,6 +1137,7 @@ function _mapDragMove(e){
   if(!svg) return;
   const p=e.touches?e.touches[0]:e;
   radialReal=Math.round(_mapAngleFromCenter(svg,p.clientX,p.clientY));
+  sincronizarPosDesdeRadial();
   renderMap();
   renderInstrumentos();
 }
