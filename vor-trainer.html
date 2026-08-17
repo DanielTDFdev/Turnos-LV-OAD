@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.5 · HSI: símbolo del avión en el centro pasa de un delta/triángulo
+         genérico a una representación simplificada de avión visto desde
+         arriba (fuselaje + alas + cola, mismo rojo #f85149 de antes).
+  v4.4 · HSI: indicador TO/FROM pasa a ser un triángulo blanco FIJO (no rota
+         con el curso), desfasado a la derecha del centro, más grande que
+         antes (apuntaba hacia la cabeza/cola de la flecha sobre la línea de
+         curso). Barra CDI ahora en un verde ligeramente distinto (#5be38a)
+         al de la flecha de curso (#39d353) para diferenciarlas a simple
+         vista.
   v4.3 · HSI: la flecha de curso ahora tiene cabeza (triángulo) y cola (marca
          en T) FIJAS, siempre visibles pase lo que pase con TO/FROM — antes
          no había forma distintiva en las puntas, solo una línea recta. La
@@ -324,7 +333,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     <h1>VOR TRAINER<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.3</span>
+      <span class="ver">v4.5</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -614,11 +623,13 @@ function renderHSI(){
   const headArrow=`<polygon points="${hx+Math.sin(rad)*12},${hy-Math.cos(rad)*12} ${hx+Math.sin(perpA)*8},${hy-Math.cos(perpA)*8} ${hx-Math.sin(perpA)*8},${hy+Math.cos(perpA)*8}" fill="#39d353"/>`;
   const tailCap=`<line x1="${tx+Math.sin(perpA)*8}" y1="${ty-Math.cos(perpA)*8}" x2="${tx-Math.sin(perpA)*8}" y2="${ty+Math.cos(perpA)*8}" stroke="#39d353" stroke-width="3.5"/>`;
 
-  // Indicador TO/FROM: triángulo chico en el hueco central, apuntando hacia
-  // la cabeza (TO) o hacia la cola (FROM).
-  const tfR=15;
-  const toTri=`<polygon points="${cx+Math.sin(rad)*(tfR+8)},${cy-Math.cos(rad)*(tfR+8)} ${cx+Math.sin(rad)*(tfR-8)+Math.sin(perpA)*7},${cy-Math.cos(rad)*(tfR-8)-Math.cos(perpA)*7} ${cx+Math.sin(rad)*(tfR-8)-Math.sin(perpA)*7},${cy-Math.cos(rad)*(tfR-8)+Math.cos(perpA)*7}" fill="#39d353"/>`;
-  const fromTri=`<polygon points="${cx+Math.sin(radRecip)*(tfR+8)},${cy-Math.cos(radRecip)*(tfR+8)} ${cx+Math.sin(radRecip)*(tfR-8)+Math.sin(perpA)*7},${cy-Math.cos(radRecip)*(tfR-8)-Math.cos(perpA)*7} ${cx+Math.sin(radRecip)*(tfR-8)-Math.sin(perpA)*7},${cy-Math.cos(radRecip)*(tfR-8)+Math.cos(perpA)*7}" fill="#f0a500"/>`;
+  // Indicador TO/FROM: triángulo blanco FIJO (no rota con el curso),
+  // desfasado a la derecha del centro — TO apunta hacia arriba, FROM hacia
+  // abajo. Antes vivía sobre la línea de curso (rotaba con obs) y era del
+  // mismo tamaño que el resto de las marcas; ahora es fijo y más grande.
+  const tfx=cx+20;
+  const toTri=`<polygon points="${tfx},${cy-13} ${tfx-9},${cy+7} ${tfx+9},${cy+7}" fill="#ffffff"/>`;
+  const fromTri=`<polygon points="${tfx},${cy+13} ${tfx-9},${cy-7} ${tfx+9},${cy-7}" fill="#ffffff"/>`;
 
   const svg=`
   <svg width="260" height="260" viewBox="0 0 260 260" id="hsi-instrument" style="cursor:grab;touch-action:none">
@@ -626,11 +637,14 @@ function renderHSI(){
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
     ${headShaft}${tailShaft}${headArrow}${tailCap}
-    <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#39d353" stroke-width="6" stroke-linecap="round"/>
+    <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#5be38a" stroke-width="6" stroke-linecap="round"/>
     ${cdi.flag==='TO'?toTri:''}
     ${cdi.flag==='FROM'?fromTri:''}
-    <polygon points="${cx},${cy-18} ${cx-13},${cy+13} ${cx},${cy+7} ${cx+13},${cy+13}"
-      fill="none" stroke="#f85149" stroke-width="2.5" stroke-linejoin="round"/>
+    <g stroke="#f85149" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <line x1="${cx}" y1="${cy-15}" x2="${cx}" y2="${cy+12}"/>
+      <line x1="${cx-16}" y1="${cy-1}" x2="${cx+16}" y2="${cy-1}"/>
+      <line x1="${cx-7}" y1="${cy+12}" x2="${cx+7}" y2="${cy+12}"/>
+    </g>
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
   document.getElementById('hsi-svg').innerHTML=svg;
