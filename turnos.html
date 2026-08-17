@@ -1,5 +1,21 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.46
+  FECHA   : 2026-08-17
+  CAMBIOS : Pedido de Daniel: (1) el box de totales del Log del Alumno ahora dice
+            "Tiempo acumulado:" en vez de "Total:" (mla-totales en
+            renderNotasPrivadasAlumno, y su espejo en Mi Perfil/renderMiLogVuelosInline).
+            (2) Badge junto a cada vuelo: un turno 'vencido' que YA tiene tiempo y/o
+            aterrizajes cargados (obs_privada_tiempo_vuelo/aterrizajes o
+            piloto_tiempo_vuelo/aterrizajes) ahora dice "VOLADO" en vez de "VENCIDO" —
+            mismo badge-vencido (violeta), solo cambia el texto. Aplica tanto al listado
+            "Observaciones al Alumno" (renderObsPublicasAlumno) como al ESTADO del modal
+            Detalle del Turno (abrirModal). Si no hay datos de vuelo cargados, sigue
+            diciendo VENCIDO como siempre. (3) Detalle del Turno: si el vuelo tiene datos
+            cargados, nueva fila VUELO con horas/aterrizajes y, si tiene_traza_gps, los
+            tres botones de siempre (Ver recorrido / GPX / KML) — antes esto solo se veía
+            entrando a Log del Alumno.
+  ARCHIVO : turnos.html
   VERSION : 7.45
   FECHA   : 2026-08-15
   CAMBIOS : Link "📡 VOR Trainer" (vor-trainer.html) en links-row de alumno-screen
@@ -2554,7 +2570,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.45</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.46</div>
   </div>
 
 </div>
@@ -2909,6 +2925,8 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div class="modal-row"><span class="modal-lbl">EMAIL</span><span class="modal-val" id="md-email"></span></div>
       <div class="modal-row" id="md-obs-row"><span class="modal-lbl">OBS</span><span class="modal-val" id="md-obs"></span></div>
       <div class="modal-row"><span class="modal-lbl">ESTADO</span><span class="modal-val" id="md-estado"></span></div>
+      <div class="modal-row" id="md-vuelo-row" style="display:none"><span class="modal-lbl">VUELO</span><span class="modal-val" id="md-vuelo-datos" style="color:var(--cyan)"></span></div>
+      <div class="modal-row" id="md-vuelo-gps-row" style="display:none"><span class="modal-lbl"></span><span class="modal-val" id="md-vuelo-gps-btns" style="display:flex;gap:6px;flex-wrap:wrap"></span></div>
       <div class="modal-row" id="md-disp-row" style="display:none"><span class="modal-lbl">DISPONIB.</span><span class="modal-val" id="md-disp" style="font-size:11px"></span></div>
       <div class="modal-row"><span class="modal-lbl">SOLICITADO</span><span class="modal-val" id="md-ts" style="color:var(--text3);font-size:11px"></span></div>
       <div class="modal-row" id="md-cargado-row" style="display:none"><span class="modal-lbl">CARGADO POR</span><span class="modal-val" id="md-cargado" style="color:var(--text3);font-size:11px"></span></div>
@@ -4629,7 +4647,7 @@ async function renderMiLogVuelosInline(){
   });
   if(totalHs>0||totalAter>0){
     totalesBox.style.display='block';
-    totalesBox.textContent='✈ Total: '+totalHs.toFixed(1)+' hs de vuelo — '+totalAter+' aterrizajes';
+    totalesBox.textContent='✈ Tiempo acumulado: '+totalHs.toFixed(1)+' hs de vuelo — '+totalAter+' aterrizajes';
   } else {
     totalesBox.style.display='none';
   }
@@ -5381,6 +5399,23 @@ function tooltipAccion(r){
 // aprobación de nadie. Mismo criterio 'autoAprobPiloto' que ya usa Consultas (ver v6.67,
 // vencioSinAprobar). En LV-OAD el piloto reserva igual que el alumno (sí requiere
 // instructor real) y ahí NO aplica la excepción.
+// v7.46: helper único para saber si un turno YA tiene datos de vuelo cargados
+// (tiempo y/o aterrizajes) sin importar el origen (obs_privada_* del instructor, o
+// piloto_* autorregistrado) — mismo criterio de horasVal/aterrVal que ya usaban por
+// separado renderObsPublicasAlumno/renderNotasPrivadasAlumno/renderMiLogVuelosInline.
+// Se usa para decidir si un badge 'vencido' debe mostrarse como "VOLADO".
+function datosVueloDe(r){
+  const horas=r.obs_privada_tiempo_vuelo!=null?r.obs_privada_tiempo_vuelo:r.piloto_tiempo_vuelo;
+  const aterr=r.obs_privada_aterrizajes!=null?r.obs_privada_aterrizajes:r.piloto_aterrizajes;
+  return{horas,aterr,tieneVuelo:horas!=null||aterr!=null};
+}
+// v7.46: texto del badge de estado — igual a r.estado salvo el caso especial
+// 'vencido' CON datos de vuelo cargados, que pasa a mostrar "volado" (mismo
+// badge-vencido/color violeta, solo cambia la etiqueta). Los demás estados
+// (pendiente/aprobado/cancelado/vencido sin datos) respetan la convención de siempre.
+function textoBadgeEstado(r){
+  return(r.estado==='vencido'&&datosVueloDe(r).tieneVuelo)?'volado':r.estado;
+}
 function claseVencido(r){
   const autoAprobPiloto=tipoVueloDe(r)==='particular';
   const fueAprobado=!!(r.aprobado_por||r.instructor)||autoAprobPiloto;
@@ -5893,7 +5928,7 @@ function renderObsPublicasAlumno(){
     const head=document.createElement('div');
     head.style.cssText='display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.05em;margin-bottom:.3rem';
     const izq=document.createElement('span'); izq.textContent=fmtFechaLinda(r.fecha)+' — '+(r.hora||'')+' hs — '+(r.avion||'LV-OAD');
-    const badge=document.createElement('span'); badge.className='badge badge-'+r.estado; badge.style.fontSize='9px'; badge.textContent=r.estado;
+    const badge=document.createElement('span'); badge.className='badge badge-'+r.estado; badge.style.fontSize='9px'; badge.textContent=textoBadgeEstado(r);
     head.appendChild(izq); head.appendChild(badge);
     div.appendChild(head);
     const horasVal=r.obs_privada_tiempo_vuelo!=null?r.obs_privada_tiempo_vuelo:r.piloto_tiempo_vuelo;
@@ -6098,7 +6133,7 @@ function renderNotasPrivadasAlumno(){
   const conDatos=totalHs>0||totalAter>0;
   if(conDatos){
     totalesBox.style.display='block';
-    totalesBox.textContent='✈ Total: '+totalHs.toFixed(1)+' hs de vuelo — '+totalAter+' aterrizajes';
+    totalesBox.textContent='✈ Tiempo acumulado: '+totalHs.toFixed(1)+' hs de vuelo — '+totalAter+' aterrizajes';
   } else {
     totalesBox.style.display='none';
   }
@@ -6402,7 +6437,43 @@ window.abrirModal=function(key){
   else{obsRow.style.display='none';}
   const _sinInstBadge=(r.sinInstructor&&r.estado==='pendiente')
     ?` <span class="badge" style="background:rgba(224,82,156,.14);color:var(--pink);border:1px solid rgba(224,82,156,.45)">sin instructor</span>`:'';
-  document.getElementById('md-estado').innerHTML=`<span class="badge badge-${r.estado}">${r.estado}</span>`+_sinInstBadge;
+  document.getElementById('md-estado').innerHTML=`<span class="badge badge-${r.estado}">${textoBadgeEstado(r)}</span>`+_sinInstBadge;
+  // v7.46: fila VUELO — si el turno tiene tiempo y/o aterrizajes cargados, se muestran
+  // acá directo (antes solo se veían entrando a "VER LOG DEL ALUMNO"). Si además tiene
+  // traza GPS, se agregan los mismos tres botones que ya existen en Log del Alumno.
+  (function(){
+    const vRow=document.getElementById('md-vuelo-row'), vDatos=document.getElementById('md-vuelo-datos');
+    const gRow=document.getElementById('md-vuelo-gps-row'), gBtns=document.getElementById('md-vuelo-gps-btns');
+    const{horas,aterr,tieneVuelo}=datosVueloDe(r);
+    if(!tieneVuelo){ vRow.style.display='none'; gRow.style.display='none'; return; }
+    const partes=[];
+    if(horas!=null)partes.push('⏱ '+Number(horas).toFixed(1)+' hs');
+    if(aterr!=null)partes.push('⬇ '+aterr+' aterrizajes');
+    vDatos.textContent=partes.join(' — ');
+    vRow.style.display='flex';
+    gBtns.innerHTML='';
+    if(r.tiene_traza_gps&&key){
+      const rNombre=r.nombre||'', rAvion=r.avion||'LV-OAD', rHora=r.hora||'', rFecha=r.fecha||'';
+      const btnMapa=document.createElement('button');
+      btnMapa.className='btn-ver-mapa';
+      btnMapa.textContent='🗺 Ver recorrido GPS';
+      btnMapa.addEventListener('click',()=>abrirMapaVuelo(key,rNombre,rAvion,rHora));
+      gBtns.appendChild(btnMapa);
+      const btnExpG=document.createElement('button');
+      btnExpG.className='btn-export-mapa';
+      btnExpG.textContent='⬇ GPX';
+      btnExpG.addEventListener('click',()=>exportarTrazaTurnosGPX(key,rNombre,rAvion,rFecha));
+      gBtns.appendChild(btnExpG);
+      const btnExpK=document.createElement('button');
+      btnExpK.className='btn-export-mapa';
+      btnExpK.textContent='⬇ KML';
+      btnExpK.addEventListener('click',()=>exportarTrazaTurnosKML(key,rNombre,rAvion,rFecha));
+      gBtns.appendChild(btnExpK);
+      gRow.style.display='flex';
+    } else {
+      gRow.style.display='none';
+    }
+  })();
   // Fila "DISPONIB." (v6.23): mismo dato que el ★ y el "Puede aprobar: X" del tooltip del
   // calendario, pero visible también en mobile (donde no existe hover/title). v6.94: antes
   // "solo para pendientes de LV-OAD"; ahora cualquier pendiente en modo 'instruccion' (un
