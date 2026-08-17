@@ -2,6 +2,31 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.22 · MODO LIBRE — sandbox sin scoring, a pedido de Daniel tras analizar
+         luizmonteiro.com/learning_vor_sim.aspx (simulador VOR completo, six-pack
+         de instrumentos, DME, holding patterns, wind triangle — mucho más
+         complejo de lo que necesita esta app). Se rescató la idea central (mover
+         el avión y ver el instrumento reaccionar en vivo) sin el resto.
+         Nueva tarjeta "// MODO" arriba de todo con dos tabs: EJERCICIO (default,
+         comportamiento de siempre sin ningún cambio) y 🎮 LIBRE.
+         En LIBRE: se oculta "// TU RESPUESTA" (no hay nada que corregir), el mapa
+         "POSICIÓN" queda visible y arrastrable todo el tiempo (antes solo se
+         revelaba al VERIFICAR) — tocar/arrastrar en cualquier punto del mapa
+         cambia radialReal en vivo y VOR/HSI se redibujan al toque. Nuevos
+         botones HEADING (±1°/±10°, mismo patrón que los de OBS) porque el rumbo
+         no se puede derivar de la posición en el mapa.
+         Drag del mapa: mismo patrón anti-stale que el drag del OBS (nunca se
+         cachea el nodo <svg> entre eventos porque renderMap() lo reemplaza
+         entero en cada movimiento — re-consulta por ID en cada evento). Nuevas
+         funciones _mapDragDown/_mapDragMove/_mapDragUp/attachMapDrag(),
+         paralelas a las que ya existían para el OBS, sin tocarlas.
+         distNM no se tocó: hoy no participa de ningún cálculo del instrumento
+         (vestigial, pensado a futuro para DME), así que el avión se sigue
+         dibujando siempre al mismo radio visual del mapa — el drag solo cambia
+         el ángulo (radial). El día que se quiera un DME real, ahí sí habrá que
+         hacer que la distancia también se pueda arrastrar.
+         Al volver a EJERCICIO se llama nuevoEjercicio() como siempre, así que
+         arranca una tanda limpia (map oculto hasta VERIFICAR, como toda la vida).
   v4.21 · Pedido de Daniel: en la cartilla del VOR/OBS, los rumbos 00/09/18/27
          (00°/90°/180°/270°) pasan a mostrarse como N/E/S/W — mismo criterio que
          ya usaba el Giro Direccional y el HSI (ambos con headingReal), ahora
@@ -475,10 +500,25 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.21</span>
+      <span class="ver">v4.22</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
+
+  <div class="card">
+    <div class="instr-header">
+      <h2>// MODO</h2>
+      <div class="mode-tabs">
+        <button id="tab-modo-ejercicio" onclick="setModoJuego('ejercicio')">▸ EJERCICIO</button>
+        <button id="tab-modo-libre" onclick="setModoJuego('libre')">🎮 LIBRE</button>
+      </div>
+    </div>
+    <div class="hint" id="modo-libre-desc" style="display:none;text-align:left">
+      Arrastrá el avión en el mapa de abajo para cambiar el radial. Usá los botones HEADING
+      para cambiar el rumbo. Los instrumentos VOR/HSI reaccionan en vivo — sin ejercicio,
+      sin corrección, para explorar cómo se relacionan entre sí.
+    </div>
+  </div>
 
   <div class="card">
     <div class="instr-header">
@@ -520,7 +560,7 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="card-respuesta">
     <h2>// TU RESPUESTA</h2>
     <div class="answer-grid">
       <div class="field">
@@ -541,10 +581,17 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
   </div>
 
   <div class="card" id="map-panel">
-    <h2>// POSICIÓN REAL</h2>
+    <h2 id="map-panel-title">// POSICIÓN REAL</h2>
     <div class="map-wrap"><div id="map-svg"></div></div>
-    <div class="hint">Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste</div>
-    <button class="primary" onclick="nuevoEjercicio()">NUEVO EJERCICIO</button>
+    <div class="hint" id="map-hint">Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste</div>
+    <div class="obs-controls" id="map-heading-controls" style="display:none;margin-top:10px">
+      <span class="instr-label" style="width:100%;text-align:center;margin-bottom:4px">HEADING (rumbo del avión)</span>
+      <button onclick="turnHeadingReal(-10)">◄◄ 10°</button>
+      <button onclick="turnHeadingReal(-1)">◄ 1°</button>
+      <button onclick="turnHeadingReal(1)">1° ►</button>
+      <button onclick="turnHeadingReal(10)">10° ►►</button>
+    </div>
+    <button class="primary" id="btn-nuevo-ejercicio" onclick="nuevoEjercicio()">NUEVO EJERCICIO</button>
   </div>
 </div>
 
@@ -554,6 +601,10 @@ button.primary:disabled{opacity:.4;cursor:not-allowed}
 // sería un ReferenceError de temporal dead zone que cortaría todo el script) ──
 const TOL_RADIAL=5;    // tolerancia grados para validar radial ingresado
 let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accionSel=null;
+// v4.22 — modo libre: 'ejercicio' = comportamiento de siempre. 'libre' = sandbox
+// sin scoring, el mapa queda visible y arrastrable todo el tiempo, no hay
+// ejercicio ni corrección.
+let modoJuego='ejercicio';
 let modo='vor'; // 'vor' | 'hsi' — persistido en localStorage
 
 // v4.19 — trazado del avión del Giro Direccional: vectorizado por Daniel a partir de
@@ -579,6 +630,7 @@ function norm180(d){ d=norm360(d); if(d>180)d-=360; return d; }
   try{ modoGuardado=localStorage.getItem('vor-trainer-modo')||'vor'; }catch(_){}
   if(modoGuardado!=='hsi') modoGuardado='vor';
   setModo(modoGuardado);
+  document.getElementById('tab-modo-ejercicio').classList.add('active');
   nuevoEjercicio();
 })();
 
@@ -618,6 +670,36 @@ function selectAccion(a){
 }
 
 function turnOBS(delta){ obs=Math.round(norm360(obs+delta)); renderInstrumentos(); }
+
+// v4.22 — modo libre. Cambia entre el ejercicio de siempre (con corrección y
+// puntaje) y un sandbox sin scoring donde el mapa queda visible y arrastrable
+// todo el tiempo. No toca la física ni el resto del ejercicio, solo qué tarjetas
+// se muestran y quién controla radialReal/headingReal.
+function setModoJuego(m){
+  modoJuego=m;
+  document.getElementById('tab-modo-ejercicio').classList.toggle('active', m==='ejercicio');
+  document.getElementById('tab-modo-libre').classList.toggle('active', m==='libre');
+  document.getElementById('modo-libre-desc').style.display = m==='libre' ? 'block' : 'none';
+  document.getElementById('card-respuesta').style.display = m==='libre' ? 'none' : 'block';
+  document.getElementById('map-heading-controls').style.display = m==='libre' ? 'flex' : 'none';
+  document.getElementById('btn-nuevo-ejercicio').style.display = m==='libre' ? 'none' : 'block';
+  document.getElementById('map-panel-title').textContent = m==='libre' ? '// POSICIÓN (arrastrá el avión)' : '// POSICIÓN REAL';
+  document.getElementById('map-hint').textContent = m==='libre'
+    ? 'Arrastrá el avión (o cualquier punto del mapa) para cambiar el radial.'
+    : 'Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste';
+  if(m==='libre'){
+    document.getElementById('map-panel').style.display='block';
+    renderMap();
+  } else {
+    nuevoEjercicio(); // vuelve todo al estado de siempre (map oculto hasta VERIFICAR)
+  }
+}
+
+function turnHeadingReal(delta){
+  headingReal=Math.round(norm360(headingReal+delta));
+  renderMap();
+  renderInstrumentos();
+}
 
 function updateScore(){
   document.getElementById('score-label').innerHTML='Aciertos: <b>'+aciertos+'</b> / '+intentos;
@@ -887,6 +969,54 @@ function attachDrag(instrId){
   svg.addEventListener('touchstart',_dragDown,{passive:true});
 }
 
+// v4.22 — drag del avión en el mapa (modo libre). Mismo patrón anti-stale que
+// el drag del OBS: nunca se cachea el nodo <svg> entre eventos, se re-consulta
+// por ID en cada uno (renderMap() reemplaza el nodo entero en cada movimiento).
+// Solo cambia el RADIAL (ángulo); la distancia visual al VOR queda fija — distNM
+// no participa de ningún cálculo del instrumento hoy, así que no hace falta
+// tocarla acá.
+let _mapDragging=false;
+function _mapLiveSvg(){ return document.getElementById('map-instrument'); }
+function _mapAngleFromCenter(svg,clientX,clientY){
+  const rect=svg.getBoundingClientRect();
+  const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+  const dx=clientX-cx, dy=clientY-cy;
+  return norm360(Math.atan2(dx,-dy)*180/Math.PI);
+}
+function _mapDragDown(e){
+  if(modoJuego!=='libre') return;
+  const svg=_mapLiveSvg();
+  if(!svg) return;
+  _mapDragging=true;
+  const p=e.touches?e.touches[0]:e;
+  radialReal=Math.round(_mapAngleFromCenter(svg,p.clientX,p.clientY));
+  renderMap();
+  renderInstrumentos();
+  svg.style.cursor='grabbing';
+}
+function _mapDragMove(e){
+  if(!_mapDragging) return;
+  const svg=_mapLiveSvg();
+  if(!svg) return;
+  const p=e.touches?e.touches[0]:e;
+  radialReal=Math.round(_mapAngleFromCenter(svg,p.clientX,p.clientY));
+  renderMap();
+  renderInstrumentos();
+}
+function _mapDragUp(){ _mapDragging=false; }
+window.addEventListener('mousemove',_mapDragMove);
+window.addEventListener('mouseup',_mapDragUp);
+window.addEventListener('touchmove',_mapDragMove,{passive:true});
+window.addEventListener('touchend',_mapDragUp);
+function attachMapDrag(){
+  if(modoJuego!=='libre') return;
+  const svg=document.getElementById('map-instrument');
+  if(!svg) return;
+  svg.style.cursor='grab';
+  svg.addEventListener('mousedown',_mapDragDown);
+  svg.addEventListener('touchstart',_mapDragDown,{passive:true});
+}
+
 // ── SVG: MAPA EN PLANTA ──────────────────────────────────────────
 function renderMap(){
   const cx=150,cy=150,rMax=125;
@@ -913,7 +1043,7 @@ function renderMap(){
     hexPts.push((cx+Math.sin(a)*hexR)+','+(cy-Math.cos(a)*hexR));
   }
   const svg=`
-  <svg width="300" height="300" viewBox="0 0 300 300">
+  <svg width="300" height="300" viewBox="0 0 300 300" id="map-instrument" style="${modoJuego==='libre'?'cursor:grab;touch-action:none':''}">
     <circle cx="${cx}" cy="${cy}" r="${rMax+10}" fill="#000"/>
     ${rings}
     ${quad}
@@ -928,6 +1058,7 @@ function renderMap(){
     <circle cx="${cx}" cy="${cy}" r="${rMax+10}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
   document.getElementById('map-svg').innerHTML=svg;
+  attachMapDrag();
 }
 
 // ── VERIFICACIÓN ──────────────────────────────────────────────────
