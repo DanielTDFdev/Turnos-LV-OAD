@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.47
+  FECHA   : 2026-08-18
+  CAMBIOS : Portal Educativo (ver portal-alumno.html v1.22 para el detalle completo
+            del lado de ese archivo, el nombre del archivo no cambia). Pedido de
+            Daniel: abrir el portal también a pilotos, no solo alumnos.
+            - Texto de los 2 links "🎓 Portal Alumnos" → "🎓 Portal Educativo"
+              (al-portal-link en alumno-screen, inst-portal-link en instructor-screen).
+            - setNavUser() dejó de ocultar al-portal-link para tipo:'piloto' — antes
+              se escondía a propósito (comentario explícito: "visible para alumno/
+              instructor/admin/administrador, oculto para piloto"), ahora queda
+              siempre visible para cualquiera con sesión. Sin cambios de permisos
+              para instructor/admin (pedido explícito de Daniel, ya eran visibles).
   VERSION : 7.46
   FECHA   : 2026-08-17
   CAMBIOS : Pedido de Daniel: (1) el box de totales del Log del Alumno ahora dice
@@ -2570,7 +2582,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.46</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.47</div>
   </div>
 
 </div>
@@ -2656,7 +2668,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 <div id="alumno-screen" class="screen">
   <div id="al-vencimiento-banner" style="display:none;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.35);color:var(--red);font-family:var(--font-mono);font-size:12px;letter-spacing:.05em;line-height:1.6;padding:.85rem 1rem;border-radius:var(--radius);margin-bottom:1rem"></div>
   <div class="links-row">
-    <a href="portal-alumno.html" class="portal-link" id="al-portal-link">🎓 Portal Alumnos</a>
+    <a href="portal-alumno.html" class="portal-link" id="al-portal-link">🎓 Portal Educativo</a>
     <a href="fpl.html?volver=turnos.html" class="fpl-link">✈ Plan de Vuelo</a>
     <a href="peso-balance.html?volver=turnos.html" class="wb-link">⚖ Peso y Balance</a>
     <a href="vor-trainer.html" class="wb-link">📡 VOR Trainer</a>
@@ -2810,7 +2822,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <button onclick="irAPendientes()" style="font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;padding:8px 18px;border-color:var(--amber);color:var(--amber2);background:rgba(240,165,0,.15);white-space:nowrap;font-weight:600">VER TURNOS →</button>
   </div>
   <div class="links-row">
-    <a href="portal-alumno.html" class="portal-link" id="inst-portal-link">🎓 Portal Alumnos</a>
+    <a href="portal-alumno.html" class="portal-link" id="inst-portal-link">🎓 Portal Educativo</a>
     <a href="fpl.html?volver=turnos.html" class="fpl-link">✈ Plan de Vuelo</a>
     <a href="peso-balance.html?volver=turnos.html" class="wb-link">⚖ Peso y Balance</a>
     <a href="vor-trainer.html" class="wb-link">📡 VOR Trainer</a>
@@ -4359,9 +4371,9 @@ function setNavUser(nombre,tipo){
   document.getElementById('nav-user-area').style.display='flex';
   const icono=tipo==='instructor'?'👨‍✈️':tipo==='piloto'?'✈️':'🛩️';
   document.getElementById('nav-user-name').textContent=icono+' '+nombre;
-  // Portal Alumno: visible para alumno/instructor/admin/administrador, oculto para piloto.
-  const alPortal=document.getElementById('al-portal-link');
-  if(alPortal) alPortal.style.display=(tipo==='piloto')?'none':'inline-flex';
+  // Portal Educativo (v7.47): antes se ocultaba para tipo:'piloto' — pedido
+  // de Daniel de abrir el portal también a pilotos, ya no se esconde para
+  // nadie con sesión. al-portal-link queda siempre visible acá en adelante.
 }
 
 window.logout=function(){

@@ -2,6 +2,30 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.22 ·  Pedido de Daniel: renombrado a "Portal Educativo" (título, <title>,
+           manifest PWA) y accesible también a pilotos (rol:'piloto'), no solo
+           a rol:'alumno'. El archivo mantiene su nombre (portal-alumno.html).
+           - Gate de login ampliado: nueva flag esPiloto, sesión con
+             tipo:'alumno'+rol:'piloto' ya no rebota a turnos.html.
+           - CUESTIONARIOS (Quiz) y "Nota del instructor" en Perfil quedan
+             EXCLUSIVOS de rol:'alumno' (pedido explícito de Daniel) — tab
+             Quiz oculta para piloto (doble gate: botón oculto + showTab()
+             bloquea 'quiz' si esPiloto, por si se invoca desde consola).
+             renderQuiz() corta al toque para piloto, evita fetch de más.
+           - Perfil: piloto ve su propia ficha (mismos campos que alumno:
+             nombre/email/tel/usuario/rol/CMA/PSA) pero SIN la card de nota
+             del instructor — rama nueva `else if(esPiloto)`, paralela a la
+             de alumno, sin tocarla.
+           - who-label: tercera opción "· PILOTO" (antes solo STAFF/ALUMNO).
+           - turnos.html: se saca el ocultamiento explícito del link para
+             tipo:'piloto' (existía a propósito, ver v6.94/v6.98 de ese
+             archivo) + texto "Portal Alumnos"→"Portal Educativo" en los dos
+             lugares (alumno-screen e instructor-screen). Ver turnos.html
+             v7.47 para el detalle del lado de ese archivo.
+           - manifest-portal.json: name/description actualizados a "Portal
+             Educativo" — Daniel sube el archivo manualmente, igual que el
+             resto. Íconos PNG quedan iguales (decisión explícita, no se
+             tocan).
   v1.21 ·  Mazo de flashcards del LV-ART REEMPLAZADO por Daniel: las 48 cartas
            de v1.20 (basadas en un CSV con datos concretos de POH — velocidades,
            pesos, límites) se sacan enteras y se reemplazan por 83 cartas nuevas,
@@ -163,7 +187,7 @@
 <script>if(localStorage.getItem('lvoad-theme')==='light')document.documentElement.classList.add('light');</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portal Alumno · Aeroclub Río Grande</title>
+<title>Portal Educativo · Aeroclub Río Grande</title>
 <link rel="apple-touch-icon" href="/icon-portal-192.png">
 <link rel="manifest" href="/manifest-portal.json">
 <meta name="theme-color" content="#0a0c0f">
@@ -320,7 +344,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
 <div class="wrap" id="app-wrap" style="display:none">
   <header class="bar">
     <div class="dot"></div>
-    <h1>PORTAL ALUMNO<small>AEROCLUB RÍO GRANDE</small></h1>
+    <h1>PORTAL EDUCATIVO<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
       <div class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema">
         <span class="theme-toggle-icon">🌙</span>
@@ -328,7 +352,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.21</span>
+      <span class="ver">v1.22</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -373,7 +397,7 @@ async function fbRemove(p){await remove(ref(db,p));}
 // ── GATE DE SESIÓN ───────────────────────────────────────────────
 // Acceso: rol:'alumno' (NO piloto) o tipo:'instructor' (cubre instructor real,
 // admin y administrador, que entran como tipo:'instructor' con soloUsuarios).
-let session=null, esAlumno=false, esStaff=false, esAdmin=false, userKey='', userLabel='';
+let session=null, esAlumno=false, esPiloto=false, esStaff=false, esAdmin=false, userKey='', userLabel='';
 
 // ── TIMEOUT DE SESIÓN (v1.16) ─────────────────────────────────────
 // Mismo patrón que turnos.html: 10 minutos de inactividad cierran la sesión.
@@ -396,7 +420,11 @@ function startSessionTimeout(){
 (function gate(){
   let s=null;
   try{ s=JSON.parse(sessionStorage.getItem('lvoad-session')||'null'); }catch(_){ s=null; }
+  // v1.22: portal accesible también a pilotos (rol:'piloto', mismo tipo:'alumno'
+  // que el resto de las cuentas no-staff). Quiz y Notas del instructor siguen
+  // siendo exclusivos de rol:'alumno' — se gatean aparte, no acá.
   if(s && s.tipo==='alumno' && s.rol==='alumno'){ session=s; esAlumno=true; }
+  else if(s && s.tipo==='alumno' && s.rol==='piloto'){ session=s; esPiloto=true; }
   else if(s && s.tipo==='instructor'){ session=s; esStaff=true; esAdmin=(s.user==='admin'||s.user==='administrador'); }
   if(!session){
     document.getElementById('gate-msg').style.display='block';
@@ -405,8 +433,13 @@ function startSessionTimeout(){
   }
   userKey=String(session.user||session.emailKey||session.nombre||'').trim().replace(/[.#$/\[\]]/g,'_');
   userLabel=session.user||session.nombre||session.emailKey||'';
-  document.getElementById('who-label').textContent=userLabel+(esStaff?' · STAFF':' · ALUMNO');
+  document.getElementById('who-label').textContent=userLabel+(esStaff?' · STAFF':esPiloto?' · PILOTO':' · ALUMNO');
   document.getElementById('app-wrap').style.display='block';
+  // v1.22: pestaña CUESTIONARIOS oculta para piloto (Quiz es solo rol:'alumno')
+  if(esPiloto){
+    const tabQuiz=document.querySelector('.tabbtn[data-tab="quiz"]');
+    if(tabQuiz) tabQuiz.style.display='none';
+  }
   startSessionTimeout();
 })();
 
@@ -425,6 +458,8 @@ window.toggleTheme=function(){
 };
 
 window.showTab=function(name){
+  // v1.22: defensa además del botón oculto — Quiz es exclusivo de rol:'alumno'
+  if(name==='quiz'&&esPiloto) return;
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
@@ -473,6 +508,21 @@ async function renderPerfil(){
       <div style="white-space:pre-wrap">${escHtml(nota.texto)}</div>
       <div class="sub" style="margin-top:8px;font-family:var(--font-mono);font-size:11px;color:var(--text3)">— ${escHtml(nota.autor||'')} · ${escHtml(nota.fecha||'')}</div>
     `):'<div class="empty">// SIN NOTAS</div>';
+  }else if(esPiloto){
+    // v1.22: ficha propia para piloto, mismos datos que alumno — SIN la card
+    // de "Nota del instructor" (pedido explícito de Daniel: eso queda privado
+    // de rol:'alumno', no aplica a piloto).
+    el.innerHTML='<div class="card"><h2>// MI FICHA</h2><div id="perfil-ficha" class="empty">Cargando…</div></div>';
+    const piloto=await fbGet('alumnos/'+session.emailKey);
+    document.getElementById('perfil-ficha').innerHTML=piloto?(`
+      <div class="field"><label>Nombre</label><div>${escHtml(piloto.nombre||'')}</div></div>
+      <div class="field"><label>Email</label><div>${escHtml(piloto.email||'')}</div></div>
+      <div class="field"><label>Teléfono</label><div>${escHtml(piloto.tel||'—')}</div></div>
+      <div class="field"><label>Usuario</label><div>${escHtml(piloto.username||'—')}</div></div>
+      <div class="field"><label>Rol</label><div>${escHtml(session.rol||'piloto')}</div></div>
+      ${htmlVencCampo('Vencimiento Psicofísico (CMA)', piloto.vencimiento_cma)}
+      ${htmlVencCampo('Vencimiento Credencial PSA', piloto.vencimiento_psa)}
+    `):'<div class="empty">// NO SE PUDO LEER LA FICHA</div>';
   }else{
     el.innerHTML=`
       <div class="card"><h2>// FICHA DE ALUMNO</h2>
@@ -651,6 +701,7 @@ async function cargarManuales(){
 
 // ── QUIZ ──────────────────────────────────────────────────────────
 async function renderQuiz(){
+  if(esPiloto) return; // v1.22: Quiz es exclusivo de rol:'alumno', tab ya oculta — evita fetch de más
   const el=document.getElementById('screen-quiz');
   el.innerHTML='<div class="card"><h2>// QUIZ</h2>'+
     (esStaff?'<button class="primary" id="qz-nuevo" style="margin-bottom:14px">+ NUEVO QUIZ</button>':'')+

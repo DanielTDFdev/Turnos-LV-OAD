@@ -1,7 +1,7 @@
 {
-  "name": "Aeroclub Río Grande - Portal Alumnos",
+  "name": "Aeroclub Río Grande - Portal Educativo",
   "short_name": "ACRG Portal",
-  "description": "Portal del alumno del Aeroclub Río Grande",
+  "description": "Portal educativo del Aeroclub Río Grande (alumnos y pilotos)",
   "start_url": "/portal-alumno.html",
   "id": "/portal-alumno.html",
   "scope": "/portal-alumno.html",
