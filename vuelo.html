@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.27 · 2026-08-18
+  Pedido de Daniel: minimizar al máximo el riesgo de que la captura GPS se
+  corte. Reconstruido sobre v5.26 (versión realmente deployada — el intento
+  anterior de este mismo cambio, generado el 13/08, nunca se llegó a subir).
+  1) WATCHDOG (nuevo): setInterval cada 15s, reinicia el watch solo si no
+     hubo NINGUNA actividad de GPS en 45s — cubre el caso de un watch mudo
+     con la app en foreground, que el restart por visibilitychange (v5.26)
+     no cubre. Se limpia en detenerTrackGPS() (verificado en todos los
+     puntos de fin de vuelo/reset).
+  2) Aviso visible (toast, una vez por vuelo) si falla el Wake Lock —
+     antes solo quedaba en consola.
+  ==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.26 · 2026-08-13
   /revisar exhaustivo pedido por Daniel (mismo pedido que vuelo-piloto.html
   v4.4, tras reportar un tramo sin puntos GPS en un vuelo real del lado
@@ -1099,14 +1112,18 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.26'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.27'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
 const LS_GPS_PREF    = 'acrg-vuelo-gps-pref';      // preferencia recordada entre vuelos (on/off)
 const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v5.14 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
+const GPS_WATCHDOG_INTERVALO_MS = 15000; // v5.27: cada cuánto chequea el watchdog
+const GPS_WATCHDOG_UMBRAL_MS    = 45000; // v5.27: sin actividad de GPS por más de esto, reinicia el watch
 let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1'; // toggle actual (editable solo antes de iniciar)
 let gpsWatchId     = null;   // id de navigator.geolocation.watchPosition, null si no está corriendo
+let gpsWatchdogId  = null;   // v5.27
+let gpsUltimaLlegada = 0;    // v5.27: última vez que llegó CUALQUIER dato de GPS (referencia del watchdog, no del throttle)
 let gpsPoints      = [];     // [{lat,lng,alt,ts}] del vuelo en curso
 let gpsUltimoPunto = 0;      // Date.now() del último punto guardado, para el muestreo cada 10s
 // Candado gps_tracker_activo (v5.17, ver también vuelo-piloto.html v3.0): evita
@@ -1584,13 +1601,11 @@ function toggleGPS(){
 $('gps-toggle-card').addEventListener('click',toggleGPS);
 
 // ── Captura de traza GPS ─────────────────────────────────
-function iniciarTrackGPS(){
-  if(!('geolocation' in navigator)){
-    toast('Este dispositivo no permite obtener ubicación — el vuelo se registra igual, sin traza');
-    return;
-  }
+function _armarWatchGPS(){
+  gpsUltimaLlegada=Date.now(); // v5.27: referencia del watchdog — cualquier llegada cuenta, incluso descartada por throttle
   gpsWatchId=navigator.geolocation.watchPosition(
     (pos)=>{
+      gpsUltimaLlegada=Date.now();
       const ahora=Date.now();
       if(ahora-gpsUltimoPunto<GPS_MUESTREO_MS) return; // muestreo cada 10s, watchPosition puede disparar más seguido
       gpsUltimoPunto=ahora;
@@ -1609,14 +1624,44 @@ function iniciarTrackGPS(){
     { enableHighAccuracy:true, maximumAge:5000, timeout:15000 }
   );
 }
+function iniciarTrackGPS(){
+  if(!('geolocation' in navigator)){
+    toast('Este dispositivo no permite obtener ubicación — el vuelo se registra igual, sin traza');
+    return;
+  }
+  _armarWatchGPS();
+  // v5.27: watchdog — pedido de Daniel de minimizar al máximo el riesgo de
+  // que la captura GPS se corte sin que nadie se entere. El restart por
+  // visibilitychange (más abajo) cubre "app en background y volvés a
+  // abrirla", pero no cubre un watch que queda mudo CON la app en
+  // foreground (ej. el chip GPS se cuelga) ni un corte que nunca se nota
+  // porque nadie vuelve a mirar el celular hasta el final del vuelo. Este
+  // chequeo corre solo, cada GPS_WATCHDOG_INTERVALO_MS, sin depender de
+  // ningún evento: si no llegó NINGUNA actividad de GPS (ni un punto
+  // descartado por throttle) en GPS_WATCHDOG_UMBRAL_MS, se asume que el
+  // watch quedó mudo y se reinicia. Un solo watchdog corriendo a la vez.
+  if(gpsWatchdogId==null){
+    gpsWatchdogId=setInterval(()=>{
+      if(gpsWatchId==null) return; // sin tracking activo ahora, nada que vigilar
+      const inactivo=Date.now()-gpsUltimaLlegada;
+      if(inactivo>GPS_WATCHDOG_UMBRAL_MS){
+        console.warn('[GPS watchdog] sin actividad hace '+Math.round(inactivo/1000)+'s — reiniciando watch');
+        if(gpsWatchId!=null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId=null; }
+        _armarWatchGPS();
+      }
+    },GPS_WATCHDOG_INTERVALO_MS);
+  }
+}
 function detenerTrackGPS(){
   if(gpsWatchId!=null){ navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId=null; }
+  if(gpsWatchdogId!=null){ clearInterval(gpsWatchdogId); gpsWatchdogId=null; }
 }
 
 // ── Screen Wake Lock ──────────────────────────────────────
 // Evita que la pantalla se apague durante el vuelo (iOS 16.4+, Chrome Android).
 // Falla silenciosamente en browsers que no la soportan.
 let _wakeLock = null;
+let _wakeLockWarnMostrado=false; // v5.27: un solo aviso por vuelo, no en cada visibilitychange
 
 async function adquirirWakeLock() {
   if (!('wakeLock' in navigator)) return; // no soportado
@@ -1626,6 +1671,12 @@ async function adquirirWakeLock() {
     console.log('[WakeLock] pantalla bloqueada activa');
   } catch(e) {
     console.warn('[WakeLock] no se pudo adquirir:', e.message);
+    // v5.27: antes esto quedaba solo en consola — el instructor nunca se
+    // enteraba de que la pantalla podía apagarse sola. Un aviso por vuelo.
+    if(!_wakeLockWarnMostrado){
+      _wakeLockWarnMostrado=true;
+      toast('⚠ No se pudo evitar que la pantalla se apague sola — mantené el celular activo a mano durante el vuelo',5000);
+    }
   }
 }
 
@@ -1676,7 +1727,7 @@ $('btn-start-stop').addEventListener('click', async ()=>{
       if(bloqueadoPorAlumno){
         toast('📍 El alumno ya está trackeando el GPS de este vuelo desde su app — no hace falta activarlo también acá.',4500);
       } else {
-        gpsPoints=[]; gpsUltimoPunto=0; iniciarTrackGPS(); adquirirWakeLock();
+        gpsPoints=[]; gpsUltimoPunto=0; _wakeLockWarnMostrado=false; iniciarTrackGPS(); adquirirWakeLock();
         if(turnoActual?.key){
           gpsLockTomadoPorMi=true;
           update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:'instructor',gps_tracker_ts:new Date().toISOString()}).catch(e=>console.warn('No se pudo tomar el candado GPS:',e));
