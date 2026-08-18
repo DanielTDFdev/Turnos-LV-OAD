@@ -1,5 +1,47 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.49
+  FECHA   : 2026-08-18
+  CAMBIOS : Ajuste sobre v7.48, dos pedidos de Daniel que se le habían quedado
+            afuera al pedido original:
+            1) El checkbox "Consume cupo semanal del alumno" pasa a arrancar
+               TILDADO por defecto (antes destildado) — Daniel: "que por default
+               esté en que sí consuma".
+            2) Si está tildado y ya se alcanzó el cupo semanal del alumno ANTES
+               de esta carga manual, bloquea el guardado con el mismo estilo de
+               error que usa confirmarTurno() para el autoservicio (usados/
+               límite/rango de la semana) — en vez de dejar pasar. Si el toggle
+               está destildado, no se valida nada y deja cargar igual, siempre
+               (comportamiento explícitamente pedido).
+               - guardarTurnoManual(): valida contra el `snap` ya leído para el
+                 chequeo de horario, sin get() adicional. Solo aplica a alumno
+                 (no piloto — mismo criterio que confirmarTurno()).
+               - guardarVueloHistorico(): mismo chequeo contra `snapH`. Un
+                 histórico se guarda 'vencido' CON aprobado_por, así que
+                 turnosRestantesSemana() ya lo cuenta como cupo usado una vez
+                 guardado — sin este chequeo previo se podía cargar de más sin
+                 aviso.
+  VERSION : 7.48
+  FECHA   : 2026-08-18
+  CAMBIOS : Pedido de Daniel: en el modal "+ CARGAR TURNO" (Turno futuro y Vuelo
+            histórico, ambos escriben cargado_por), nuevo checkbox "Consume cupo
+            semanal del alumno" — por defecto DESTILDADO (mismo comportamiento de
+            siempre desde v6.53/v6.99: un turno cargado manualmente por staff NO
+            consume cupo). Si se tilda, el turno queda con consume_cupo:true y
+            turnosRestantesSemana() lo cuenta igual que uno pedido por el propio
+            alumno pese a tener cargado_por seteado.
+            - Único checkbox compartido entre los dos modos del modal (Turno
+              futuro/Histórico) — el concepto es el mismo en los dos.
+            - turnosRestantesSemana(): condición pasa de "if(r.cargado_por)
+              return false" a "if(r.cargado_por && !r.consume_cupo) return false".
+            - guardarTurnoManual()/guardarVueloHistorico(): agregan
+              consume_cupo:true al objeto nuevo solo si el checkbox está tildado
+              (no se escribe el campo en false, mismo criterio minimalista que
+              sinInstructor).
+            - Los 3 lugares de la UI que ya mostraban "CARGADO POR X — no consume
+              cupo del alumno" (2 tooltips/badges 📋 en el calendario — vista
+              LISTA y vista SEMANA — y la fila CARGADO del modal de detalle)
+              ahora muestran CONSUME o no consume según corresponda.
   VERSION : 7.47
   FECHA   : 2026-08-18
   CAMBIOS : Portal Educativo (ver portal-alumno.html v1.22 para el detalle completo
@@ -2582,7 +2624,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.47</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.49</div>
   </div>
 
 </div>
@@ -3415,6 +3457,16 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <label>Hora fin (rango)</label>
         <input type="time" id="ct-horafin">
       </div>
+    </div>
+
+    <!-- Toggle "consume cupo semanal" (v7.48) — pedido de Daniel: por default un turno
+         cargado manualmente con "+ CARGAR TURNO" NO consume el cupo semanal del alumno
+         (decisión de v6.53/v6.99), pero puede haber casos donde SÍ corresponda que lo
+         consuma. Único checkbox compartido entre los dos modos (Turno futuro/Histórico)
+         porque el concepto es el mismo en los dos — ambos escriben cargado_por. -->
+    <div class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;margin-bottom:14px">
+      <input type="checkbox" id="ct-consume-cupo" style="width:16px;height:16px;cursor:pointer;flex:0 0 auto">
+      <label for="ct-consume-cupo" style="margin:0;cursor:pointer;font-size:12px">Consume cupo semanal del alumno <span style="color:var(--text3);font-weight:400">(tildado por defecto)</span></label>
     </div>
 
     <!-- Campos solo modo TURNO FUTURO -->
@@ -4870,6 +4922,11 @@ function horasContinuacion(r){
 // existe para cancelaciones (solo la cancelación DEL ALUMNO consume cuota; la del
 // instructor no). Por diseño explícito de Daniel: no debe afectar la cuota del alumno en
 // ningún sentido, ni sumar uso ni bloquear futuros pedidos.
+// Nota (v7.48): agregado toggle "Consume cupo semanal del alumno" en el modal de carga
+// manual (campo nuevo consume_cupo, default false = comportamiento de siempre de v6.53).
+// Si el instructor/admin lo tildó al cargar, el turno SÍ cuenta para la cuota pese a
+// tener cargado_por seteado — casos donde corresponde que consuma (ej: se carga a mano
+// un turno que de otro modo el alumno hubiera pedido él mismo).
 // Límite actual: 3 por semana. Usada en confirmarTurno() (bloqueo) y en el tooltip de los
 // cal-block de turnos ya tomados (vistas LISTA y SEMANA de Reservas).
 function turnosRestantesSemana(ds,data,email){
@@ -4889,7 +4946,7 @@ function turnosRestantesSemana(ds,data,email){
     if(!r||typeof r!=='object') return false;
     if(r.email!==targetEmail) return false;
     if(!r.fecha||r.fecha<semLunes||r.fecha>semDomingo) return false;
-    if(r.cargado_por) return false; // cargado por staff (+ CARGAR TURNO): no cuenta para la cuota del alumno
+    if(r.cargado_por&&!r.consume_cupo) return false; // cargado por staff (+ CARGAR TURNO) y NO tildado para consumir cupo
     if(r.estado==='vencido'&&!r.aprobado_por) return false; // vencido del cron (nunca aprobado): no cuenta
     if(r.estado==='cancelado'&&r.cancelado_rol==='instructor') return false;
     return true;
@@ -5584,8 +5641,8 @@ async function renderTodasReservas(data){
         // v6.99: turnos cargados con "+ CARGAR TURNO" (cargado_por) no consumen cupo del
         // alumno (v6.53) — se marcan visualmente en la grilla para que quede claro por qué
         // el saldo semanal no baja, y quién lo cargó.
-        const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (no consume cupo del alumno)`:'';
-        const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — no consume cupo del alumno">📋</span>`:'';
+        const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno)`:'';
+        const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — ${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno">📋</span>`:'';
         html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}</div>`;
       });
       // v7.01: turnos con rango que arrancaron en una hora anterior y siguen ocupando ESTA
@@ -5723,8 +5780,8 @@ async function renderVistaSemana(){
         const tipQuien=r.estado==='pendiente'?tipQuienesPueden(dispCompleta,ds,r.hora):'';
         const badge=coincideDisp?'<span class="mi-disp-badge" title="Coincide con tu disponibilidad">★</span>':'';
         // v6.99: ver nota en renderTodasReservas — mismo badge/tooltip para turnos con cargado_por.
-        const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (no consume cupo del alumno)`:'';
-        const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — no consume cupo del alumno">📋</span>`:'';
+        const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno)`:'';
+        const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — ${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno">📋</span>`:'';
         html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ${r.estado}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">
           ${badge}${cargadoBadge}<span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>${nombre}
         </div>`;
@@ -6531,7 +6588,7 @@ window.abrirModal=function(key){
   // lado de la UI y generaba confusión al ver el saldo de cuota sin explicación.
   const cargadoRow=document.getElementById('md-cargado-row');
   if(r.cargado_por){
-    document.getElementById('md-cargado').textContent=r.cargado_por+' — no consume cupo del alumno';
+    document.getElementById('md-cargado').textContent=r.cargado_por+' — '+(r.consume_cupo?'CONSUME':'no consume')+' cupo del alumno';
     cargadoRow.style.display='flex';
   } else {
     cargadoRow.style.display='none';
@@ -7741,6 +7798,7 @@ async function abrirModalCargarTurno(){
   document.getElementById('ct-obs').value='';
   document.getElementById('ct-avion').value='LV-OAD';
   document.getElementById('ct-tipovuelo').value='';
+  document.getElementById('ct-consume-cupo').checked=true;
   // Resetear campos históricos
   document.getElementById('ct-hist-tiempo').value='';
   document.getElementById('ct-hist-aterr').value='';
@@ -7934,6 +7992,19 @@ window.guardarVueloHistorico = async function() {
     showErr('ct-err', `El ${avion} ya tiene un vuelo registrado a las ${hora} el ${fecha}. Elegí otro horario.`);
     return;
   }
+  // v7.49 — mismo criterio que guardarTurnoManual(): si "Consume cupo semanal" está
+  // tildado y el vuelo es de un ALUMNO (no piloto), bloquea si ya se alcanzó el límite
+  // de esa semana. Un histórico se guarda 'vencido' CON aprobado_por seteado, así que
+  // turnosRestantesSemana() ya lo cuenta como cupo usado una vez guardado — sin este
+  // chequeo previo se podría cargar de más sin aviso.
+  const consumeCupoHist=document.getElementById('ct-consume-cupo').checked;
+  if(consumeCupoHist&&alumno.rol!=='piloto'){
+    const{usados,limite,semLunes,semDomingo}=turnosRestantesSemana(fecha,snapH.val(),alumno.email);
+    if(usados>=limite){
+      showErr('ct-err',`Cupo semanal alcanzado: ${alumno.nombre||alumno.email} ya tiene ${usados} turno${usados===1?'':'s'} esa semana (${semLunes.slice(8)}/${semLunes.slice(5,7)} al ${semDomingo.slice(8)}/${semDomingo.slice(5,7)}). Máximo: ${limite} por semana. Destildá "Consume cupo semanal" si igual querés cargarlo.`);
+      return;
+    }
+  }
   // ts_despegue/ts_aterrizaje: se derivan de fecha+hora (hora local Río Grande,
   // UTC-3 fijo, sin horario de verano) para que el vuelo histórico aparezca en
   // el Libro de vuelo.html con horarios reales, igual que uno cargado en vivo
@@ -7963,6 +8034,7 @@ window.guardarVueloHistorico = async function() {
     es_historico: true,        // flag para distinguir de vuelos reales del sistema
     ts:        new Date().toISOString(),
   };
+  if(consumeCupoHist) nuevo.consume_cupo=true;
   // Limpiar nulls
   Object.keys(nuevo).forEach(k => { if (nuevo[k] === null) delete nuevo[k]; });
   try {
@@ -8032,6 +8104,21 @@ window.guardarTurnoManual=async function(){
     showErr('ct-err','Ese avión ya tiene un turno activo a esa fecha/hora. Elegí otro horario.');return;
   }
   const esPiloto=alumno.rol==='piloto';
+  // v7.49 — pedido de Daniel: si "Consume cupo semanal" está tildado (default true
+  // desde esta versión), y el turno cargado es para un ALUMNO (mismo criterio que
+  // confirmarTurno(): la cuota semanal no aplica a piloto), bloquea el guardado si
+  // ya se alcanzó el límite de esa semana — mismo mensaje/estilo que el error de
+  // cuota del autoservicio. Reusa el `snap` ya leído arriba para el chequeo de
+  // conflicto de horario, no hace falta un segundo get(). Si el toggle está
+  // destildado, se salta esta validación completa (deja cargar igual, siempre).
+  const consumeCupo=document.getElementById('ct-consume-cupo').checked;
+  if(consumeCupo&&!esPiloto){
+    const{usados,limite,semLunes,semDomingo}=turnosRestantesSemana(fecha,snap.val(),alumno.email);
+    if(usados>=limite){
+      showErr('ct-err',`Cupo semanal alcanzado: ${alumno.nombre||alumno.email} ya tiene ${usados} turno${usados===1?'':'s'} esta semana (${semLunes.slice(8)}/${semLunes.slice(5,7)} al ${semDomingo.slice(8)}/${semDomingo.slice(5,7)}). Máximo: ${limite} por semana. Destildá "Consume cupo semanal" si igual querés cargarlo.`);
+      return;
+    }
+  }
   const wrapTVvisible=document.getElementById('ct-tipovuelo-wrap').style.display!=='none';
   const tipoVueloSel=document.getElementById('ct-tipovuelo').value;
   if(wrapTVvisible&&!tipoVueloSel){showErr('ct-err','Elegí el tipo de vuelo (Particular o Instrucción).');return;}
@@ -8055,6 +8142,7 @@ window.guardarTurnoManual=async function(){
     ts:new Date().toISOString(),
     cargado_por:session.nombre||session.user||''   // distingue de una reserva hecha por el propio alumno
   };
+  if(consumeCupo) nuevo.consume_cupo=true;
   if(instructorSel){ nuevo.instructor=instructorSel; nuevo.aprobado_por=instructorSel; }
   try{
     await fbPush('reservas',nuevo);
