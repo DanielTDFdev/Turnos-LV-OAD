@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.35 · Pedido de Daniel: al pasar sobre la estación (<0.5NM) ya no pausa el
+         vuelo con alert — sigue de largo con el mismo heading. _volarTick()
+         seguía calculando posX/posY normalmente; el corte era solo el if de
+         pausa, que se saca. El radial se invierte solo (atan2) al cruzar del
+         otro lado, física real, sin tocar nada más.
+
   v4.34 · Pedido de Daniel: botonera PLAY/PAUSA/STOP pasa de botones anchos
          con texto ("▶ PLAY", "⏸ PAUSA", "⏹ STOP") a solo íconos circulares,
          estilo reproductor de música — el texto ocupaba demasiado ancho en
@@ -773,7 +779,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.34</span>
+      <span class="ver">v4.35</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -1119,7 +1125,6 @@ function _volarTick(){
   posX += distTick*Math.sin(hd);
   posY += distTick*Math.cos(hd);
   const nuevoDist=Math.hypot(posX,posY);
-  if(nuevoDist<0.5){ pausarVuelo(); alert('El avión pasó sobre la estación — vuelo en pausa.'); return; }
   distNM=nuevoDist;
   radialReal=Math.round(norm360(Math.atan2(posX,posY)*180/Math.PI));
   // v4.31 — pedido de Daniel: se saca el re-anclaje a 15NM que había acá desde
