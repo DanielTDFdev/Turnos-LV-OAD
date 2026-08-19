@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.31.2 · Pedido de Daniel: el readout DME pasa de una línea de texto suelta
+         a un box con borde/fondo (mismo estilo que flag-readout) — "DME" chico
+         arriba, distancia grande abajo. Solo se reescribe el <span> del valor
+         en cada render; el label queda fijo en el HTML.
   v4.31.1 · Ajustes de Daniel sobre v4.31, que no había llegado a subir (se
          reaplicó entero desde memoria, sin re-fetchear el repo):
          1) DME sacado de ADENTRO del SVG (se solapaba con los números de la
@@ -635,8 +639,12 @@ h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:
 .rmi-toggle.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.1)}
 .instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
 .instr-svg-row{display:flex;align-items:center;justify-content:center;gap:10px}
-.dme-readout{font-family:var(--font-mono);font-size:14px;font-weight:bold;color:#00c8d4;letter-spacing:.08em;white-space:nowrap;min-width:80px;display:none}
-.dme-readout.visible{display:block}
+.dme-readout{display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  font-family:var(--font-mono);border:1px solid #00c8d4;border-radius:var(--radius);
+  background:rgba(0,200,212,.08);padding:8px 14px;min-width:78px}
+.dme-readout.visible{display:flex}
+.dme-readout .dme-label{font-size:10px;letter-spacing:.15em;color:#00c8d4;opacity:.8}
+.dme-readout .dme-valor{font-size:17px;font-weight:bold;letter-spacing:.04em;color:#00c8d4;white-space:nowrap}
 .instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
 .obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
 button{touch-action:manipulation}
@@ -706,7 +714,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.31.1</span>
+      <span class="ver">v4.31.2</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -746,7 +754,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
         <div class="instr-label">VOR / OBS — girá para centrar la aguja</div>
         <div class="instr-svg-row">
           <div id="vor-svg"></div>
-          <div class="dme-readout" id="vor-dme-readout"></div>
+          <div class="dme-readout" id="vor-dme-readout"><span class="dme-label">DME</span><span class="dme-valor" id="vor-dme-valor"></span></div>
         </div>
         <div class="obs-readout" id="obs-readout">OBS 000°</div>
         <div class="obs-controls">
@@ -765,7 +773,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       </div>
       <div class="instr-svg-row">
         <div id="hsi-svg"></div>
-        <div class="dme-readout" id="hsi-dme-readout"></div>
+        <div class="dme-readout" id="hsi-dme-readout"><span class="dme-label">DME</span><span class="dme-valor" id="hsi-dme-valor"></span></div>
       </div>
       <div class="obs-readout" id="hsi-crs-readout">CRS 000°</div>
       <div class="obs-controls">
@@ -1173,9 +1181,11 @@ function renderVOR(){
   fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
   // v4.31.1 — DME afuera del instrumento (a la derecha), no adentro del SVG:
   // adentro se solapaba con el dial/números de la carta y quedaba ilegible.
-  const dme=document.getElementById('vor-dme-readout');
-  dme.textContent='DME '+distNM.toFixed(1)+'NM';
-  dme.classList.toggle('visible',volando);
+  // v4.31.2 — box con label "DME" arriba y valor abajo (antes una sola línea
+  // de texto "DME X.XNM"); solo se toca el <span> del valor, el label queda
+  // fijo en el HTML y no se reescribe en cada render.
+  document.getElementById('vor-dme-valor').textContent=distNM.toFixed(1)+' NM';
+  document.getElementById('vor-dme-readout').classList.toggle('visible',volando);
   attachDrag('vor-instrument');
 }
 
@@ -1294,9 +1304,8 @@ function renderHSI(){
   const fl=document.getElementById('hsi-flag-readout');
   fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
   fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
-  const dme=document.getElementById('hsi-dme-readout');
-  dme.textContent='DME '+distNM.toFixed(1)+'NM';
-  dme.classList.toggle('visible',volando);
+  document.getElementById('hsi-dme-valor').textContent=distNM.toFixed(1)+' NM';
+  document.getElementById('hsi-dme-readout').classList.toggle('visible',volando);
   attachDrag('hsi-instrument');
 }
 
