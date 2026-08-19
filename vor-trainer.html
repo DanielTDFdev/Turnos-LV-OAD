@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.34 · Pedido de Daniel: botonera PLAY/PAUSA/STOP pasa de botones anchos
+         con texto ("▶ PLAY", "⏸ PAUSA", "⏹ STOP") a solo íconos circulares,
+         estilo reproductor de música — el texto ocupaba demasiado ancho en
+         celular. Nueva clase .transport-btn (círculo 50px, mismo esquema de
+         color cian/ámbar que ya usaba button.primary/.flying). Botón de
+         velocidad también circular, mantiene el texto (1x/4x/10x) porque es
+         información, no decoración — se le saca el ⏩ de prefijo, ya no hace
+         falta con el tratamiento circular. Sin cambios de lógica: mismos
+         onclick, mismos ids, mismo criterio de disabled/flying de v4.33.
   v4.33 · Pedido de Daniel: botonera PLAY/PAUSA/STOP en vez de un solo botón
          VOLAR↔PAUSA. El problema del botón único: al volver a apretarlo
          después de una pausa (para RESUMIR), disparaba el mismo reset a 5NM
@@ -711,6 +720,16 @@ button.primary{font-family:var(--font-mono);font-size:14px;font-weight:700;lette
 button.primary:hover{background:rgba(0,200,212,.22)}
 button.primary:disabled{opacity:.4;cursor:not-allowed}
 button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba(240,165,0,.08));color:var(--amber);border-color:var(--amber)}
+/* v4.34 — botonera de transporte tipo reproductor de música: solo íconos,
+   circulares, sin texto. Antes PLAY/PAUSA/STOP eran botones anchos con
+   palabras completas — ocupaban demasiado ancho en celular. */
+.transport-controls{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.transport-btn{width:50px;height:50px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,rgba(0,200,212,.18),rgba(0,200,212,.06));color:var(--cyan);border:1px solid var(--cyan);
+  cursor:pointer;font-size:19px;padding:0;line-height:1}
+.transport-btn:disabled{opacity:.35;cursor:not-allowed}
+.transport-btn.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba(240,165,0,.08));color:var(--amber);border-color:var(--amber)}
+.transport-btn.speed{width:auto;min-width:50px;padding:0 12px;font-size:13px;font-weight:700;font-family:var(--font-mono);letter-spacing:.05em}
 .vuelo-indicator{display:none;align-items:center;gap:7px;
   font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;color:var(--amber);text-transform:uppercase;
   background:rgba(240,165,0,.1);border:1px solid var(--amber-dim);border-radius:var(--radius);padding:4px 10px 4px 8px}
@@ -754,7 +773,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.33</span>
+      <span class="ver">v4.34</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -838,11 +857,11 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       <button onclick="turnHeadingReal(1)">1° ►</button>
       <button onclick="turnHeadingReal(10)">10° ►►</button>
     </div>
-    <div class="obs-controls" id="vuelo-controls" style="display:none;margin-top:10px">
-      <button class="primary" id="btn-play" onclick="iniciarVuelo()" style="flex:1;min-width:90px;width:auto;margin-top:0">▶ PLAY</button>
-      <button class="primary" id="btn-pause" onclick="pausarVuelo()" style="flex:1;min-width:90px;width:auto;margin-top:0" disabled>⏸ PAUSA</button>
-      <button class="primary" id="btn-stop" onclick="detenerVuelo()" style="flex:1;min-width:90px;width:auto;margin-top:0" disabled>⏹ STOP</button>
-      <button id="btn-velocidad" onclick="toggleVelocidad()" title="Velocidad de simulación (no realista, para ver el efecto rápido)">⏩ 1x</button>
+    <div class="transport-controls" id="vuelo-controls" style="display:none;margin-top:10px">
+      <button class="transport-btn" id="btn-play" onclick="iniciarVuelo()" title="Play">▶</button>
+      <button class="transport-btn" id="btn-pause" onclick="pausarVuelo()" title="Pausa" disabled>⏸</button>
+      <button class="transport-btn" id="btn-stop" onclick="detenerVuelo()" title="Stop" disabled>⏹</button>
+      <button class="transport-btn speed" id="btn-velocidad" onclick="toggleVelocidad()" title="Velocidad de simulación (no realista, para ver el efecto rápido)">1x</button>
     </div>
     <div class="hint" id="vuelo-hint" style="display:none">
       El avión vuela en línea recta al heading actual (simulación acelerada, no realista).
@@ -1092,7 +1111,7 @@ function actualizarBotonesVuelo(){
 function toggleVelocidad(){
   velocidadMult = velocidadMult===1 ? 4 : (velocidadMult===4 ? 10 : 1);
   const b=document.getElementById('btn-velocidad');
-  if(b) b.textContent='⏩ '+velocidadMult+'x';
+  if(b) b.textContent=velocidadMult+'x'; // v4.34: botón ya es circular/ícono, no hace falta el ⏩ de prefijo
 }
 function _volarTick(){
   const distTick = VOLAR_KT*velocidadMult*(VOLAR_TICK_MS/1000)/3600; // NM recorridas en este tick
