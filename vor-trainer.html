@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.32 · Pedido de Daniel: chequeo de versión nueva, mismo patrón que
+         turnos.html/vuelo.html/vuelo-piloto.html/portal-alumno.html/fpl.html
+         — si alguien deja esta pestaña abierta por días, sigue corriendo con
+         el JS viejo cargado en memoria pase lo que se suba después. Cada 5min
+         (+ un chequeo temprano a los 5s + al volver a la pestaña) vuelve a
+         pedir este mismo archivo con cache-buster y compara la versión
+         servida contra la que está corriendo acá. Adaptado a este archivo:
+         lee <span class="ver"> (badge de versión propio) en vez de
+         .hero-sub (que es específico de turnos.html). Si difieren, banner
+         fijo arriba de todo con botón "ACTUALIZAR AHORA" — mismo estilo y
+         mismo texto base que el resto de las apps.
   v4.31.3 · Pedido de Daniel: box del DME más chico (padding 8px14px→5px9px,
          label 10px→9px, valor 17px→13px, min-width 78px→58px) para que entre
          mejor al lado del instrumento en pantallas de celular.
@@ -705,6 +716,11 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
 </head>
 <body>
 
+<div id="banner-version-nueva" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--amber);color:#0a0a0a;font-family:var(--font-mono);font-size:12px;letter-spacing:.05em;padding:.65rem 1rem;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.45)">
+  <span>⚠ Esta pestaña está corriendo una <b>versión vieja</b> del simulador — los arreglos y cambios recientes NO van a funcionar hasta que actualices.</span>
+  <button id="btn-recargar-version" style="font-family:var(--font-mono);font-size:12px;font-weight:700;padding:6px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:var(--radius);cursor:pointer">ACTUALIZAR AHORA</button>
+</div>
+
 <div class="wrap" id="app-wrap" style="display:none">
   <header class="bar">
     <div class="left-group">
@@ -717,7 +733,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.31.3</span>
+      <span class="ver">v4.32</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -1534,6 +1550,41 @@ function verificar(){
   document.getElementById('map-panel').style.display='block';
   renderMap();
 }
+
+/* ===================== CHEQUEO DE VERSION (pestañas que quedan abiertas) =====================
+   v4.32 — mismo patrón que turnos.html/vuelo.html/vuelo-piloto.html/portal-alumno.html/fpl.html:
+   si alguien deja esta pestaña abierta por días, sigue corriendo el JS que tenía cargado en
+   memoria desde que la abrió, sin importar qué se suba después (la Cache Rule no-store no
+   ayuda acá porque no hay ninguna request nueva que interceptar). Cada VERSION_POLL_MS volvemos
+   a pedir este mismo archivo con cache-buster y comparamos la versión de .ver contra la que
+   está corriendo en esta pestaña — a diferencia de turnos.html (que lee de .hero-sub), acá se
+   lee de <span class="ver">, el badge de versión de este archivo. Si difieren, banner fijo con
+   botón para recargar. */
+function extraerVersionDeHTML(html){
+  const m=html.match(/<span class="ver">([^<]*)<\/span>/);
+  return m?m[1]:null;
+}
+const VERSION_ACTUAL=(document.querySelector('.ver')?.textContent||'').trim()||null;
+const VERSION_POLL_MS=5*60*1000; // 5 minutos
+let _versionDesactualizada=false;
+async function chequearVersionNueva(){
+  if(_versionDesactualizada||!VERSION_ACTUAL)return;
+  try{
+    const r=await fetch(location.pathname+'?_v='+Date.now(),{cache:'no-store'});
+    if(!r.ok)return;
+    const html=await r.text();
+    const versionServidor=extraerVersionDeHTML(html);
+    if(versionServidor&&versionServidor!==VERSION_ACTUAL){
+      _versionDesactualizada=true;
+      const b=document.getElementById('banner-version-nueva');
+      if(b)b.style.display='flex';
+    }
+  }catch(e){console.warn('No se pudo chequear si hay una version nueva:',e);}
+}
+document.getElementById('btn-recargar-version')?.addEventListener('click',()=>{location.href=location.pathname+'?_v='+Date.now();});
+setInterval(chequearVersionNueva,VERSION_POLL_MS);
+setTimeout(chequearVersionNueva,5000); // primer chequeo temprano, no recién a los 5min
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')chequearVersionNueva();});
 
 // Soporte PWA (instalable como app) — mismo patrón que turnos.html/vuelo.html/
 // portal-alumno.html/fpl.html: manifest-vor.json + iconos propios + Service
