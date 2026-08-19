@@ -2,6 +2,27 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.33 · Pedido de Daniel: botonera PLAY/PAUSA/STOP en vez de un solo botón
+         VOLAR↔PAUSA. El problema del botón único: al volver a apretarlo
+         después de una pausa (para RESUMIR), disparaba el mismo reset a 5NM
+         que debía pasar solo al empezar un vuelo nuevo (v4.31) — perdía el
+         progreso cada vez. Ahora:
+         - PLAY: primera vez desde el último STOP → arranca fresco a 5NM
+           (mismo criterio de v4.31). Si ya había un vuelo pausado → RESUME
+           desde donde quedó, sin tocar distNM/posX/posY.
+         - PAUSA: para el motor sin resetear nada.
+         - STOP: única acción que reinicia todo a 5NM — nuevo, antes no
+           existía un botón separado para esto.
+         Nueva flag `_vueloIniciado` (true desde el primer PLAY hasta el
+         próximo STOP) decide si iniciarVuelo() resetea o resume. Botones se
+         habilitan/deshabilitan solos según estado (actualizarBotonesVuelo(),
+         reemplaza a la vieja actualizarBotonVolar()). Al salir de Modo Libre
+         ahora se llama detenerVuelo() en vez de pausarVuelo() (antes dejaba
+         _vueloIniciado colgado en true, así que una vuelta futura a Libre
+         resumía desde una distancia vieja en vez de arrancar limpia).
+         Sin cambios en el resto de la física: auto-pausa cerca de la
+         estación y pausa al arrastrar el mapa siguen siendo pausarVuelo()
+         (no STOP) — tiene sentido poder resumir desde ahí.
   v4.32 · Pedido de Daniel: chequeo de versión nueva, mismo patrón que
          turnos.html/vuelo.html/vuelo-piloto.html/portal-alumno.html/fpl.html
          — si alguien deja esta pestaña abierta por días, sigue corriendo con
@@ -733,7 +754,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.32</span>
+      <span class="ver">v4.33</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -818,7 +839,9 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       <button onclick="turnHeadingReal(10)">10° ►►</button>
     </div>
     <div class="obs-controls" id="vuelo-controls" style="display:none;margin-top:10px">
-      <button class="primary" id="btn-volar" onclick="toggleVolar()" style="flex:1;min-width:140px;width:auto;margin-top:0">▶ VOLAR</button>
+      <button class="primary" id="btn-play" onclick="iniciarVuelo()" style="flex:1;min-width:90px;width:auto;margin-top:0">▶ PLAY</button>
+      <button class="primary" id="btn-pause" onclick="pausarVuelo()" style="flex:1;min-width:90px;width:auto;margin-top:0" disabled>⏸ PAUSA</button>
+      <button class="primary" id="btn-stop" onclick="detenerVuelo()" style="flex:1;min-width:90px;width:auto;margin-top:0" disabled>⏹ STOP</button>
       <button id="btn-velocidad" onclick="toggleVelocidad()" title="Velocidad de simulación (no realista, para ver el efecto rápido)">⏩ 1x</button>
     </div>
     <div class="hint" id="vuelo-hint" style="display:none">
@@ -992,7 +1015,7 @@ function setModoJuego(m){
     document.getElementById('map-panel').style.display='block';
     renderMap();
   } else {
-    pausarVuelo(); // v4.24 — no puede quedar un setInterval corriendo en modo ejercicio
+    detenerVuelo(); // v4.33 — antes solo pausarVuelo(); ahora, al salir de Libre, reset completo (no puede quedar un setInterval corriendo en modo ejercicio, y así una vuelta futura a Libre arranca limpia, no resume desde una distancia vieja)
     nuevoEjercicio(); // vuelve todo al estado de siempre (map oculto hasta VERIFICAR)
   }
 }
@@ -1012,32 +1035,53 @@ function sincronizarPosDesdeRadial(){
   posX=distNM*Math.sin(rad);
   posY=distNM*Math.cos(rad);
 }
-function toggleVolar(){ volando ? pausarVuelo() : iniciarVuelo(); }
+// v4.33 — pedido de Daniel: botonera PLAY/PAUSA/STOP en vez de un solo botón
+// VOLAR↔PAUSA que reseteaba la distancia a 5NM cada vez que se volvía a apretar
+// (incluso al RESUMIR de una pausa, perdiendo el progreso del vuelo). Ahora:
+//   - PLAY:  si es la primera vez desde el último STOP (!_vueloIniciado), arranca
+//            fresco a 5NM (mismo criterio de v4.31). Si ya había un vuelo en
+//            curso (pausado), RESUME desde donde quedó, sin tocar distNM.
+//   - PAUSA: para el motor sin resetear nada — _vueloIniciado sigue en true,
+//            así que el próximo PLAY resume, no reinicia.
+//   - STOP:  para el motor (si estaba corriendo) Y recién ahí resetea todo a
+//            5NM — es el único botón que reinicia. _vueloIniciado vuelve a false.
+// _vueloIniciado se resetea también al salir de Modo Libre (ver setModoJuego) y
+// arranca en false al cargar la página / entrar a Libre por primera vez.
+let _vueloIniciado=false;
 function iniciarVuelo(){
   if(volando || modoJuego!=='libre') return;
-  // v4.31 — pedido de Daniel: siempre arranca a 5NM de la estación al apretar
-  // VOLAR, sin importar dónde había quedado el avión antes (drag manual o un
-  // vuelo anterior) — mismo radial/heading actuales, solo se resetea la
-  // distancia. sincronizarPosDesdeRadial() usa el distNM que le pongamos acá.
-  distNM=5;
-  sincronizarPosDesdeRadial();
-  renderMap();
-  renderInstrumentos();
+  if(!_vueloIniciado){
+    distNM=5;
+    sincronizarPosDesdeRadial();
+    renderMap();
+    renderInstrumentos();
+  }
+  _vueloIniciado=true;
   volando=true;
-  actualizarBotonVolar();
+  actualizarBotonesVuelo();
   _voloTimer=setInterval(_volarTick, VOLAR_TICK_MS);
 }
 function pausarVuelo(){
   volando=false;
   if(_voloTimer){ clearInterval(_voloTimer); _voloTimer=null; }
-  actualizarBotonVolar();
+  actualizarBotonesVuelo();
 }
-function actualizarBotonVolar(){
-  const b=document.getElementById('btn-volar');
-  if(b){
-    b.textContent = volando ? '⏸ PAUSA' : '▶ VOLAR';
-    b.classList.toggle('flying', volando);
-  }
+function detenerVuelo(){
+  pausarVuelo(); // por si estaba volando, frena el motor primero
+  _vueloIniciado=false;
+  distNM=5;
+  sincronizarPosDesdeRadial();
+  renderMap();
+  renderInstrumentos();
+  actualizarBotonesVuelo();
+}
+function actualizarBotonesVuelo(){
+  const bPlay=document.getElementById('btn-play');
+  const bPausa=document.getElementById('btn-pause');
+  const bStop=document.getElementById('btn-stop');
+  if(bPlay) bPlay.disabled=volando;
+  if(bPausa){ bPausa.disabled=!volando; bPausa.classList.toggle('flying',volando); }
+  if(bStop) bStop.disabled=!_vueloIniciado;
   // v4.27 — Daniel: con heading=radial el avión no se mueve en el mapa (el radial
   // queda constante, es física real — ver v4.24), así que ahí no había NINGUNA
   // señal de que el sim seguía corriendo. Este indicador depende pura y
