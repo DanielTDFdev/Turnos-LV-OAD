@@ -1,6 +1,16 @@
 <!--
   ARCHIVO : turnos.html
-  VERSION : 7.52
+  VERSION : 7.53
+  FECHA   : 2026-08-18
+  CAMBIOS : Iniciales del instructor que aprobó, en la celda del calendario
+            (vista lista de 17 días y vista semana). Solo en turnos de
+            instrucción con estado 'aprobado' (no en piloto-particular
+            autoaprobado). Nueva función iniciales(nombre) — toma la primera
+            letra de cada palabra tal cual ("Santiago De Larminat" → "SDL").
+            Badge .cal-inst-inic: centrado verticalmente, pegado al borde
+            derecho de la celda, tooltip con el nombre completo.
+
+  ---- v7.52 ----
   FECHA   : 2026-08-18
   CAMBIOS : Rediseño de los 4 botones de link (Portal/FPL/W&B/VOR) a estilo
             "annunciator panel" de cabina: caja negra (.avnc-panel) con los 4
@@ -2450,8 +2460,9 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .cal-table td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px;vertical-align:top;background:var(--bg);min-height:36px;min-width:62px;}
 .cal-table td.today-col{background:rgba(0,200,212,.03);}
 .cal-table td:first-child{font-family:var(--font-mono);font-size:11px;color:var(--text3);text-align:center;padding:6px 4px;white-space:nowrap;background:var(--bg2);border-right:1px solid var(--border2);position:sticky;left:0;z-index:2;}
-.cal-block{padding:5px 7px;border-radius:var(--radius);cursor:pointer;margin-bottom:3px;font-family:var(--font-mono);font-size:11px;line-height:1.4;transition:filter .15s;}
+.cal-block{padding:5px 7px;border-radius:var(--radius);cursor:pointer;margin-bottom:3px;font-family:var(--font-mono);font-size:11px;line-height:1.4;transition:filter .15s;position:relative;}
 .cal-block:hover{filter:brightness(1.25);}
+.cal-inst-inic{position:absolute;top:50%;right:6px;transform:translateY(-50%);font-size:9px;font-weight:700;letter-spacing:.04em;opacity:.75;}
 .cal-block.pendiente{background:rgba(240,165,0,.22);border:1px solid rgba(240,165,0,.5);color:var(--amber);}
 .cal-block.aprobado{background:rgba(57,211,83,.15);border:1px solid rgba(57,211,83,.45);color:var(--green);}
 .cal-block.cancelado{background:rgba(248,81,73,.18);border:1px solid rgba(248,81,73,.45);color:var(--red);text-decoration:line-through;}
@@ -2643,7 +2654,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.52</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.53</div>
   </div>
 
 </div>
@@ -5556,6 +5567,14 @@ async function cargarDisponibilidadCompleta(fechas){
 
 // Texto a agregar al tooltip de un turno PENDIENTE: quiénes podrían aprobarlo ahora mismo,
 // según disponibilidad vigente (puede no coincidir con quien lo aprobó si cambió después).
+// v7.53: iniciales del instructor que aprobó, para badge en la celda del calendario.
+// "Santiago De Larminat" -> "SDL". Toma la primera letra de CADA palabra del nombre,
+// tal cual lo pidió Daniel (sin filtrar "de"/partículas).
+function iniciales(nombre){
+  if(!nombre) return '';
+  return nombre.trim().split(/\s+/).map(p=>p[0].toUpperCase()).join('');
+}
+
 function tipQuienesPueden(disp,fecha,hora){
   const nombres=disp?.[fecha]?.porHora?.[hora]||[];
   if(!nombres.length) return ' — Nadie con disponibilidad cargada para ese horario';
@@ -5666,7 +5685,10 @@ async function renderTodasReservas(data){
         // el saldo semanal no baja, y quién lo cargó.
         const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno)`:'';
         const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — ${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno">📋</span>`:'';
-        html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}</div>`;
+        // v7.53: iniciales del instructor que aprobó, para turnos de instrucción aprobados
+        // (no piloto autoaprobado). Badge centrado verticalmente, pegado a la derecha.
+        const inicInst=(r.estado==='aprobado'&&!aprobPil&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
+        html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}${inicInst}</div>`;
       });
       // v7.01: turnos con rango que arrancaron en una hora anterior y siguen ocupando ESTA
       // hora (ej: rango 10:00–13:00 → acá se pinta en las filas de 11:00 y 12:00). Antes la
@@ -5805,8 +5827,10 @@ async function renderVistaSemana(){
         // v6.99: ver nota en renderTodasReservas — mismo badge/tooltip para turnos con cargado_por.
         const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno)`:'';
         const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — ${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno">📋</span>`:'';
+        // v7.53: ver nota en renderTodasReservas — mismas iniciales del instructor que aprobó.
+        const inicInst=(r.estado==='aprobado'&&!aprobPil&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
         html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ${r.estado}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">
-          ${badge}${cargadoBadge}<span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>${nombre}
+          ${badge}${cargadoBadge}<span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>${nombre}${inicInst}
         </div>`;
       });
       // v7.01: mismo criterio que renderTodasReservas — pintar continuación de rango en las
