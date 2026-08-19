@@ -2,6 +2,47 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.31.1 · Ajustes de Daniel sobre v4.31, que no había llegado a subir (se
+         reaplicó entero desde memoria, sin re-fetchear el repo):
+         1) DME sacado de ADENTRO del SVG (se solapaba con los números de la
+            carta, ilegible — ver captura) a un readout HTML afuera, a la
+            derecha del instrumento (.instr-svg-row, flex row nuevo alrededor
+            de #vor-svg/#hsi-svg). Mismo criterio de visibilidad: solo con
+            `volando` true (clase .visible, display:none por default).
+         2) VOLAR_KT bajado de 900 a 300 — "en 1x vuela muy rápido, los
+            radiales se cortan rapidísimo". Con el arranque a 5NM (v4.31)
+            el efecto se notaba más: a menor distancia, mayor velocidad
+            angular para la misma velocidad lineal.
+         3) "NUEVO EJERCICIO" ahora arranca oculto y solo aparece después de
+            tocar VERIFICAR — antes quedaba visible todo el tiempo en Modo
+            Ejercicio. nuevoEjercicio() lo oculta, verificar() lo muestra;
+            setModoJuego() ya no fuerza 'block' al entrar a ejercicio.
+  v4.31 · Pedido de Daniel — DME real en Modo Libre volando:
+         1) Leyenda "DME X.XNM" a la derecha, al medio del VOR y del HSI (misma
+            zona donde vive el badge FROM/TO), visible SOLO mientras `volando`
+            es true — desaparece en pausa/ejercicio. Usa distNM, ya calculado
+            en cada tick del motor de vuelo.
+         2) iniciarVuelo() ahora fuerza distNM=5 y resincroniza posX/posY antes
+            de arrancar el motor — el vuelo siempre empieza a 5NM de la
+            estación, sin importar dónde había quedado el avión antes (drag
+            manual o vuelo previo).
+         3) Se saca el re-anclaje a 15NM que _volarTick() hacía pasados los
+            20NM (existía desde v4.25) — ya no hay ningún tope de distancia,
+            el avión puede alejarse indefinidamente mientras vuela.
+         4) Mapa "a escala" real (antes distNM no participaba del dibujo — ver
+            nota de v4.22, "vestigial, pensado a futuro para DME" — el avión
+            siempre se veía al mismo radio visual fijo). Nueva
+            escalaMapaActual(): elige, de una lista de rangos tipo radar
+            (10/20/40/80/160/320/640/1280 NM), el más chico que deja al avión
+            dentro del 85% del radio visual del mapa — evita tanto que el
+            avión se dibuje afuera del círculo como que quede pegado al
+            centro con un rango absurdamente grande. Anillo exterior rotulado
+            con el rango vigente ("ANILLO EXT. = XX NM"). Sin esto, sacar el
+            tope de distancia del punto 3 hubiera roto el dibujo (el avión se
+            iba a ir literalmente afuera del SVG apenas pasara el radio fijo
+            de antes).
+         Se reaplica también el cambio de v4.30 (botón NUEVO EJERCICIO debajo
+         de VERIFICAR) — la entrega anterior no había llegado a subirse.
   v4.29 · Aguja RMI en el HSI, a pedido de Daniel — celeste (#00c8d4), doble línea
          fina con punta de flecha chica en la cabeza y cola simple sin adorno (a
          propósito distinta de la flecha de curso, gruesa/sólida/cola en T, para
@@ -593,6 +634,9 @@ h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:
   border:1px solid var(--border);border-radius:var(--radius);padding:6px 14px;cursor:pointer;touch-action:manipulation}
 .rmi-toggle.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.1)}
 .instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
+.instr-svg-row{display:flex;align-items:center;justify-content:center;gap:10px}
+.dme-readout{font-family:var(--font-mono);font-size:14px;font-weight:bold;color:#00c8d4;letter-spacing:.08em;white-space:nowrap;min-width:80px;display:none}
+.dme-readout.visible{display:block}
 .instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
 .obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
 button{touch-action:manipulation}
@@ -662,7 +706,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.29</span>
+      <span class="ver">v4.31.1</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -700,7 +744,10 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       </div>
       <div class="instr-box">
         <div class="instr-label">VOR / OBS — girá para centrar la aguja</div>
-        <div id="vor-svg"></div>
+        <div class="instr-svg-row">
+          <div id="vor-svg"></div>
+          <div class="dme-readout" id="vor-dme-readout"></div>
+        </div>
         <div class="obs-readout" id="obs-readout">OBS 000°</div>
         <div class="obs-controls">
           <button onclick="turnOBS(-10)">◄◄ 10°</button>
@@ -716,7 +763,10 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
         HSI — girá el CRS para centrar la aguja
         <button id="btn-rmi" class="rmi-toggle" onclick="toggleRMI()" title="Mostrar/ocultar la aguja RMI (bearing hacia la estación)">📡 RMI</button>
       </div>
-      <div id="hsi-svg"></div>
+      <div class="instr-svg-row">
+        <div id="hsi-svg"></div>
+        <div class="dme-readout" id="hsi-dme-readout"></div>
+      </div>
       <div class="obs-readout" id="hsi-crs-readout">CRS 000°</div>
       <div class="obs-controls">
         <button onclick="turnOBS(-10)">◄◄ 10°</button>
@@ -767,6 +817,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       </div>
     </div>
     <button class="primary" id="btn-verificar" onclick="verificar()">VERIFICAR</button>
+    <button class="primary" id="btn-nuevo-ejercicio" onclick="nuevoEjercicio()" style="margin-top:8px">NUEVO EJERCICIO</button>
     <div class="feedback" id="feedback"></div>
   </div>
 
@@ -774,7 +825,6 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     <h2 id="map-panel-title">// POSICIÓN REAL</h2>
     <div class="map-wrap"><div id="map-svg"></div></div>
     <div class="hint" id="map-hint">Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste</div>
-    <button class="primary" id="btn-nuevo-ejercicio" onclick="nuevoEjercicio()">NUEVO EJERCICIO</button>
   </div>
 </div>
 
@@ -798,8 +848,13 @@ let modoJuego='ejercicio';
 let posX=0, posY=6; // NM respecto de la estación, sincronizado con radialReal/distNM al entrar a modo libre
 let volando=false, velocidadMult=1, _voloTimer=null;
 const VOLAR_TICK_MS=200;
-const VOLAR_KT=900; // velocidad de SIMULACIÓN, no realista — a propósito, para que
-                     // cruzar de cuadrante tome ~15-30s reales y sea viable en clase
+const VOLAR_KT=300; // v4.31.1: bajado de 900 a 300 — Daniel: "en 1x vuela muy
+                     // rápido, los radiales se cortan rapidísimo". Con el
+                     // arranque a 5NM (v4.31, antes 6-15 al azar) el efecto se
+                     // notaba más todavía: a menor distancia, mayor velocidad
+                     // angular para la misma velocidad lineal — dos motivos
+                     // pidiendo la misma baja. 4x/10x siguen siendo múltiplos
+                     // de este valor, no se tocan aparte.
 let modo='vor'; // 'vor' | 'hsi' — persistido en localStorage
 let mostrarRMI=false; // v4.29 — aguja RMI (bearing hacia la estación) en el HSI, toggle
 
@@ -867,6 +922,12 @@ function nuevoEjercicio(){
   document.getElementById('feedback').style.display='none';
   document.getElementById('map-panel').style.display='none';
   document.getElementById('btn-verificar').disabled=false;
+  // v4.31.1 — pedido de Daniel: "Nuevo ejercicio" solo debe aparecer después de
+  // haber tocado VERIFICAR al menos una vez para el ejercicio actual — antes
+  // quedaba visible todo el tiempo en Modo Ejercicio, sin sentido antes de
+  // responder nada. Se oculta acá (arranque de tanda limpia) y se muestra en
+  // verificar().
+  document.getElementById('btn-nuevo-ejercicio').style.display='none';
   renderInstrumentos();
   updateScore();
 }
@@ -891,7 +952,10 @@ function setModoJuego(m){
   document.getElementById('map-heading-controls').style.display = m==='libre' ? 'flex' : 'none';
   document.getElementById('vuelo-controls').style.display = m==='libre' ? 'flex' : 'none';
   document.getElementById('vuelo-hint').style.display = m==='libre' ? 'block' : 'none';
-  document.getElementById('btn-nuevo-ejercicio').style.display = m==='libre' ? 'none' : 'block';
+  // v4.31.1: ya no fuerza 'block' para modo ejercicio — nuevoEjercicio() (que se
+  // llama más abajo al entrar a ejercicio) y verificar() son quienes deciden la
+  // visibilidad ahora (solo aparece después de tocar VERIFICAR).
+  document.getElementById('btn-nuevo-ejercicio').style.display = 'none';
   document.getElementById('map-panel-title').textContent = m==='libre' ? '// POSICIÓN (arrastrá el avión)' : '// POSICIÓN REAL';
   document.getElementById('map-hint').textContent = m==='libre'
     ? 'Arrastrá el avión (o cualquier punto del mapa) para cambiar el radial.'
@@ -924,6 +988,14 @@ function sincronizarPosDesdeRadial(){
 function toggleVolar(){ volando ? pausarVuelo() : iniciarVuelo(); }
 function iniciarVuelo(){
   if(volando || modoJuego!=='libre') return;
+  // v4.31 — pedido de Daniel: siempre arranca a 5NM de la estación al apretar
+  // VOLAR, sin importar dónde había quedado el avión antes (drag manual o un
+  // vuelo anterior) — mismo radial/heading actuales, solo se resetea la
+  // distancia. sincronizarPosDesdeRadial() usa el distNM que le pongamos acá.
+  distNM=5;
+  sincronizarPosDesdeRadial();
+  renderMap();
+  renderInstrumentos();
   volando=true;
   actualizarBotonVolar();
   _voloTimer=setInterval(_volarTick, VOLAR_TICK_MS);
@@ -960,19 +1032,13 @@ function _volarTick(){
   if(nuevoDist<0.5){ pausarVuelo(); alert('El avión pasó sobre la estación — vuelo en pausa.'); return; }
   distNM=nuevoDist;
   radialReal=Math.round(norm360(Math.atan2(posX,posY)*180/Math.PI));
-  // v4.25 — Daniel notó que a 1x, en un par de minutos la distancia crece tanto que
-  // el radial deja de cambiar a un ritmo útil (geometría real: a más distancia, menos
-  // grados por minuto para la misma velocidad — no es un bug, pero arruina el
-  // ejercicio). Antes acá pausaba a los 40NM y dejaba al alumno "colgado". Ahora en
-  // vez de pausar, re-ancla la distancia a 15NM manteniendo el MISMO radial y heading
-  // — como el mapa nunca dibujó la distancia real (el avión siempre se ve al mismo
-  // radio visual, ver renderMap()), el salto no se nota, y el vuelo sigue sin
-  // interrupciones ni avisos. Pasar cerca de la estación sí sigue pausando (arriba):
-  // ese es un evento real que vale la pena que el alumno vea y resuelva a mano.
-  if(distNM>20){
-    distNM=15;
-    sincronizarPosDesdeRadial();
-  }
+  // v4.31 — pedido de Daniel: se saca el re-anclaje a 15NM que había acá desde
+  // v4.25 (disparaba pasados los 20NM). Ya no hace falta: el mapa ahora se
+  // dibuja a escala real (ver renderMap()/escalaMapaActual()), con anillos que
+  // se auto-ajustan a la distancia — antes el avión SIEMPRE se veía al mismo
+  // radio visual fijo (por eso el salto de 20→15NM no se notaba), ahora si no
+  // se sacaba el límite el mapa se hubiera achicado artificialmente cada vez
+  // que llegaba a los 20NM. distNM crece sin techo mientras el avión vuele.
   renderMap();
   renderInstrumentos();
 }
@@ -1105,6 +1171,11 @@ function renderVOR(){
   const fl=document.getElementById('flag-readout');
   fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
   fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  // v4.31.1 — DME afuera del instrumento (a la derecha), no adentro del SVG:
+  // adentro se solapaba con el dial/números de la carta y quedaba ilegible.
+  const dme=document.getElementById('vor-dme-readout');
+  dme.textContent='DME '+distNM.toFixed(1)+'NM';
+  dme.classList.toggle('visible',volando);
   attachDrag('vor-instrument');
 }
 
@@ -1223,6 +1294,9 @@ function renderHSI(){
   const fl=document.getElementById('hsi-flag-readout');
   fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
   fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  const dme=document.getElementById('hsi-dme-readout');
+  dme.textContent='DME '+distNM.toFixed(1)+'NM';
+  dme.classList.toggle('visible',volando);
   attachDrag('hsi-instrument');
 }
 
@@ -1330,10 +1404,26 @@ function attachMapDrag(){
 }
 
 // ── SVG: MAPA EN PLANTA ──────────────────────────────────────────
+// v4.31 — pedido de Daniel: el avión se dibuja "a escala" (antes distNM era
+// vestigial, ver v4.22 — el avión SIEMPRE se veía al mismo radio visual fijo
+// sin importar la distancia real). Ahora, escala tipo radar auto-ajustable:
+// el anillo exterior siempre representa el rango más chico de RANGOS_MAPA_NM
+// que deja al avión dentro del 85% del radio visual — así el mapa nunca se
+// queda "vacío" (avión pegado al centro) ni el avión sale dibujado afuera del
+// círculo, sin importar cuán lejos vuele (ya no hay tope de distancia, ver
+// _volarTick()).
+const RANGOS_MAPA_NM=[10,20,40,80,160,320,640,1280];
+function escalaMapaActual(dist){
+  const necesario=dist/0.85;
+  for(const r of RANGOS_MAPA_NM) if(r>=necesario) return r;
+  return RANGOS_MAPA_NM[RANGOS_MAPA_NM.length-1]; // tope de la lista: el avión queda pegado al borde, no rompe nada
+}
 function renderMap(){
   const cx=150,cy=150,rMax=125;
-  const px=cx+Math.sin(radialReal*Math.PI/180)*rMax*0.85;
-  const py=cy-Math.cos(radialReal*Math.PI/180)*rMax*0.85;
+  const rangoNM=escalaMapaActual(distNM);
+  const radioVisual=Math.min(distNM,rangoNM)/rangoNM*rMax;
+  const px=cx+Math.sin(radialReal*Math.PI/180)*radioVisual;
+  const py=cy-Math.cos(radialReal*Math.PI/180)*radioVisual;
   const rings=[0.35,0.6,0.85].map(f=>`<circle cx="${cx}" cy="${cy}" r="${rMax*f}" fill="none" stroke="#333" stroke-width="1"/>`).join('');
   // Cuadrantes de referencia: 360/090/180/270
   let quad='';
@@ -1368,6 +1458,7 @@ function renderMap(){
     </g>
     <text x="${px+16}" y="${py-10}" fill="#f0a500" font-size="12" font-family="Share Tech Mono">R${String(radialReal).padStart(3,'0')}° / HDG${String(headingReal).padStart(3,'0')}°</text>
     <circle cx="${cx}" cy="${cy}" r="${rMax+10}" fill="none" stroke="#333" stroke-width="2"/>
+    <text x="${cx}" y="292" text-anchor="middle" fill="#555" font-size="10" font-family="Share Tech Mono">ANILLO EXT. = ${rangoNM} NM</text>
   </svg>`;
   document.getElementById('map-svg').innerHTML=svg;
   attachMapDrag();
@@ -1427,6 +1518,7 @@ function verificar(){
   fb.appendChild(explain);
 
   document.getElementById('btn-verificar').disabled=true;
+  document.getElementById('btn-nuevo-ejercicio').style.display='block'; // v4.31.1: recién visible después de verificar
   document.getElementById('map-panel').style.display='block';
   renderMap();
 }
