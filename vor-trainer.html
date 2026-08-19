@@ -2,6 +2,9 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.31.3 · Pedido de Daniel: box del DME más chico (padding 8px14px→5px9px,
+         label 10px→9px, valor 17px→13px, min-width 78px→58px) para que entre
+         mejor al lado del instrumento en pantallas de celular.
   v4.31.2 · Pedido de Daniel: el readout DME pasa de una línea de texto suelta
          a un box con borde/fondo (mismo estilo que flag-readout) — "DME" chico
          arriba, distancia grande abajo. Solo se reescribe el <span> del valor
@@ -639,12 +642,12 @@ h2{font-family:var(--font-mono);font-size:13px;color:var(--cyan);letter-spacing:
 .rmi-toggle.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.1)}
 .instr-box{display:flex;flex-direction:column;align-items:center;gap:10px}
 .instr-svg-row{display:flex;align-items:center;justify-content:center;gap:10px}
-.dme-readout{display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+.dme-readout{display:none;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   font-family:var(--font-mono);border:1px solid #00c8d4;border-radius:var(--radius);
-  background:rgba(0,200,212,.08);padding:8px 14px;min-width:78px}
+  background:rgba(0,200,212,.08);padding:5px 9px;min-width:58px}
 .dme-readout.visible{display:flex}
-.dme-readout .dme-label{font-size:10px;letter-spacing:.15em;color:#00c8d4;opacity:.8}
-.dme-readout .dme-valor{font-size:17px;font-weight:bold;letter-spacing:.04em;color:#00c8d4;white-space:nowrap}
+.dme-readout .dme-label{font-size:9px;letter-spacing:.12em;color:#00c8d4;opacity:.8}
+.dme-readout .dme-valor{font-size:13px;font-weight:bold;letter-spacing:.03em;color:#00c8d4;white-space:nowrap}
 .instr-label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.1em;text-transform:uppercase}
 .obs-controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
 button{touch-action:manipulation}
@@ -714,7 +717,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.31.2</span>
+      <span class="ver">v4.31.3</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
