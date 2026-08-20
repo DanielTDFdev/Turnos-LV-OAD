@@ -1,8 +1,9 @@
 <!--
   ARCHIVO : index.html
-  VERSION : 3.3
-  FECHA   : 2026-06-09
-  CAMBIOS : Carrusel: corregido nombre de repo (Web-Aeroclub); eliminado documento duplicado
+  VERSION : 3.4
+  FECHA   : 2026-08-20
+  CAMBIOS : Debajo de Intranet, panel annunciator (mismo estilo que turnos.html)
+            con accesos directos a Plan de Vuelo y Sim VOR/HSI.
 -->
 <!DOCTYPE html>
 <html lang="es">
@@ -106,6 +107,15 @@ footer{border-top:1px solid var(--border);padding:1.5rem 2rem;display:flex;align
 
 @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
 
+/* v3.4 — "annunciator panel" (mismo estilo que turnos.html .avnc-panel):
+   accesos directos a Plan de Vuelo y Sim VOR/HSI debajo de Intranet. */
+.avnc-panel{display:inline-flex;gap:6px;background:#050505;padding:8px;border-radius:6px;box-shadow:inset 0 2px 6px rgba(0,0,0,.8);flex-wrap:wrap;justify-content:center;margin-top:14px;}
+.avnc-btn{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.03em;text-decoration:none;transition:all .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-width:78px;padding:12px 10px;border-radius:3px;text-transform:uppercase;line-height:1.35;background:linear-gradient(180deg,#1c1c1c 0%,#0d0d0d 60%,#000 100%);border:1px solid #000;border-top:1px solid #3a3a3a;box-shadow:0 2px 0 #000,inset 0 1px 1px rgba(255,255,255,.06);}
+.avnc-btn:hover{transform:translateY(1px);box-shadow:0 1px 0 #000,inset 0 1px 1px rgba(255,255,255,.06);}
+.avnc-sub{font-size:9px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;}
+.fpl-link,.fpl-link .avnc-sub{color:#ffb020;text-shadow:0 0 8px rgba(255,176,32,.9);}
+.vor-link,.vor-link .avnc-sub{color:#e88fee;text-shadow:0 0 8px rgba(232,143,238,.9);}
+
 @media(max-width:600px){
   nav{padding:.6rem 1rem;}
   .btn-nav{display:none;}
@@ -203,6 +213,11 @@ footer{border-top:1px solid var(--border);padding:1.5rem 2rem;display:flex;align
         <span>✈</span>
         Intranet Socios/Alumnos
       </a>
+
+      <span class="avnc-panel">
+        <a href="fpl.html" class="avnc-btn fpl-link"><span>PLAN DE</span><span class="avnc-sub">vuelo</span></a>
+        <a href="vor-trainer.html" class="avnc-btn vor-link"><span>SIM</span><span class="avnc-sub">vor/hsi</span></a>
+      </span>
     </div>
 
     <div class="stats">
@@ -276,7 +291,7 @@ footer{border-top:1px solid var(--border);padding:1.5rem 2rem;display:flex;align
   </div>
   <span class="footer-coords">53°46'S 67°45'O · SAWE · RÍO GRANDE, TIERRA DEL FUEGO</span>
 
-  <!-- footer-ver --><span style="font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.06em;opacity:.6">v3.3</span>
+  <!-- footer-ver --><span style="font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.06em;opacity:.6">v3.4</span>
 </footer>
 
 <script>
