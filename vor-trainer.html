@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.36 · Pedido de Daniel: escala CDI de puntos (11 marcas, centro más grueso)
+         en vez de la línea guía lisa — en VOR fija en el eje horizontal, en
+         HSI gira solidaria con la flecha de curso. Función cdiScale()
+         compartida entre ambos renders.
   v4.35 · Pedido de Daniel: al pasar sobre la estación (<0.5NM) ya no pausa el
          vuelo con alert — sigue de largo con el mismo heading. _volarTick()
          seguía calculando posX/posY normalmente; el corte era solo el if de
@@ -779,7 +783,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.35</span>
+      <span class="ver">v4.36</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -1239,6 +1243,27 @@ function renderHeading(){
   document.getElementById('hdg-svg').innerHTML=svg;
 }
 
+// v4.36 — escala CDI de puntos (pedido de Daniel, referencia OBI real): en vez
+// de una sola línea guía, 11 marcas fijas (centro + 5 a cada lado, paso de 9px
+// = 2° cada una sobre el rango ±10°/±45px), centro más grueso/alto que el
+// resto. Compartida entre VOR (spreadDeg=90/tickDeg=0, eje horizontal fijo) y
+// HSI (spreadDeg=perpA/tickDeg=courseA en grados, gira con la flecha de curso
+// igual que la barra). Mismo sistema de ángulos que el resto del archivo:
+// x=cx+sin(deg)*r, y=cy-cos(deg)*r.
+function cdiScale(cx,cy,spreadDeg,tickDeg){
+  const step=9; // 45px/5 = 2° por marca
+  const sx=Math.sin(spreadDeg*Math.PI/180), sy=-Math.cos(spreadDeg*Math.PI/180);
+  const tx=Math.sin(tickDeg*Math.PI/180), ty=-Math.cos(tickDeg*Math.PI/180);
+  let out='';
+  for(let k=-5;k<=5;k++){
+    const off=k*step;
+    const px=cx+sx*off, py=cy+sy*off;
+    const half=k===0?11:6;
+    out+=`<line x1="${(px+tx*half).toFixed(1)}" y1="${(py+ty*half).toFixed(1)}" x2="${(px-tx*half).toFixed(1)}" y2="${(py-ty*half).toFixed(1)}" stroke="white" stroke-width="${k===0?2.5:1.5}"/>`;
+  }
+  return out;
+}
+
 // ── SVG: VOR / OBS ───────────────────────────────────────────────
 function renderVOR(){
   const cdi=computeCDI(obs,radialReal);
@@ -1251,7 +1276,7 @@ function renderVOR(){
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
-    <line x1="${cx-45}" y1="${cy}" x2="${cx+45}" y2="${cy}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
+    ${cdiScale(cx,cy,90,0)}
     <line x1="${cx}" y1="${cy-45}" x2="${cx}" y2="${cy+45}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
     <circle cx="${cx}" cy="${cy}" r="5" fill="none" stroke="white" stroke-width="1.5"/>
     <line x1="${needleX}" y1="${cy-48}" x2="${needleX}" y2="${cy+48}" stroke="white" stroke-width="5"/>
@@ -1375,6 +1400,7 @@ function renderHSI(){
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
     ${headShaft}${tailShaft}${headArrow}
+    ${cdiScale(cx,cy,courseA+90,courseA)}
     <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#5be38a" stroke-width="6" stroke-linecap="round"/>
     ${cdi.flag==='TO'?toTri:''}
     ${cdi.flag==='FROM'?fromTri:''}
