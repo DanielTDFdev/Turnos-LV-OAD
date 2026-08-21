@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.8 · 2026-08-21
+  maxNativeZoom 18→17 (mismo motivo que turnos.html v7.56 — el 18 mostraba
+  placeholder gris de ESRI en la zona, confirmado por Daniel con capturas).
+==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.7 · 2026-08-21
   Mismo cambio que vuelo.html v5.29 (ver ese changelog para el detalle
   completo) — gpsGaps[] detecta el hueco de traza que deja un paso a
@@ -955,7 +960,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.7';
+const APP_VERSION = '4.8';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2220,7 +2225,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     // real de ESRI acá; Leaflet agranda el último tile real en vez de pedir
     // uno inexistente.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19, maxNativeZoom: 18,
+      maxZoom: 19, maxNativeZoom: 17,
     }).addTo(_leafletMap);
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {

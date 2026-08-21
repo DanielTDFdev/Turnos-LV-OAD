@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.30 · 2026-08-21
+  maxNativeZoom 18→17 (mismo motivo que turnos.html v7.56 — el 18 mostraba
+  placeholder gris de ESRI en la zona, confirmado por Daniel con capturas).
+==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.29 · 2026-08-21
   Pedido de Daniel, tras un caso real (LV-OAD, Marvin Mizrahi, 21/08): un
   corte de 18m44s en la traza GPS a pantalla nunca bloqueada — la pestaña
@@ -1138,7 +1143,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.29'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.30'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2348,7 +2353,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     // que el visor propio de ArcGIS. maxZoom:19 se mantiene: es hasta dónde
     // se puede seguir haciendo zoom (agrandado), no hasta dónde hay datos.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19, maxNativeZoom: 18,
+      maxZoom: 19, maxNativeZoom: 17,
     }).addTo(_leafletMap);
 
     // Capa de etiquetas encima del satélite

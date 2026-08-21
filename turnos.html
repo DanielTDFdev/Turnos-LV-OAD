@@ -1,5 +1,15 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.56
+  FECHA   : 2026-08-21
+  CAMBIOS : maxNativeZoom del visor de mapa 18→17. El 18 (v7.54) era un
+            estimado sin verificar — Daniel confirmó con capturas que a esa
+            zona ESRI le devuelve el placeholder gris "Map data not yet
+            available" en 18 (no es error de conexión, es el tile real que
+            ESRI sirve cuando no tiene imagen en ese nivel). 17 es el piso
+            que ESRI documenta como garantizado casi en todo el mundo — más
+            seguro, aunque tampoco 100% verificado. Mismo cambio en vuelo.html
+            v5.30 y vuelo-piloto.html v4.8.
   VERSION : 7.55
   FECHA   : 2026-08-21
   CAMBIOS : Pedido de Daniel, mismo caso real de vuelo.html v5.29 (18m44s sin
@@ -2681,7 +2691,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.55</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.56</div>
   </div>
 
 </div>
@@ -9582,7 +9592,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false });
 
     // Satélite ESRI + etiquetas
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 18 }).addTo(_mapaVueloLeaflet);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 17 }).addTo(_mapaVueloLeaflet);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(_mapaVueloLeaflet);
 
     // Polilínea(s) — tramos reales sólidos, huecos punteados en otro color
