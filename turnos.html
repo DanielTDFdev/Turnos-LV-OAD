@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.54
+  FECHA   : 2026-08-21
+  CAMBIOS : maxNativeZoom del visor GPS (World_Imagery) sube de 15 a 18. El 15
+            había quedado fijado a partir de una prueba puntual (v7.40); ESRI
+            documenta ~1m de resolución real (nivel 17) en casi todo el mundo,
+            no sólo grandes ciudades, así que con el cap en 15 Leaflet estaba
+            agrandando artificialmente el tile desde el nivel 16 en vez de
+            pedir el real — de ahí la diferencia de nitidez contra el visor
+            propio de ArcGIS. SIN VERIFICAR contra la cobertura real de Río
+            Grande (no se pudo probar tile-por-tile desde acá) — Daniel: si en
+            algún punto ves "image not available" o gris, avisame para bajar
+            el número. Mismo cambio en vuelo.html v5.28 y vuelo-piloto.html v4.6.
   VERSION : 7.53
   FECHA   : 2026-08-18
   CAMBIOS : Iniciales del instructor que aprobó, en la celda del calendario
@@ -2654,7 +2666,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.53</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.54</div>
   </div>
 
 </div>
@@ -9519,7 +9531,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false });
 
     // Satélite ESRI + etiquetas
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 15 }).addTo(_mapaVueloLeaflet);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 18 }).addTo(_mapaVueloLeaflet);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(_mapaVueloLeaflet);
 
     // Polilínea

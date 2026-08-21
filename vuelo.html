@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.28 · 2026-08-21
+  maxNativeZoom del visor GPS sube de 15 a 18 (mismo cambio y mismo motivo que
+  turnos.html v7.54 — ver ese changelog para el detalle completo). SIN
+  VERIFICAR contra la cobertura real de Río Grande — Daniel: si ves "image not
+  available" o gris en algún punto, avisame para bajar el número.
+==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.27 · 2026-08-18
   Pedido de Daniel: minimizar al máximo el riesgo de que la captura GPS se
   corte. Reconstruido sobre v5.26 (versión realmente deployada — el intento
@@ -1112,7 +1119,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.27'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.28'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2293,7 +2300,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     // que el visor propio de ArcGIS. maxZoom:19 se mantiene: es hasta dónde
     // se puede seguir haciendo zoom (agrandado), no hasta dónde hay datos.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19, maxNativeZoom: 15,
+      maxZoom: 19, maxNativeZoom: 18,
     }).addTo(_leafletMap);
 
     // Capa de etiquetas encima del satélite

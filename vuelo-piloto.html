@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.6 · 2026-08-21
+  maxNativeZoom del visor GPS sube de 15 a 18 (mismo cambio y mismo motivo que
+  turnos.html v7.54 — ver ese changelog para el detalle completo). SIN
+  VERIFICAR contra la cobertura real de Río Grande — Daniel: si ves "image not
+  available" o gris en algún punto, avisame para bajar el número.
+==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.5 · 2026-08-18
   Pedido de Daniel: minimizar al máximo el riesgo de que la captura GPS se
   corte. Reconstruido sobre v4.4 (versión realmente deployada — el intento
@@ -940,7 +947,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.5';
+const APP_VERSION = '4.6';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2181,7 +2188,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     // real de ESRI acá; Leaflet agranda el último tile real en vez de pedir
     // uno inexistente.
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19, maxNativeZoom: 15,
+      maxZoom: 19, maxNativeZoom: 18,
     }).addTo(_leafletMap);
 
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
