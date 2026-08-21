@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.7 · 2026-08-21
+  Mismo cambio que vuelo.html v5.29 (ver ese changelog para el detalle
+  completo) — gpsGaps[] detecta el hueco de traza que deja un paso a
+  background, viaja a vuelo_tracks/{key}.huecos. Cubre tanto el tracking del
+  instructor (tsInicio/tsFin) como el del alumno (shaTrackeando), incluido
+  su propio guardado en sha-btn-detener.
+==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.6 · 2026-08-21
   maxNativeZoom del visor GPS sube de 15 a 18 (mismo cambio y mismo motivo que
   turnos.html v7.54 — ver ese changelog para el detalle completo). SIN
@@ -947,11 +955,12 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.6';
+const APP_VERSION = '4.7';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
 const LS_GPS_PUNTOS = 'acrg-piloto-v1-gps-puntos';
+const LS_GPS_HUECOS = 'acrg-piloto-v1-gps-huecos'; // v4.7: huecos detectados (ver gpsGaps)
 const LS_GPS_PREF   = 'acrg-piloto-gps-pref';
 const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v2.7 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
 const GPS_WATCHDOG_INTERVALO_MS = 15000; // v4.5: cada cuánto chequea el watchdog
@@ -961,6 +970,8 @@ let gpsWatchId     = null;
 let gpsWatchdogId  = null; // v4.5
 let gpsUltimaLlegada = 0;  // v4.5: última vez que llegó CUALQUIER dato de GPS (referencia del watchdog, no del throttle)
 let gpsPoints      = [];
+let gpsGaps        = [];   // v4.7: [{desde,hasta}] huecos detectados al volver de background — ver visibilitychange
+let _gpsHiddenAt   = 0;    // v4.7: Date.now() de cuándo la pestaña pasó a hidden (0 = no está oculta)
 let gpsUltimoPunto = 0;
 
 // ── Init ─────────────────────────────────────────────────
@@ -1001,6 +1012,7 @@ function init(){
       if(tsInicio&&!tsFin&&est.gpsHabilitado){
         gpsHabilitado=true;
         try{ gpsPoints=JSON.parse(localStorage.getItem(LS_GPS_PUNTOS)||'[]'); }catch{ gpsPoints=[]; }
+        try{ gpsGaps=JSON.parse(localStorage.getItem(LS_GPS_HUECOS)||'[]'); }catch{ gpsGaps=[]; }
         iniciarTrackGPS();
       }
     }
@@ -1464,8 +1476,25 @@ function liberarWakeLock() {
   if (_wakeLock) { _wakeLock.release(); _wakeLock = null; }
 }
 document.addEventListener('visibilitychange', () => {
+  // v4.7: registrar el hueco de traza GPS que deja un paso a background —
+  // mismo caso real reportado por Daniel del lado instructor (vuelo.html
+  // v5.29): 18 min sin puntos con la pantalla nunca bloqueada. Cubre tanto
+  // el tracking del instructor (tsInicio/tsFin) como el del alumno
+  // (shaTrackeando).
+  if(document.visibilityState==='hidden'){
+    if(((tsInicio && !tsFin) || shaTrackeando) && gpsWatchId!=null) _gpsHiddenAt=Date.now();
+    return;
+  }
   if (document.visibilityState === 'visible' && ((tsInicio && !tsFin) || shaTrackeando)) {
     adquirirWakeLock();
+    if(_gpsHiddenAt){
+      const desde=_gpsHiddenAt, hasta=Date.now();
+      if(hasta-desde>GPS_WATCHDOG_UMBRAL_MS){
+        gpsGaps.push({desde:new Date(desde).toISOString(),hasta:new Date(hasta).toISOString()});
+        try{ localStorage.setItem(LS_GPS_HUECOS,JSON.stringify(gpsGaps)); }catch(e){}
+      }
+      _gpsHiddenAt=0;
+    }
     // v4.4: además del wake lock, reinicia el watch de GPS. En background
     // (sobre todo iOS/WKWebView), watchPosition puede quedar "vivo" del
     // lado de JS pero dejar de entregar callbacks en silencio — sin error,
@@ -1567,7 +1596,7 @@ $('sha-btn-iniciar').addEventListener('click', async ()=>{
       return;
     }
     await conTimeout(update(ref(db,'reservas/'+shaTurno.key),{gps_tracker_activo:'alumno',gps_tracker_ts:new Date().toISOString()}));
-    gpsPoints=[];gpsUltimoPunto=0;
+    gpsPoints=[];gpsGaps=[];gpsUltimoPunto=0;
     _wakeLockWarnMostrado=false; // v4.5: nuevo tracking, el aviso puede repetirse si vuelve a fallar
     shaTrackeando=true;
     shaTsInicio=new Date().toISOString();
@@ -1597,6 +1626,7 @@ $('sha-btn-detener').addEventListener('click', async ()=>{
     if(gpsPoints.length>1){
       await conTimeout(set(ref(db,'vuelo_tracks/'+shaTurno.key),{
         puntos:gpsPoints,
+        ...(gpsGaps.length?{huecos:gpsGaps}:{}),
         origen:'alumno',
         ts_guardado:new Date().toISOString()
       }));
@@ -1613,7 +1643,7 @@ $('sha-btn-detener').addEventListener('click', async ()=>{
     $('sha-btn-detener').disabled=false;
     return;
   }
-  gpsPoints=[];
+  gpsPoints=[];gpsGaps=[];
   $('sha-btn-detener').style.display='none';
   $('sha-btn-iniciar').style.display='';
   $('sha-btn-detener').disabled=false;
@@ -1639,7 +1669,7 @@ $('btn-start-stop').addEventListener('click',()=>{
     if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
     $('p-avion').disabled=true;
-    if(gpsHabilitado){ gpsPoints=[]; gpsUltimoPunto=0; _wakeLockWarnMostrado=false; iniciarTrackGPS(); adquirirWakeLock(); }
+    if(gpsHabilitado){ gpsPoints=[]; gpsGaps=[]; gpsUltimoPunto=0; _wakeLockWarnMostrado=false; iniciarTrackGPS(); adquirirWakeLock(); }
     persistir();
     actualizarEstado('en-vuelo');
     pintarToggleGPS();
@@ -1665,7 +1695,7 @@ $('btn-start-stop').addEventListener('click',()=>{
 // pantalla inicial con el mismo avión ya elegido.
 function cancelarVuelo(){
   if(!confirm('¿Cancelar este vuelo? No se va a grabar nada.')) return;
-  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   liberarWakeLock();
   tsInicio=null; tsFin=null; guardadoExitoso=false;
   persistir();
@@ -1756,6 +1786,7 @@ async function guardar(){
     avion, horas, aterr, obs,
     tsInicio, tsFin,
     gpsPoints: [...gpsPoints],
+    gpsGaps: [...gpsGaps],
     creadoTs: new Date().toISOString(),
     // v4.0: si el turno se detectó/vinculó al loguearse, viaja ya resuelto —
     // escribirPendiente() lo usa directo sin tener que rematchear por ±20min.
@@ -1775,7 +1806,7 @@ async function guardar(){
 
   // El vuelo ya está seguro (encolado) — se libera la pantalla para el
   // próximo vuelo sin esperar la escritura real a Firebase.
-  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   liberarWakeLock();
   tsInicio=null; tsFin=null; guardadoExitoso=false;
   localStorage.removeItem(LS);
@@ -1882,6 +1913,7 @@ async function escribirPendiente(item){
   if(item.gpsPoints&&item.gpsPoints.length>1){
     await conTimeout(set(ref(db,`vuelo_tracks/${key}`),{
       puntos: item.gpsPoints,
+      ...(item.gpsGaps&&item.gpsGaps.length?{huecos:item.gpsGaps}:{}),
       autor: item.nombre,
       ts_guardado: new Date().toISOString()
     }));
@@ -1934,7 +1966,7 @@ setInterval(()=>intentarSincronizarPendientes(),30000);
 
 $('btn-otro-vuelo').addEventListener('click',resetVuelo);
 function resetVuelo(){
-  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   tsInicio=null;tsFin=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   renderPantalla();

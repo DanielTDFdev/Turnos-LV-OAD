@@ -2,6 +2,25 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.29 · 2026-08-21
+  Pedido de Daniel, tras un caso real (LV-OAD, Marvin Mizrahi, 21/08): un
+  corte de 18m44s en la traza GPS a pantalla nunca bloqueada — la pestaña
+  perdió el foco igual (background) y ni el watchdog corre ahí (setInterval
+  no ejecuta en hidden). El restart al volver a foreground (v5.26) ya
+  evitaba perder el vuelo entero, pero el hueco quedaba invisible: el mapa
+  dibujaba una línea recta entre el último punto antes del corte y el
+  primero después, como si esa recta fuera el vuelo real.
+  Nuevo: gpsGaps [] — se llena en el visibilitychange (hidden→visible) si el
+  tiempo oculto supera GPS_WATCHDOG_UMBRAL_MS (45s), con {desde,hasta} en
+  ISO. Espejado a localStorage (LS_GPS_HUECOS) igual que gpsPoints, restaurado
+  en init() si el vuelo seguía en curso tras un reload, reseteado en todos
+  los puntos donde se resetea gpsPoints, y viaja en el item guardado →
+  vuelo_tracks/{key}.huecos (solo si hay al menos uno). turnos.html v7.55
+  usa ese campo para dibujar el tramo del hueco distinto en el mapa y
+  partirlo en <trkseg> separados en el GPX exportado. Mismo cambio en
+  vuelo-piloto.html v4.7.
+==================================================================================
+  VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.28 · 2026-08-21
   maxNativeZoom del visor GPS sube de 15 a 18 (mismo cambio y mismo motivo que
   turnos.html v7.54 — ver ese changelog para el detalle completo). SIN
@@ -1119,10 +1138,11 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.28'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.29'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
+const LS_GPS_HUECOS = 'acrg-vuelo-v2-gps-huecos'; // v5.29: huecos detectados (ver gpsGaps)
 const LS_GPS_PREF    = 'acrg-vuelo-gps-pref';      // preferencia recordada entre vuelos (on/off)
 const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v5.14 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
 const GPS_WATCHDOG_INTERVALO_MS = 15000; // v5.27: cada cuánto chequea el watchdog
@@ -1132,6 +1152,8 @@ let gpsWatchId     = null;   // id de navigator.geolocation.watchPosition, null 
 let gpsWatchdogId  = null;   // v5.27
 let gpsUltimaLlegada = 0;    // v5.27: última vez que llegó CUALQUIER dato de GPS (referencia del watchdog, no del throttle)
 let gpsPoints      = [];     // [{lat,lng,alt,ts}] del vuelo en curso
+let gpsGaps        = [];     // v5.29: [{desde,hasta}] huecos detectados al volver de background — ver visibilitychange
+let _gpsHiddenAt   = 0;      // v5.29: Date.now() de cuándo la pestaña pasó a hidden (0 = no está oculta)
 let gpsUltimoPunto = 0;      // Date.now() del último punto guardado, para el muestreo cada 10s
 // Candado gps_tracker_activo (v5.17, ver también vuelo-piloto.html v3.0): evita
 // que instructor y alumno trackeen el mismo vuelo en simultáneo desde sus apps.
@@ -1165,6 +1187,7 @@ function init(){
       if(tsInicio&&!tsFin&&est.gpsHabilitado){
         gpsHabilitado=true;
         try{ gpsPoints=JSON.parse(localStorage.getItem(LS_GPS_PUNTOS)||'[]'); }catch{ gpsPoints=[]; }
+        try{ gpsGaps=JSON.parse(localStorage.getItem(LS_GPS_HUECOS)||'[]'); }catch{ gpsGaps=[]; }
         iniciarTrackGPS();
         // Se asume que el candado ya lo había tomado esta misma sesión antes
         // del reload (si no había turnoActual.key no se tomó nunca). No se
@@ -1408,7 +1431,7 @@ function activarTurno(turno){
   } else if(tsFin&&!guardadoExitoso){
     if(!confirm('Hay un cierre de vuelo sin guardar. ¿Descartarlo y activar este turno?')) return;
   }
-  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   turnoActual=turno;tsInicio=null;tsFin=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   mostrarPantallaVuelo(turno);
@@ -1503,7 +1526,7 @@ function crearTurnoInSitu(persona){
 }
 
 $('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
-$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];localStorage.removeItem(LS_GPS_PUNTOS);turnoActual=null;tsInicio=null;tsFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
+$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];gpsGaps=[];localStorage.removeItem(LS_GPS_PUNTOS);localStorage.removeItem(LS_GPS_HUECOS);turnoActual=null;tsInicio=null;tsFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
 $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
 $('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
 
@@ -1694,8 +1717,28 @@ function liberarWakeLock() {
 // Si la app vuelve al foco (ej: el usuario la reabre) y hay un vuelo en curso,
 // re-adquirir el wake lock automáticamente
 document.addEventListener('visibilitychange', () => {
+  // v5.29: registrar el hueco de traza GPS que deja un paso a background —
+  // pedido de Daniel tras un caso real (18 min sin puntos, pantalla nunca
+  // bloqueada — la pestaña perdió el foco igual, ej. otra app al frente).
+  // Mientras la pestaña está hidden, el watchdog (setInterval) tampoco corre,
+  // así que el hueco completo queda sin detectar hasta volver a foreground.
+  // Acá no lo evitamos (no se puede — JS no corre en hidden), pero lo
+  // registramos para que turnos.html lo marque en el mapa en vez de dibujar
+  // una línea recta como si fuera vuelo real.
+  if(document.visibilityState==='hidden'){
+    if(tsInicio && !tsFin && gpsWatchId!=null) _gpsHiddenAt=Date.now();
+    return;
+  }
   if (document.visibilityState === 'visible' && tsInicio && !tsFin) {
     adquirirWakeLock();
+    if(_gpsHiddenAt){
+      const desde=_gpsHiddenAt, hasta=Date.now();
+      if(hasta-desde>GPS_WATCHDOG_UMBRAL_MS){
+        gpsGaps.push({desde:new Date(desde).toISOString(),hasta:new Date(hasta).toISOString()});
+        try{ localStorage.setItem(LS_GPS_HUECOS,JSON.stringify(gpsGaps)); }catch(e){}
+      }
+      _gpsHiddenAt=0;
+    }
     // v5.26: además del wake lock, reinicia el watch de GPS si estaba
     // habilitado. Mismo fix que vuelo-piloto.html v4.4 — en background
     // (sobre todo iOS/WKWebView), watchPosition puede quedar "vivo" del
@@ -1734,7 +1777,7 @@ $('btn-start-stop').addEventListener('click', async ()=>{
       if(bloqueadoPorAlumno){
         toast('📍 El alumno ya está trackeando el GPS de este vuelo desde su app — no hace falta activarlo también acá.',4500);
       } else {
-        gpsPoints=[]; gpsUltimoPunto=0; _wakeLockWarnMostrado=false; iniciarTrackGPS(); adquirirWakeLock();
+        gpsPoints=[]; gpsGaps=[]; gpsUltimoPunto=0; _wakeLockWarnMostrado=false; iniciarTrackGPS(); adquirirWakeLock();
         if(turnoActual?.key){
           gpsLockTomadoPorMi=true;
           update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:'instructor',gps_tracker_ts:new Date().toISOString()}).catch(e=>console.warn('No se pudo tomar el candado GPS:',e));
@@ -1776,7 +1819,7 @@ $('btn-start-stop').addEventListener('click', async ()=>{
 // lista para tocar INICIAR de nuevo — no manda de vuelta a elegir turno.
 function cancelarVuelo(){
   if(!confirm('¿Cancelar este vuelo? No se va a grabar nada — queda todo como estaba.')) return;
-  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   liberarWakeLock();
   if(gpsLockTomadoPorMi&&turnoActual?.key){
     update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:null}).catch(e=>console.warn('No se pudo soltar el candado GPS:',e));
@@ -1879,6 +1922,7 @@ async function guardar(){
     horas, aterr, obs,
     tsInicio, tsFin,
     gpsPoints: [...gpsPoints],
+    gpsGaps: [...gpsGaps],
     creadoTs: new Date().toISOString()
   };
 
@@ -1896,7 +1940,9 @@ async function guardar(){
   // próximo turno sin esperar la escritura real a Firebase.
   localStorage.removeItem(LS);
   localStorage.removeItem(LS_GPS_PUNTOS);
+  localStorage.removeItem(LS_GPS_HUECOS);
   gpsPoints=[];
+  gpsGaps=[];
   liberarWakeLock();
   guardadoExitoso=true;
   $('v-cierre').style.display='none';
@@ -1976,6 +2022,7 @@ async function escribirPendiente(item){
     if(tieneTraza){
       await conTimeout(set(ref(db,`vuelo_tracks/${key}`),{
         puntos: item.gpsPoints,
+        ...(item.gpsGaps&&item.gpsGaps.length?{huecos:item.gpsGaps}:{}),
         autor: item.instructorNombre,
         ts_guardado: new Date().toISOString()
       }));
@@ -1995,6 +2042,7 @@ async function escribirPendiente(item){
     if(tieneTraza){
       await conTimeout(set(ref(db,`vuelo_tracks/${item.key}`),{
         puntos: item.gpsPoints,
+        ...(item.gpsGaps&&item.gpsGaps.length?{huecos:item.gpsGaps}:{}),
         autor: item.instructorNombre,
         ts_guardado: new Date().toISOString()
       }));
@@ -2049,7 +2097,7 @@ window.addEventListener('online',()=>intentarSincronizarPendientes());
 setInterval(()=>intentarSincronizarPendientes(),30000);
 
 function resetVuelo(){
-  detenerTrackGPS(); gpsPoints=[]; localStorage.removeItem(LS_GPS_PUNTOS);
+  detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   tsInicio=null;tsFin=null;turnoActual=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   $('btn-start-stop').style.display='';

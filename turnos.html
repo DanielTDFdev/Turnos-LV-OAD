@@ -1,5 +1,20 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.55
+  FECHA   : 2026-08-21
+  CAMBIOS : Pedido de Daniel, mismo caso real de vuelo.html v5.29 (18m44s sin
+            GPS con la pantalla nunca bloqueada). El mapa (abrirMapaVuelo) y
+            el GPX exportado dibujaban una línea recta atravesando el hueco
+            como si fuera el vuelo real. Ahora: nueva _segmentarPorHuecos()
+            usa vuelo_tracks/{key}.huecos para partir el track en tramos —
+            en el mapa, tramo real sólido cyan / tramo de hueco punteado rojo
+            con tooltip de duración; aviso ⚠ en la barra de info si hubo
+            algún corte. En el GPX exportado, cada tramo real es un <trkseg>
+            separado (forma estándar de GPX de marcar un corte) en vez de
+            todo en un solo <trkseg> continuo. _puntosTrazaTurnos() ahora
+            devuelve {puntos,huecos} en vez de solo el array — actualizados
+            los dos callers (GPX y KML; KML no usa huecos, track viejo sin
+            el campo simplemente no parte nada — 100% retrocompatible).
   VERSION : 7.54
   FECHA   : 2026-08-21
   CAMBIOS : maxNativeZoom del visor GPS (World_Imagery) sube de 15 a 18. El 15
@@ -2666,7 +2681,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.54</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.55</div>
   </div>
 
 </div>
@@ -9506,12 +9521,48 @@ if('serviceWorker' in navigator){
 // ── MAPA GPS DEL VUELO (alumno) ───────────────────────────
 let _mapaVueloLeaflet = null;
 
+// v7.55 — pedido de Daniel: partir el track en tramos reales + huecos (ver
+// vuelo.html v5.29 / vuelo-piloto.html v4.7, campo vuelo_tracks/{key}.huecos).
+// Sin esto el mapa dibujaba una línea recta atravesando el hueco como si
+// fuera el vuelo real. Busca, para cada hueco, el par de puntos consecutivos
+// cuyo rango de tiempo lo contiene (con margen — ver comentario abajo) y
+// corta ahí. Si no encuentra un par que calce (dato viejo/corrupto), ese
+// hueco se ignora en el dibujo — mejor no partir que partir mal.
+function _segmentarPorHuecos(puntos, huecos) {
+  if (!huecos || !huecos.length) return [{ tipo: 'real', pts: puntos }];
+  const cortes = [];
+  for (const h of huecos) {
+    const dDesde = new Date(h.desde).getTime(), dHasta = new Date(h.hasta).getTime();
+    if (!dDesde || !dHasta) continue;
+    for (let i = 0; i < puntos.length - 1; i++) {
+      const t1 = new Date(puntos[i].ts).getTime(), t2 = new Date(puntos[i+1].ts).getTime();
+      // El punto i es el último antes de ocultarse y el i+1 el primero al
+      // volver — sus timestamps encierran el hueco (con algo de margen,
+      // porque desde/hasta se registran en el evento de visibilidad, no
+      // exactamente en el instante del punto GPS más cercano).
+      if (t1 <= dDesde + 5000 && t2 >= dHasta - 5000 && t2 - t1 > 20000) { cortes.push(i); break; }
+    }
+  }
+  cortes.sort((a,b)=>a-b);
+  const segs = [];
+  let start = 0;
+  for (const idx of cortes) {
+    if (idx + 1 <= start) continue; // hueco duplicado/solapado, ignorar
+    segs.push({ tipo: 'real', pts: puntos.slice(start, idx + 1) });
+    segs.push({ tipo: 'hueco', pts: [puntos[idx], puntos[idx + 1]] });
+    start = idx + 1;
+  }
+  segs.push({ tipo: 'real', pts: puntos.slice(start) });
+  return segs.filter(s => s.pts.length > 1 || s.tipo === 'hueco');
+}
+
 window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
   const modal = document.getElementById('modal-mapa-vuelo');
   document.getElementById('mapa-vuelo-title').textContent = nombre ? `${nombre} — ${avion}` : avion;
   document.getElementById('mapa-vuelo-sub').textContent = hora ? `Turno ${hora} hs` : '';
   document.getElementById('mapa-vuelo-loading').style.display = 'flex';
   document.getElementById('mapa-vuelo-info').style.display = 'none';
+  document.getElementById('mv-huecos').style.display = 'none';
   document.getElementById('mapa-vuelo-leaflet').style.opacity = '0';
   modal.classList.add('open');
 
@@ -9534,8 +9585,19 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 18 }).addTo(_mapaVueloLeaflet);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(_mapaVueloLeaflet);
 
-    // Polilínea
-    const linea = L.polyline(coords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_mapaVueloLeaflet);
+    // Polilínea(s) — tramos reales sólidos, huecos punteados en otro color
+    const segmentos = _segmentarPorHuecos(puntos, data.huecos);
+    for (const seg of segmentos) {
+      const segCoords = seg.pts.map(p => [p.lat, p.lng]);
+      if (seg.tipo === 'hueco') {
+        const durMinHueco = Math.round((new Date(seg.pts[1].ts) - new Date(seg.pts[0].ts)) / 60000);
+        L.polyline(segCoords, { color: '#ff6b6b', weight: 2.5, opacity: 0.85, dashArray: '6,6' })
+          .bindTooltip(`⚠ Sin datos GPS — ${durMinHueco} min`)
+          .addTo(_mapaVueloLeaflet);
+      } else {
+        L.polyline(segCoords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_mapaVueloLeaflet);
+      }
+    }
 
     // Marcadores inicio / fin
     const mkIco = color => L.divIcon({
@@ -9546,7 +9608,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     L.marker(coords[0], { icon: mkIco('#22c55e') }).bindTooltip('▶ ' + fmtT(puntos[0].ts)).addTo(_mapaVueloLeaflet);
     L.marker(coords[coords.length-1], { icon: mkIco('#ef4444') }).bindTooltip('⏹ ' + fmtT(puntos[puntos.length-1].ts)).addTo(_mapaVueloLeaflet);
 
-    _mapaVueloLeaflet.fitBounds(linea.getBounds(), { padding: [40,40], maxZoom: 15 });
+    _mapaVueloLeaflet.fitBounds(L.latLngBounds(coords), { padding: [40,40], maxZoom: 15 });
 
     // Info bar
     const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
@@ -9567,6 +9629,14 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     document.getElementById('mv-dist').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
     const altMaxFt = altMax * 3.28084;
     document.getElementById('mv-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
+
+    const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
+    if (huecosReales.length) {
+      const totalMin = Math.round(huecosReales.reduce((acc,s)=>acc+(new Date(s.pts[1].ts)-new Date(s.pts[0].ts)),0)/60000);
+      document.getElementById('mv-huecos-txt').textContent =
+        huecosReales.length===1 ? `1 corte de ${totalMin} min sin GPS` : `${huecosReales.length} cortes sin GPS (${totalMin} min en total)`;
+      document.getElementById('mv-huecos').style.display = '';
+    }
 
     document.getElementById('mapa-vuelo-loading').style.display = 'none';
     document.getElementById('mapa-vuelo-leaflet').style.opacity = '1';
@@ -9593,18 +9663,28 @@ async function _puntosTrazaTurnos(key) {
   if (data.puntos.length < 300) {
     alert(`⚠ Este vuelo tiene ${data.puntos.length} puntos GPS. CloudAhoy exige mínimo 300 — es probable que rechace la importación.`);
   }
-  return data.puntos;
+  return { puntos: data.puntos, huecos: data.huecos || [] };
 }
 
 // GPX 1.1 — formato que CloudAhoy sí procesa bien (confirmado por Daniel).
 window.exportarTrazaTurnosGPX = async function(key, nombre, avion, fecha) {
   try {
-    const puntos = await _puntosTrazaTurnos(key);
-    if (!puntos) return;
+    const r = await _puntosTrazaTurnos(key);
+    if (!r) return;
+    const { puntos, huecos } = r;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const trkpts = puntos.map(p =>
-      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}">\n        <ele>${p.alt!=null?p.alt.toFixed(1):0}</ele>\n        <time>${esc(p.ts)}</time>\n      </trkpt>`
-    ).join('\n');
+    const trkpt = p =>
+      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}">\n        <ele>${p.alt!=null?p.alt.toFixed(1):0}</ele>\n        <time>${esc(p.ts)}</time>\n      </trkpt>`;
+    // v7.55 — pedido de Daniel: un hueco de traza (app en background, ver
+    // vuelo.html v5.29) se representa con un <trkseg> nuevo en vez de seguir
+    // en el mismo — es la forma estándar de GPX de marcar "acá el track se
+    // corta", y CloudAhoy/otros lectores no dibujan una línea recta cruzando
+    // el hueco. Mismo criterio de matching que _segmentarPorHuecos().
+    const segmentos = _segmentarPorHuecos(puntos, huecos);
+    const trksegs = segmentos
+      .filter(s => s.tipo === 'real' && s.pts.length)
+      .map(s => `    <trkseg>\n${s.pts.map(trkpt).join('\n')}\n    </trkseg>`)
+      .join('\n');
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Aeroclub Río Grande — turnos.html"
   xmlns="http://www.topografix.com/GPX/1/1"
@@ -9616,9 +9696,7 @@ window.exportarTrazaTurnosGPX = async function(key, nombre, avion, fecha) {
   </metadata>
   <trk>
     <name>${esc(avion + ' ' + fecha + ' ' + nombre)}</name>
-    <trkseg>
-${trkpts}
-    </trkseg>
+${trksegs}
   </trk>
 </gpx>`;
     const blob = new Blob([gpx], { type: 'application/gpx+xml' });
@@ -9638,8 +9716,9 @@ ${trkpts}
 // se probó y NO anda ni en Google Earth Web ni en CloudAhoy, se descartó (v7.29/7.30).
 window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
   try {
-    const puntos = await _puntosTrazaTurnos(key);
-    if (!puntos) return;
+    const r = await _puntosTrazaTurnos(key);
+    if (!r) return;
+    const { puntos } = r;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
     const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
@@ -9705,6 +9784,7 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
     <span>⏱ Duración: <span class="mv" id="mv-dur">—</span></span>
     <span>📏 Distancia: <span class="mv" id="mv-dist">—</span></span>
     <span>⬆ Alt. máx: <span class="mv" id="mv-alt">—</span></span>
+    <span id="mv-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mv-huecos-txt">—</span></span>
   </div>
 </div>
 
