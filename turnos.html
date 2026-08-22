@@ -1,5 +1,34 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.62
+  FECHA   : 2026-08-22
+  CAMBIOS : Pedido de Daniel: unificar la flota entre turnos.html y fpl.html
+            en una tabla real, en vez de cada archivo con su propio hardcode
+            desconectado. AVIONES pasa a leerse de Firebase /aeronaves — LA
+            MISMA tabla que ya usa fpl.html para datos de vuelo (tipo ICAO,
+            estela, equipo, vel_crucero, color de fuselaje). Se agregan dos
+            campos nuevos a esa tabla, específicos de turnos.html: `uso`
+            (antes AVIONES[].tipo: Instrucción / Particular/Inst.) y `color`
+            (franja de acento del calendario, v7.59/61). Conviven sin
+            pisarse: turnos.html no toca los campos de fpl.html y viceversa
+            (confirmado: el editor de aeronaves de fpl.html solo escribe en
+            /aeronaves_usuario, nunca en /aeronaves con overwrite completo).
+            Nueva cargarAviones(): si algún nodo de /aeronaves (sembrado
+            antes por fpl.html) no tiene uso/color, se completan con el
+            default de AVIONES_SEED y se pisan de vuelta con update()
+            (merge). Si /aeronaves está vacío del todo, se siembra —mismo
+            patrón que ya usaba fpl.html con su FLOTA local. AVIONES_SEED
+            (antes AVIONES a secas) queda como respaldo si Firebase no
+            responde. loadConfig() — punto de entrada de todo login/sesión
+            restaurada — espera _avionesPromise antes de construir cualquier
+            UI que dependa de AVIONES, así el resto del código lo sigue
+            leyendo sincrónicamente sin repetir awaits.
+            LIMITACIÓN CONOCIDA (sin resolver en este cambio): avionesParaRol()
+            sigue con 'LV-OAD' hardcodeado como el único avión de instrucción
+            para alumnos — no generaliza a "el avión marcado uso=Instrucción".
+            Hay bastante más lógica de negocio con avion==='LV-OAD' hardcodeado
+            en el resto del archivo (anticipación, aprobación automática,
+            etc.) que tampoco se tocó — ese es un cambio más grande, aparte.
   VERSION : 7.61
   FECHA   : 2026-08-22
   CAMBIOS : Pedido de Daniel: el color de la franja por avión (v7.59) estaba
@@ -2770,7 +2799,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.61</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.62</div>
   </div>
 
 </div>
@@ -4133,13 +4162,28 @@ function pintarAvisoParametros(){
 }
 
 // ── AVIONES ────────────────────────────────────────────────────
-// Definición local; en el futuro puede venir de Firebase /aviones
-// v7.61: campo `color` — usado por accColorForAvion() para la franja de acento
-// del calendario (ver .cal-block.acc-avion en el CSS). Si mañana se agrega un
-// avión nuevo, alcanza con sumarlo acá con su color: el calendario, la leyenda
-// y el resto de la UI que usa AVIONES/avionesParaRol lo levantan solos, sin
-// tocar CSS ni la lógica de render.
-const AVIONES=[
+// v7.62: pedido de Daniel — turnos.html pasa a leer la flota de la MISMA tabla
+// real que ya usa fpl.html (Firebase /aeronaves), en vez de tener su propio
+// array hardcodeado sin relación con esa tabla. fpl.html guarda ahí datos de
+// vuelo (tipo ICAO, estela, equipo, vel_crucero, color_marcas del fuselaje);
+// acá se agregan DOS campos nuevos, específicos de turnos.html: `uso`
+// (Instrucción / Particular/Inst. — lo que antes era AVIONES[].tipo) y
+// `color` (franja de acento del calendario, v7.59/v7.61). Conviven en el
+// mismo nodo sin pisarse: fpl.html no toca uso/color, turnos.html no toca
+// tipo/estela/equipo/vel_crucero/color_marcas.
+//
+// Diferencia de formato de clave a resolver: fpl.html usa la matrícula SIN
+// guión como clave de Firebase (LVOAD/LVART/LVMPH — así arrancó ese archivo
+// y no se tocó). Todo el resto de turnos.html usa el formato CON guión
+// (LV-OAD — así vienen los turnos en r.avion, los <select>, etc). dashifyMat()
+// traduce de uno a otro; internamente AVIONES sigue usando 'LV-OAD' como
+// siempre, así que ningún otro código de turnos.html se entera del cambio.
+//
+// AVIONES_SEED es el respaldo local (mismos 3 valores hardcodeados de
+// siempre) para cuando Firebase no responde, o para autosembrar /aeronaves
+// si estuviera vacío del todo — mismo patrón que ya usa fpl.html con su
+// propio FLOTA local.
+const AVIONES_SEED=[
   {key:'LV-OAD', mat:'LV-OAD', tipo:'Instrucción',       color:'var(--cyan)'},
   {key:'LV-ART', mat:'LV-ART', tipo:'Particular/Inst.',  color:'var(--amber)'},
   {key:'LV-MPH', mat:'LV-MPH', tipo:'Particular/Inst.',  color:'var(--green)'},
@@ -4147,6 +4191,57 @@ const AVIONES=[
 // Color de fallback para un avión que no está (todavía) en AVIONES — evita que
 // un turno con matrícula desconocida quede con el color de OAD por error.
 const AVION_COLOR_FALLBACK='var(--text3)';
+function dashifyMat(k){ return k.startsWith('LV-')?k:k.replace(/^LV/,'LV-'); }
+
+let AVIONES=[...AVIONES_SEED]; // arranca con el seed; cargarAviones() lo reemplaza apenas responde Firebase
+
+// v7.62: carga real desde /aeronaves. Si algún nodo existente (sembrado por
+// fpl.html) todavía no tiene uso/color, se completan acá con el default del
+// seed y se escriben de vuelta con update() (merge — no toca los campos de
+// fpl.html). Se llama una sola vez, temprano (ver el disparo más abajo), y
+// loadConfig() la espera antes de construir cualquier UI que dependa de
+// AVIONES — ver comentario en loadConfig().
+let _avionesListos=false;
+async function cargarAviones(){
+  try{
+    let data=await fbGet('aeronaves');
+    if(!data||!Object.keys(data).length){
+      console.warn('cargarAviones: /aeronaves vacío, siembro con AVIONES_SEED.');
+      data={};
+      AVIONES_SEED.forEach(a=>{ data[a.key.replace('-','')]={mat:a.key,uso:a.tipo,color:a.color}; });
+      await fbSet('aeronaves',data);
+    } else {
+      const patches={};
+      for(const k of Object.keys(data)){
+        if(!data[k]) continue;
+        const mat=data[k].mat||dashifyMat(k);
+        const seedMatch=AVIONES_SEED.find(a=>a.key===mat);
+        const falta={};
+        if(data[k].uso==null) falta.uso=seedMatch?.tipo||'Particular/Inst.';
+        if(data[k].color==null) falta.color=seedMatch?.color||AVION_COLOR_FALLBACK;
+        if(data[k].mat==null) falta.mat=mat;
+        if(Object.keys(falta).length) patches[k]=falta;
+      }
+      if(Object.keys(patches).length){
+        console.warn('cargarAviones: completando uso/color faltantes en /aeronaves para',Object.keys(patches));
+        await Promise.all(Object.entries(patches).map(([k,p])=>update(ref(db,'aeronaves/'+k),p)));
+        Object.entries(patches).forEach(([k,p])=>{data[k]={...data[k],...p};});
+      }
+    }
+    const nuevos=Object.entries(data)
+      .filter(([,v])=>v)
+      .map(([k,v])=>{const mat=v.mat||dashifyMat(k); return {key:mat, mat, tipo:v.uso||'Particular/Inst.', color:v.color||AVION_COLOR_FALLBACK};})
+      .sort((a,b)=>a.key.localeCompare(b.key));
+    AVIONES=nuevos.length?nuevos:[...AVIONES_SEED];
+  }catch(e){
+    console.warn('cargarAviones: error leyendo /aeronaves, uso AVIONES_SEED.',e);
+    AVIONES=[...AVIONES_SEED];
+  }
+  _avionesListos=true;
+  pintarLeyendaAviones();
+}
+const _avionesPromise=cargarAviones(); // dispara ya — para cuando el usuario termine de loguearse, ya está resuelto
+
 function accColorForAvion(avion){
   const a=AVIONES.find(x=>x.mat===avion||x.key===avion);
   if(!a) console.warn('accColorForAvion: avión no encontrado en AVIONES:',avion);
@@ -4154,7 +4249,7 @@ function accColorForAvion(avion){
 }
 
 // v7.61: leyenda de "sello por avión" ya no hardcodea las 3 matrículas en el HTML —
-// se arma acá a partir de AVIONES, así que un avión nuevo agregado a ese array
+// se arma acá a partir de AVIONES, así que un avión nuevo agregado a la tabla
 // aparece solo en la leyenda de las dos vistas (LISTA y SEMANA), sin tocar HTML.
 function pintarLeyendaAviones(){
   const html=AVIONES.map(a=>
@@ -4163,7 +4258,7 @@ function pintarLeyendaAviones(){
   const l=document.getElementById('cal-leyenda-aviones-lista'); if(l) l.innerHTML=html;
   const s=document.getElementById('cal-leyenda-aviones-semana'); if(s) s.innerHTML=html;
 }
-pintarLeyendaAviones();
+pintarLeyendaAviones(); // primera pintada con el seed, por si algo se renderiza antes de que responda Firebase
 
 // Devuelve los aviones que puede reservar el usuario según su rol
 function avionesParaRol(rol){
@@ -4695,6 +4790,17 @@ function sanitizarHoras(arr){
 }
 
 async function loadConfig(){
+  // v7.62: AVIONES ahora se llena de forma asincrónica (Firebase /aeronaves,
+  // ver cargarAviones()/_avionesPromise más arriba). loadConfig() es el punto
+  // de entrada que TODOS los flujos (login alumno/instructor/piloto, sesión
+  // restaurada) llaman antes de tocar cualquier UI que dependa de AVIONES
+  // (buildCalAvionTabs, buildCfgAvionTabs, initAvionSelector, avionesParaRol)
+  // — esperar acá una sola vez alcanza para que el resto del archivo pueda
+  // seguir leyendo AVIONES de forma sincrónica sin repetir el await en cada
+  // lugar. Si ya resolvió (caso normal: el fetch a /aeronaves termina mucho
+  // antes de que el usuario termine de tipear usuario/contraseña), este
+  // await no espera nada.
+  if(!_avionesListos) await _avionesPromise;
   for(const av of AVIONES){
     const s=await fbGet('config/'+av.key);
     if(s){
