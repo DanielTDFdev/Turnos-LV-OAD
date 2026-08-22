@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.32 · 2026-08-22
+  Pedido de Daniel: el botón "Cancelar" se tocaba por error y cancelaba el
+  vuelo. Ahora requiere mantenerlo presionado 4s seguidos (fill visual) antes
+  de mostrar la pregunta. Además la pregunta de confirmación dejó de usar
+  confirm() nativo — ese confirm() bloqueaba el hilo de JS mientras estaba
+  abierto, y como watchPosition depende de ese mismo hilo, el tramo de vuelo
+  durante la espera de confirmación no se grababa (o quedaba como hueco).
+  Nuevo modal propio (#cancelar-modal-overlay, HTML/CSS, no bloqueante) — el
+  GPS sigue grabando normalmente mientras el modal está en pantalla.
+
   v5.31 · 2026-08-21
   Pedido de Daniel: se había arreglado el punteado de huecos en turnos.html
   (v7.57) pero vuelo.html tiene su PROPIO visor de mapa (abrirMapa) y export
@@ -903,6 +913,33 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .btn-traza:active{background:rgba(0,200,212,.2)}
 .btn-export-gps{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;margin-left:6px;transition:all .15s}
 .btn-export-gps:active{background:rgba(240,165,0,.2)}
+
+/* ── Cancelar vuelo: long-press (v5.32, pedido de Daniel — el click directo
+   se tocaba por error y cancelaba el vuelo) ── */
+.btn-cancelar-hold{
+  position:relative;overflow:hidden;isolation:isolate;
+  border-color:rgba(239,68,68,.35);color:var(--red);opacity:.7;
+  font-size:11px;padding:10px 14px;margin-top:16px;background:transparent;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  transition:opacity .15s;
+}
+.btn-cancelar-hold.holding{opacity:1;border-color:var(--red)}
+.btn-cancelar-fill{position:absolute;left:0;top:0;bottom:0;width:0%;background:rgba(239,68,68,.28);z-index:0;pointer-events:none}
+.btn-cancelar-label{position:relative;z-index:1}
+
+.cancelar-modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1100;
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.cancelar-modal-overlay.open{display:flex}
+.cancelar-modal{
+  background:var(--bg2);border:1px solid rgba(239,68,68,.3);border-radius:14px;
+  padding:22px 20px;max-width:340px;width:100%;text-align:center;
+}
+.cancelar-modal-title{font-family:var(--disp);font-size:15px;color:var(--white);letter-spacing:.04em;margin-bottom:8px}
+.cancelar-modal-sub{font-family:var(--mono);font-size:12px;color:var(--gray);line-height:1.5;margin-bottom:18px}
+.cancelar-modal-btns{display:flex;gap:10px}
+.cancelar-modal-btns .btn{flex:1;margin:0;font-size:13px;padding:12px}
 </style>
 </head>
 <body>
@@ -1030,7 +1067,10 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
       <!-- Botón principal -->
       <button class="btn btn-cyan" id="btn-start-stop">▶ INICIAR VUELO</button>
-      <button class="btn btn-ghost" id="btn-cancelar-vuelo" style="display:none;border-color:var(--red);color:var(--red)">✕ Cancelar</button>
+      <button class="btn btn-ghost btn-cancelar-hold" id="btn-cancelar-vuelo" style="display:none">
+        <span class="btn-cancelar-fill" id="btn-cancelar-fill"></span>
+        <span class="btn-cancelar-label">✕ Mantené presionado para cancelar</span>
+      </button>
 
       <!-- Formulario cierre (oculto hasta STOP) -->
       <div id="v-cierre" style="display:none">
@@ -1153,7 +1193,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.31'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.32'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1832,8 +1872,22 @@ $('btn-start-stop').addEventListener('click', async ()=>{
 // tampoco se crea nada. Solo se descarta el estado local (tsInicio/tsFin/GPS)
 // y se vuelve a la pantalla "Listo para iniciar" con la MISMA persona/avión,
 // lista para tocar INICIAR de nuevo — no manda de vuelta a elegir turno.
+//
+// v5.32 — pedido de Daniel: el botón se tocaba por error y cancelaba el
+// vuelo. Dos cambios:
+// (1) Ya no dispara con un click: hay que mantenerlo presionado 4s seguidos
+//     (ver btn-cancelar-fill/holding más abajo) antes de que aparezca la
+//     pregunta.
+// (2) La pregunta de confirmación YA NO usa confirm() nativo. confirm() es
+//     SINCRÓNICO: bloquea todo el hilo de JS mientras está abierto, incluido
+//     el callback de watchPosition — cualquier punto GPS que llegue mientras
+//     el usuario duda queda sin procesar hasta que confirma/cancela, y como
+//     la detección de huecos mide tiempo real entre puntos (>45s), ese tramo
+//     quedaba como hueco o directamente sin grabar. Es lo que reportó Daniel.
+//     El modal de abajo es HTML/CSS puro (#cancelar-modal-overlay): no
+//     bloquea el hilo, así que el GPS sigue grabando normalmente mientras
+//     está en pantalla.
 function cancelarVuelo(){
-  if(!confirm('¿Cancelar este vuelo? No se va a grabar nada — queda todo como estaba.')) return;
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   liberarWakeLock();
   if(gpsLockTomadoPorMi&&turnoActual?.key){
@@ -1845,7 +1899,45 @@ function cancelarVuelo(){
   mostrarPantallaVuelo(turnoActual);
   toast('Vuelo cancelado — no se grabó nada');
 }
-$('btn-cancelar-vuelo').addEventListener('click',cancelarVuelo);
+
+const CANCELAR_HOLD_MS=4000;
+let cancelarHoldTimer=null;
+function iniciarHoldCancelar(e){
+  e.preventDefault();
+  if(cancelarHoldTimer) return;
+  const btn=$('btn-cancelar-vuelo'), fill=$('btn-cancelar-fill');
+  btn.classList.add('holding');
+  fill.style.transition='none';
+  fill.style.width='0%';
+  requestAnimationFrame(()=>{
+    fill.style.transition='width '+CANCELAR_HOLD_MS+'ms linear';
+    fill.style.width='100%';
+  });
+  cancelarHoldTimer=setTimeout(()=>{
+    cancelarHoldTimer=null;
+    resetHoldCancelar();
+    $('cancelar-modal-overlay').classList.add('open');
+  },CANCELAR_HOLD_MS);
+}
+function resetHoldCancelar(){
+  if(cancelarHoldTimer){clearTimeout(cancelarHoldTimer);cancelarHoldTimer=null;}
+  const btn=$('btn-cancelar-vuelo'), fill=$('btn-cancelar-fill');
+  btn.classList.remove('holding');
+  fill.style.transition='width .15s ease-out';
+  fill.style.width='0%';
+}
+const btnCancelarVuelo=$('btn-cancelar-vuelo');
+btnCancelarVuelo.addEventListener('pointerdown',iniciarHoldCancelar);
+btnCancelarVuelo.addEventListener('pointerup',resetHoldCancelar);
+btnCancelarVuelo.addEventListener('pointercancel',resetHoldCancelar);
+btnCancelarVuelo.addEventListener('pointerleave',resetHoldCancelar);
+$('btn-cancelar-modal-no').addEventListener('click',()=>{
+  $('cancelar-modal-overlay').classList.remove('open');
+});
+$('btn-cancelar-modal-si').addEventListener('click',()=>{
+  $('cancelar-modal-overlay').classList.remove('open');
+  cancelarVuelo();
+});
 
 function mostrarCierre(){
   const horas=calcHorasDecimal(tsInicio,tsFin);
@@ -2605,6 +2697,19 @@ if('serviceWorker' in navigator){
     <span>📏 Distancia: <span class="mv" id="mi-distancia">—</span></span>
     <span>⬆ Alt. máx: <span class="mv" id="mi-alt">—</span></span>
     <span id="mi-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mi-huecos-txt">—</span></span>
+  </div>
+</div>
+
+<!-- Modal confirmación cancelar vuelo (no bloqueante, no usa confirm() nativo —
+     ver comentario en cancelarVuelo() sobre por qué confirm() cortaba el GPS) -->
+<div class="cancelar-modal-overlay" id="cancelar-modal-overlay">
+  <div class="cancelar-modal">
+    <div class="cancelar-modal-title">¿Cancelar este vuelo?</div>
+    <div class="cancelar-modal-sub">No se va a grabar nada — queda todo como estaba.</div>
+    <div class="cancelar-modal-btns">
+      <button class="btn btn-ghost" id="btn-cancelar-modal-no">Volver</button>
+      <button class="btn" id="btn-cancelar-modal-si" style="background:var(--red);border-color:var(--red);color:#fff">Sí, cancelar</button>
+    </div>
   </div>
 </div>
 
