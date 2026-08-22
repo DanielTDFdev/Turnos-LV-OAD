@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.9 · 2026-08-21
+  Mismo motivo y mismo fix que vuelo.html v5.31 — visor de mapa (abrirMapa) y
+  export GPX propios, independientes de turnos.html, se habían quedado sin
+  el punteado de huecos.
+==================================================================================
+  VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
   v4.8 · 2026-08-21
   maxNativeZoom 18→17 (mismo motivo que turnos.html v7.56 — el 18 mostraba
   placeholder gris de ESRI en la zona, confirmado por Daniel con capturas).
@@ -960,7 +966,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.8';
+const APP_VERSION = '4.9';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2107,9 +2113,15 @@ window.exportarTrazaGPX = async function(key, nombre, avion, fecha) {
     const puntos = await _puntosTraza(key);
     if (!puntos) return;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const trkpts = puntos.map(p =>
-      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`
-    ).join('\n');
+    const trkpt = p =>
+      `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}"><ele>${p.alt!=null?p.alt.toFixed(1):0}</ele><time>${esc(p.ts)}</time></trkpt>`;
+    // v4.9 — mismo criterio que turnos.html v7.57: cada tramo real es un
+    // <trkseg> separado (forma estándar de GPX de marcar un corte).
+    const segmentos = _segmentarPorHuecos(puntos);
+    const trksegs = segmentos
+      .filter(s => s.tipo === 'real' && s.pts.length)
+      .map(s => `    <trkseg>\n${s.pts.map(trkpt).join('\n')}\n    </trkseg>`)
+      .join('\n');
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Aeroclub Río Grande — vuelo-piloto.html"
   xmlns="http://www.topografix.com/GPX/1/1"
@@ -2121,9 +2133,7 @@ window.exportarTrazaGPX = async function(key, nombre, avion, fecha) {
   </metadata>
   <trk>
     <name>${esc(avion + ' — ' + nombre + ' — ' + fecha)}</name>
-    <trkseg>
-${trkpts}
-    </trkseg>
+${trksegs}
   </trk>
 </gpx>`;
     const blob = new Blob([gpx], { type: 'application/gpx+xml' });
@@ -2190,6 +2200,26 @@ window.exportarTrazaKML = async function(key, nombre, avion, fecha) {
 
 // ── Visor de mapa GPS (idéntico al de vuelo.html) ────────
 let _leafletMap = null;
+
+// v4.9 — pedido de Daniel, mismo fix que turnos.html v7.57 / vuelo.html
+// v5.31: detecta un hueco de traza por el salto de tiempo entre puntos
+// consecutivos (no depende de vuelo_tracks/{key}.huecos).
+const HUECO_UMBRAL_MS = 45000; // mismo umbral que GPS_WATCHDOG_UMBRAL_MS
+function _segmentarPorHuecos(puntos) {
+  const segs = [];
+  let start = 0;
+  for (let i = 0; i < puntos.length - 1; i++) {
+    const t1 = new Date(puntos[i].ts).getTime(), t2 = new Date(puntos[i+1].ts).getTime();
+    if (t2 - t1 > HUECO_UMBRAL_MS) {
+      segs.push({ tipo: 'real', pts: puntos.slice(start, i + 1) });
+      segs.push({ tipo: 'hueco', pts: [puntos[i], puntos[i + 1]] });
+      start = i + 1;
+    }
+  }
+  segs.push({ tipo: 'real', pts: puntos.slice(start) });
+  return segs.filter(s => s.pts.length > 1 || s.tipo === 'hueco');
+}
+
 window.abrirMapa = async function(key, alumno, avion, hora) {
   const fmtTs = iso => {
     if(!iso) return '—';
@@ -2201,6 +2231,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
   $('map-modal-sub').textContent = hora ? `Vuelo ${hora} hs` : '';
   $('map-loading').style.display = 'flex';
   $('map-info-bar').style.display = 'none';
+  $('mi-huecos').style.display = 'none';
   $('map-leaflet').style.opacity = '0';
   modal.classList.add('open');
 
@@ -2232,10 +2263,19 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       maxZoom: 19, opacity: 0.7,
     }).addTo(_leafletMap);
 
-    const linea = L.polyline(coords, {
-      color: '#00c8d4', weight: 3, opacity: 0.9,
-      dashArray: null,
-    }).addTo(_leafletMap);
+    // Polilínea(s) del recorrido — tramos reales sólidos, huecos punteados
+    const segmentos = _segmentarPorHuecos(puntos);
+    for (const seg of segmentos) {
+      const segCoords = seg.pts.map(p => [p.lat, p.lng]);
+      if (seg.tipo === 'hueco') {
+        const durMinHueco = Math.round((new Date(seg.pts[1].ts) - new Date(seg.pts[0].ts)) / 60000);
+        L.polyline(segCoords, { color: '#ff6b6b', weight: 2.5, opacity: 0.85, dashArray: '6,6' })
+          .bindTooltip(`⚠ Sin datos GPS — ${durMinHueco} min`)
+          .addTo(_leafletMap);
+      } else {
+        L.polyline(segCoords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_leafletMap);
+      }
+    }
 
     const icoInicio = L.divIcon({
       html: '<div style="background:#22c55e;width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px rgba(34,197,94,.8)"></div>',
@@ -2253,7 +2293,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       .bindTooltip('⏹ Aterrizaje · ' + fmtTs(puntos[puntos.length-1].ts), { permanent: false })
       .addTo(_leafletMap);
 
-    _leafletMap.fitBounds(linea.getBounds(), { padding: [40, 40], maxZoom: 15 });
+    _leafletMap.fitBounds(L.latLngBounds(coords), { padding: [40, 40], maxZoom: 15 });
 
     const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
     const durMin = Math.round(durMs / 60000);
@@ -2268,6 +2308,16 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('mi-distancia').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
     const altMaxFt = altMax * 3.28084;
     $('mi-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
+
+    const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
+    if (huecosReales.length) {
+      const totalMin = Math.round(huecosReales.reduce((acc,s)=>acc+(new Date(s.pts[1].ts)-new Date(s.pts[0].ts)),0)/60000);
+      $('mi-huecos-txt').textContent =
+        huecosReales.length===1 ? `1 corte de ${totalMin} min sin GPS` : `${huecosReales.length} cortes sin GPS (${totalMin} min en total)`;
+      $('mi-huecos').style.display = '';
+    } else {
+      $('mi-huecos').style.display = 'none';
+    }
 
     $('map-loading').style.display = 'none';
     $('map-leaflet').style.opacity = '1';
@@ -2359,6 +2409,7 @@ if('serviceWorker' in navigator){
     <span>⏱ Duración: <span class="mv" id="mi-duracion">—</span></span>
     <span>📏 Distancia: <span class="mv" id="mi-distancia">—</span></span>
     <span>⬆ Alt. máx: <span class="mv" id="mi-alt">—</span></span>
+    <span id="mi-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mi-huecos-txt">—</span></span>
   </div>
 </div>
 
