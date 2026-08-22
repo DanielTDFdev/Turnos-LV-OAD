@@ -1,5 +1,15 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.60
+  FECHA   : 2026-08-22
+  CAMBIOS : FIX reportado por Daniel con captura: fmtHoraUTC (Log del Alumno,
+            v7.58) y fmtT (tooltip del mapa GPS) mostraban AM/PM ("02:58 p.
+            m.Z") en vez de 24hs. toLocaleTimeString('es-AR',{hour:'2-digit',
+            ...}) sin hour12:false explícito no fuerza 24hs de forma
+            confiable — vuelo.html/vuelo-piloto.html ya habían pisado este
+            mismo bug antes (ver fmtUTC/fmtLocalFull ahí, con hour12:false).
+            Acá directamente se saca el locale de la ecuación: getUTCHours/
+            getUTCMinutes/getUTCSeconds a mano, sin ambigüedad posible.
   VERSION : 7.59
   FECHA   : 2026-08-22
   CAMBIOS : Pedido de Daniel: distinguir a golpe de vista qué avión es cada
@@ -2744,7 +2754,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.59</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.60</div>
   </div>
 
 </div>
@@ -6118,9 +6128,14 @@ function fmtTsLindo(ts){
 // Alumno cuando el vuelo se cargó desde vuelo.html/vuelo-piloto.html (campos
 // ts_despegue/ts_aterrizaje, ISO string en UTC — mismo criterio de formato que ya
 // usa abrirMapaVuelo más abajo con fmtT, sin segundos acá por ser menos crítico).
+// v7.60 FIX: toLocaleTimeString('es-AR',{hour:'2-digit',...}) devolvía AM/PM
+// ("02:58 p. m.") en vez de 24hs — el locale 'es-AR' no fuerza hour12:false por
+// sí solo en todos los navegadores/versiones de Node. Se saca el locale de la
+// ecuación por completo: getUTCHours/getUTCMinutes directo, sin ambigüedad posible.
 function fmtHoraUTC(iso){
   if(!iso) return null;
-  return new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z';
+  const dt=new Date(iso);
+  return String(dt.getUTCHours()).padStart(2,'0')+':'+String(dt.getUTCMinutes()).padStart(2,'0')+'Z';
 }
 
 // Observaciones PÚBLICAS del alumno (obs / obs_cancelacion / obs_post de TODOS sus
@@ -9692,7 +9707,8 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
       html: `<div style="background:${color};width:13px;height:13px;border-radius:50%;border:2px solid white;box-shadow:0 0 6px ${color}88"></div>`,
       className: '', iconSize: [13,13], iconAnchor: [6,6],
     });
-    const fmtT = iso => iso ? new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'})+'Z' : '—';
+    // v7.60 FIX: mismo bug que fmtHoraUTC — toLocaleTimeString devolvía AM/PM.
+    const fmtT = iso => { if(!iso) return '—'; const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+':'+String(d.getUTCSeconds()).padStart(2,'0')+'Z'; };
     L.marker(coords[0], { icon: mkIco('#22c55e') }).bindTooltip('▶ ' + fmtT(puntos[0].ts)).addTo(_mapaVueloLeaflet);
     L.marker(coords[coords.length-1], { icon: mkIco('#ef4444') }).bindTooltip('⏹ ' + fmtT(puntos[puntos.length-1].ts)).addTo(_mapaVueloLeaflet);
 
