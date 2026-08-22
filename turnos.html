@@ -1,5 +1,23 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.61
+  FECHA   : 2026-08-22
+  CAMBIOS : Pedido de Daniel: el color de la franja por avión (v7.59) estaba
+            hardcodeado en accForAvion() y en 3 clases CSS fijas (acc-oad/
+            acc-art/acc-mph) — un avión nuevo el día de mañana hubiera caído
+            en cyan (OAD) por default, sin avisar. Ahora AVIONES (array local,
+            único lugar donde vive la flota) tiene un campo `color` por
+            avión; el calendario lo lee de ahí (accColorForAvion(), con
+            fallback gris + console.warn si la matrícula no está en AVIONES,
+            en vez de mentir con el color de OAD). CSS: una sola clase
+            genérica .cal-block.acc-avion (ancho/estilo del borde), el color
+            específico va inline por style desde JS. Leyenda de aviones (las
+            dos vistas) ya no hardcodea las 3 matrículas en el HTML: se arma
+            en runtime con pintarLeyendaAviones() a partir de AVIONES. Con
+            esto, agregar un avión nuevo el día de mañana es: sumar una fila
+            a AVIONES con su color — el calendario y la leyenda lo levantan
+            solos. (Sigue sin ser Firebase /aviones — ver comentario en
+            AVIONES — pero ya no hay que tocar CSS ni HTML para un avión más.)
   VERSION : 7.60
   FECHA   : 2026-08-22
   CAMBIOS : FIX reportado por Daniel con captura: fmtHoraUTC (Log del Alumno,
@@ -2640,9 +2658,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
    de estado). border-left-style se fuerza a solid siempre, incluso en estados con
    border dashed (pendiente, vencido-sin-confirmar, rango-continua) — la franja de
    avión es una identidad fija, no debe parecer punteada. */
-.cal-block.acc-oad{border-left-width:4px;border-left-style:solid;border-left-color:var(--cyan);}
-.cal-block.acc-art{border-left-width:4px;border-left-style:solid;border-left-color:var(--amber);}
-.cal-block.acc-mph{border-left-width:4px;border-left-style:solid;border-left-color:var(--green);}
+.cal-block.acc-avion{border-left-width:4px;border-left-style:solid;}
 .cal-leyenda{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10px;margin-top:.75rem;}
 .cal-leyenda-item{display:flex;align-items:center;gap:5px;color:var(--text3);}
 .cal-leyenda-dot{width:10px;height:10px;border-radius:2px;}
@@ -2754,7 +2770,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.60</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.61</div>
   </div>
 
 </div>
@@ -3049,9 +3065,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--cyan)"></div>LV-OAD</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--amber)"></div>LV-ART</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--green)"></div>LV-MPH</div>
+          <span id="cal-leyenda-aviones-lista" style="display:contents"></span>
         </div>
       </div>
     </div>
@@ -3072,9 +3086,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--cyan)"></div>LV-OAD</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--amber)"></div>LV-ART</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--green)"></div>LV-MPH</div>
+          <span id="cal-leyenda-aviones-semana" style="display:contents"></span>
         </div>
       </div>
     </div>
@@ -4122,11 +4134,36 @@ function pintarAvisoParametros(){
 
 // ── AVIONES ────────────────────────────────────────────────────
 // Definición local; en el futuro puede venir de Firebase /aviones
+// v7.61: campo `color` — usado por accColorForAvion() para la franja de acento
+// del calendario (ver .cal-block.acc-avion en el CSS). Si mañana se agrega un
+// avión nuevo, alcanza con sumarlo acá con su color: el calendario, la leyenda
+// y el resto de la UI que usa AVIONES/avionesParaRol lo levantan solos, sin
+// tocar CSS ni la lógica de render.
 const AVIONES=[
-  {key:'LV-OAD', mat:'LV-OAD', tipo:'Instrucción'},
-  {key:'LV-ART', mat:'LV-ART', tipo:'Particular/Inst.'},
-  {key:'LV-MPH', mat:'LV-MPH', tipo:'Particular/Inst.'},
+  {key:'LV-OAD', mat:'LV-OAD', tipo:'Instrucción',       color:'var(--cyan)'},
+  {key:'LV-ART', mat:'LV-ART', tipo:'Particular/Inst.',  color:'var(--amber)'},
+  {key:'LV-MPH', mat:'LV-MPH', tipo:'Particular/Inst.',  color:'var(--green)'},
 ];
+// Color de fallback para un avión que no está (todavía) en AVIONES — evita que
+// un turno con matrícula desconocida quede con el color de OAD por error.
+const AVION_COLOR_FALLBACK='var(--text3)';
+function accColorForAvion(avion){
+  const a=AVIONES.find(x=>x.mat===avion||x.key===avion);
+  if(!a) console.warn('accColorForAvion: avión no encontrado en AVIONES:',avion);
+  return a?.color||AVION_COLOR_FALLBACK;
+}
+
+// v7.61: leyenda de "sello por avión" ya no hardcodea las 3 matrículas en el HTML —
+// se arma acá a partir de AVIONES, así que un avión nuevo agregado a ese array
+// aparece solo en la leyenda de las dos vistas (LISTA y SEMANA), sin tocar HTML.
+function pintarLeyendaAviones(){
+  const html=AVIONES.map(a=>
+    `<div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid ${a.color||AVION_COLOR_FALLBACK}"></div>${a.mat}</div>`
+  ).join('');
+  const l=document.getElementById('cal-leyenda-aviones-lista'); if(l) l.innerHTML=html;
+  const s=document.getElementById('cal-leyenda-aviones-semana'); if(s) s.innerHTML=html;
+}
+pintarLeyendaAviones();
 
 // Devuelve los aviones que puede reservar el usuario según su rol
 function avionesParaRol(rol){
@@ -5633,11 +5670,7 @@ function claseVencido(r){
     :{cls:'vencido-sin-confirmar',tip:' — VENCIDO (sin confirmar: ningún instructor lo aprobó a tiempo)'};
 }
 
-// v7.59: franja de acento por avión en los cal-block (ver comentario CSS junto a
-// .cal-block.acc-oad/art/mph). Solo el mapeo matrícula → clase.
-function accForAvion(avion){
-  return avion==='LV-ART'?'acc-art':avion==='LV-MPH'?'acc-mph':'acc-oad';
-}
+// (accColorForAvion vive junto a AVIONES, más arriba — v7.61)
 
 // v6.50: sufijo del tooltip del calendario con el saldo de cuota semanal (turnos
 // restantes esa semana) del alumno dueño del turno. Solo aplica a rol alumno (no
@@ -5787,7 +5820,8 @@ async function renderTodasReservas(data){
         const aprobPil=(r.rol==='piloto')&&r.estado==='aprobado'&&tipoVueloDe(r)==='particular';
         const coincideDisp=r.estado==='pendiente'&&dispCompleta[r.fecha]?.misHoras?.has(r.hora);
         const venc=r.estado==='vencido'?claseVencido(r):null;
-        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' '+accForAvion(r.avion||'LV-OAD');
+        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
+        const accStyle='border-left-color:'+accColorForAvion(r.avion||'LV-OAD')+';';
         const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(aprobPil?' — turno de piloto (particular)':(venc?venc.tip:''));
         const tipDisp=coincideDisp?' — ✓ Coincide con tu disponibilidad':'';
         const tipQuien=r.estado==='pendiente'?tipQuienesPueden(dispCompleta,r.fecha,r.hora):'';
@@ -5800,14 +5834,14 @@ async function renderTodasReservas(data){
         // v7.53: iniciales del instructor que aprobó, para turnos de instrucción aprobados
         // (no piloto autoaprobado). Badge centrado verticalmente, pegado a la derecha.
         const inicInst=(r.estado==='aprobado'&&!aprobPil&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
-        html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}${inicInst}</div>`;
+        html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}${accStyle}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}${inicInst}</div>`;
       });
       // v7.01: turnos con rango que arrancaron en una hora anterior y siguen ocupando ESTA
       // hora (ej: rango 10:00–13:00 → acá se pinta en las filas de 11:00 y 12:00). Antes la
       // celda quedaba vacía y parecía disponible, aunque slotsTomados() ya la bloqueaba.
       enRango.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
         const avLabelC=calAvionFiltro==='todos'?`<span style="font-size:9px;opacity:.7">${r.avion||'LV-OAD'}</span><br>`:'';
-        html+=`<div class="cal-block rango-continua ${accForAvion(r.avion||'LV-OAD')}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">${avLabelC}⋯ ocupado</div>`;
+        html+=`<div class="cal-block rango-continua acc-avion" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)" style="border-left-color:${accColorForAvion(r.avion||'LV-OAD')}">${avLabelC}⋯ ocupado</div>`;
       });
       html+='</td>';
     });
@@ -5930,7 +5964,8 @@ async function renderVistaSemana(){
         const coincideDisp=r.estado==='pendiente'&&dispCompleta[ds]?.misHoras?.has(r.hora);
         // v6.16: color por ESTADO igual que vista LISTA; matricula visible en el bloque
         const venc=r.estado==='vencido'?claseVencido(r):null;
-        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' '+accForAvion(r.avion||'LV-OAD');
+        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
+        const accStyle='border-left-color:'+accColorForAvion(r.avion||'LV-OAD')+';';
         const estiloExtra=(r.estado==='cancelado'||r.estado==='vencido')?'text-decoration:line-through;':'';
         const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(aprobPil?' — turno de piloto (particular)':(venc?venc.tip:''));
         const tipDisp=coincideDisp?' — ✓ Coincide con tu disponibilidad':'';
@@ -5941,14 +5976,14 @@ async function renderVistaSemana(){
         const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — ${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno">📋</span>`:'';
         // v7.53: ver nota en renderTodasReservas — mismas iniciales del instructor que aprobó.
         const inicInst=(r.estado==='aprobado'&&!aprobPil&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
-        html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ${r.estado}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}">
+        html+=`<div class="cal-block ${colorCls}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ${r.estado}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}${accStyle}">
           ${badge}${cargadoBadge}<span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>${nombre}${inicInst}
         </div>`;
       });
       // v7.01: mismo criterio que renderTodasReservas — pintar continuación de rango en las
       // horas intermedias que ocupa un turno con horaInicio/horaFin.
       enSemana.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
-        html+=`<div class="cal-block rango-continua ${accForAvion(r.avion||'LV-OAD')}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">
+        html+=`<div class="cal-block rango-continua acc-avion" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)" style="border-left-color:${accColorForAvion(r.avion||'LV-OAD')}">
           <span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>⋯ ocupado
         </div>`;
       });
