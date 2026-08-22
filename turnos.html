@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.57
+  FECHA   : 2026-08-21
+  CAMBIOS : Pedido de Daniel: _segmentarPorHuecos() ya no depende de
+            vuelo_tracks/{key}.huecos (solo lo graban las versiones nuevas de
+            vuelo.html/vuelo-piloto.html) — ahora detecta el corte
+            directamente por el salto de tiempo entre puntos consecutivos
+            del track (>45s, HUECO_UMBRAL_MS). Más simple y funciona igual en
+            logs viejos (sin ese campo, como el caso real de Marvin) y
+            nuevos, sea cual sea la causa del corte. _puntosTrazaTurnos()
+            vuelve a devolver solo el array de puntos (ya no hace falta el
+            campo huecos aparte).
   VERSION : 7.56
   FECHA   : 2026-08-21
   CAMBIOS : maxNativeZoom del visor de mapa 18→17. El 18 (v7.54) era un
@@ -2691,7 +2702,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.56</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.57</div>
   </div>
 
 </div>
@@ -9532,35 +9543,27 @@ if('serviceWorker' in navigator){
 let _mapaVueloLeaflet = null;
 
 // v7.55 — pedido de Daniel: partir el track en tramos reales + huecos (ver
-// vuelo.html v5.29 / vuelo-piloto.html v4.7, campo vuelo_tracks/{key}.huecos).
-// Sin esto el mapa dibujaba una línea recta atravesando el hueco como si
-// fuera el vuelo real. Busca, para cada hueco, el par de puntos consecutivos
-// cuyo rango de tiempo lo contiene (con margen — ver comentario abajo) y
-// corta ahí. Si no encuentra un par que calce (dato viejo/corrupto), ese
-// hueco se ignora en el dibujo — mejor no partir que partir mal.
-function _segmentarPorHuecos(puntos, huecos) {
-  if (!huecos || !huecos.length) return [{ tipo: 'real', pts: puntos }];
-  const cortes = [];
-  for (const h of huecos) {
-    const dDesde = new Date(h.desde).getTime(), dHasta = new Date(h.hasta).getTime();
-    if (!dDesde || !dHasta) continue;
-    for (let i = 0; i < puntos.length - 1; i++) {
-      const t1 = new Date(puntos[i].ts).getTime(), t2 = new Date(puntos[i+1].ts).getTime();
-      // El punto i es el último antes de ocultarse y el i+1 el primero al
-      // volver — sus timestamps encierran el hueco (con algo de margen,
-      // porque desde/hasta se registran en el evento de visibilidad, no
-      // exactamente en el instante del punto GPS más cercano).
-      if (t1 <= dDesde + 5000 && t2 >= dHasta - 5000 && t2 - t1 > 20000) { cortes.push(i); break; }
-    }
-  }
-  cortes.sort((a,b)=>a-b);
+// vuelo.html v5.29 / vuelo-piloto.html v4.7). Sin esto el mapa dibujaba una
+// línea recta atravesando el hueco como si fuera el vuelo real.
+// v7.57 — pedido de Daniel: en vez de depender de vuelo_tracks/{key}.huecos
+// (que solo graban las versiones nuevas, y solo para el caso puntual de
+// background), detecta el corte directamente por el salto de tiempo entre
+// puntos consecutivos del track. Más simple y funciona igual en logs viejos
+// (como el de Marvin, sin ese campo) y nuevos, sea cual sea la causa del
+// corte (background, watchdog que no llegó a reiniciar a tiempo, GPS sin
+// señal, etc.) — cualquier hueco real de más de HUECO_UMBRAL_MS entre dos
+// puntos consecutivos se marca igual.
+const HUECO_UMBRAL_MS = 45000; // mismo umbral que GPS_WATCHDOG_UMBRAL_MS en vuelo.html/vuelo-piloto.html
+function _segmentarPorHuecos(puntos) {
   const segs = [];
   let start = 0;
-  for (const idx of cortes) {
-    if (idx + 1 <= start) continue; // hueco duplicado/solapado, ignorar
-    segs.push({ tipo: 'real', pts: puntos.slice(start, idx + 1) });
-    segs.push({ tipo: 'hueco', pts: [puntos[idx], puntos[idx + 1]] });
-    start = idx + 1;
+  for (let i = 0; i < puntos.length - 1; i++) {
+    const t1 = new Date(puntos[i].ts).getTime(), t2 = new Date(puntos[i+1].ts).getTime();
+    if (t2 - t1 > HUECO_UMBRAL_MS) {
+      segs.push({ tipo: 'real', pts: puntos.slice(start, i + 1) });
+      segs.push({ tipo: 'hueco', pts: [puntos[i], puntos[i + 1]] });
+      start = i + 1;
+    }
   }
   segs.push({ tipo: 'real', pts: puntos.slice(start) });
   return segs.filter(s => s.pts.length > 1 || s.tipo === 'hueco');
@@ -9596,7 +9599,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(_mapaVueloLeaflet);
 
     // Polilínea(s) — tramos reales sólidos, huecos punteados en otro color
-    const segmentos = _segmentarPorHuecos(puntos, data.huecos);
+    const segmentos = _segmentarPorHuecos(puntos);
     for (const seg of segmentos) {
       const segCoords = seg.pts.map(p => [p.lat, p.lng]);
       if (seg.tipo === 'hueco') {
@@ -9673,24 +9676,23 @@ async function _puntosTrazaTurnos(key) {
   if (data.puntos.length < 300) {
     alert(`⚠ Este vuelo tiene ${data.puntos.length} puntos GPS. CloudAhoy exige mínimo 300 — es probable que rechace la importación.`);
   }
-  return { puntos: data.puntos, huecos: data.huecos || [] };
+  return data.puntos;
 }
 
 // GPX 1.1 — formato que CloudAhoy sí procesa bien (confirmado por Daniel).
 window.exportarTrazaTurnosGPX = async function(key, nombre, avion, fecha) {
   try {
-    const r = await _puntosTrazaTurnos(key);
-    if (!r) return;
-    const { puntos, huecos } = r;
+    const puntos = await _puntosTrazaTurnos(key);
+    if (!puntos) return;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const trkpt = p =>
       `      <trkpt lat="${p.lat.toFixed(8)}" lon="${p.lng.toFixed(8)}">\n        <ele>${p.alt!=null?p.alt.toFixed(1):0}</ele>\n        <time>${esc(p.ts)}</time>\n      </trkpt>`;
-    // v7.55 — pedido de Daniel: un hueco de traza (app en background, ver
-    // vuelo.html v5.29) se representa con un <trkseg> nuevo en vez de seguir
-    // en el mismo — es la forma estándar de GPX de marcar "acá el track se
-    // corta", y CloudAhoy/otros lectores no dibujan una línea recta cruzando
-    // el hueco. Mismo criterio de matching que _segmentarPorHuecos().
-    const segmentos = _segmentarPorHuecos(puntos, huecos);
+    // v7.55/7.57 — pedido de Daniel: un hueco de traza se representa con un
+    // <trkseg> nuevo en vez de seguir en el mismo — es la forma estándar de
+    // GPX de marcar "acá el track se corta", y CloudAhoy/otros lectores no
+    // dibujan una línea recta cruzando el hueco. Mismo criterio (por salto
+    // de tiempo entre puntos) que _segmentarPorHuecos() usa para el mapa.
+    const segmentos = _segmentarPorHuecos(puntos);
     const trksegs = segmentos
       .filter(s => s.tipo === 'real' && s.pts.length)
       .map(s => `    <trkseg>\n${s.pts.map(trkpt).join('\n')}\n    </trkseg>`)
@@ -9726,9 +9728,8 @@ ${trksegs}
 // se probó y NO anda ni en Google Earth Web ni en CloudAhoy, se descartó (v7.29/7.30).
 window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
   try {
-    const r = await _puntosTrazaTurnos(key);
-    if (!r) return;
-    const { puntos } = r;
+    const puntos = await _puntosTrazaTurnos(key);
+    if (!puntos) return;
     const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const nombreDoc = `${avion} — ${nombre} — ${fecha}`;
     const coordsLinea = puntos.map(p => `${p.lng.toFixed(8)},${p.lat.toFixed(8)},${(p.alt!=null?p.alt.toFixed(1):0)}`).join(' ');
