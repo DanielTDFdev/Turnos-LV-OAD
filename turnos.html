@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.58
+  FECHA   : 2026-08-22
+  CAMBIOS : Pedido de Daniel: el Log del Alumno (tanto la pestaña pública
+            "Observaciones al Alumno" como "Log de Instructores") solo
+            mostraba el tiempo de vuelo en horas decimales, sin los horarios
+            reales de despegue/aterrizaje. Ahora, cuando el vuelo se cargó
+            desde vuelo.html/vuelo-piloto.html (campos ts_despegue/
+            ts_aterrizaje que esas apps ya escriben en la reserva), se
+            muestra una línea "🕐 HH:MMZ → HH:MMZ UTC" debajo de las horas/
+            aterrizajes. Nuevo helper fmtHoraUTC(), mismo criterio de formato
+            que ya usaba abrirMapaVuelo (fmtT) para los tooltips del mapa.
+            Vuelos sin esos campos (cargados a mano por instructor, o
+            históricos previos) simplemente no muestran la línea.
   VERSION : 7.57
   FECHA   : 2026-08-21
   CAMBIOS : Pedido de Daniel: _segmentarPorHuecos() ya no depende de
@@ -2702,7 +2715,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.57</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.58</div>
   </div>
 
 </div>
@@ -6060,6 +6073,15 @@ function fmtTsLindo(ts){
   return DIAS[dt.getDay()]+' '+dt.getDate()+' '+MESES[dt.getMonth()]+' '+dt.getFullYear()+' '+String(dt.getHours()).padStart(2,'0')+':'+String(dt.getMinutes()).padStart(2,'0');
 }
 
+// v7.58: pedido de Daniel — mostrar hora de despegue/aterrizaje UTC en el Log del
+// Alumno cuando el vuelo se cargó desde vuelo.html/vuelo-piloto.html (campos
+// ts_despegue/ts_aterrizaje, ISO string en UTC — mismo criterio de formato que ya
+// usa abrirMapaVuelo más abajo con fmtT, sin segundos acá por ser menos crítico).
+function fmtHoraUTC(iso){
+  if(!iso) return null;
+  return new Date(iso).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+'Z';
+}
+
 // Observaciones PÚBLICAS del alumno (obs / obs_cancelacion / obs_post de TODOS sus
 // turnos, no solo el que se clickeó) — misma fuente que abrirModal, reusa _reservasCache
 // (ya tiene todo /reservas en vivo vía suscribirReservas, sin pedir nada nuevo a Firebase).
@@ -6103,6 +6125,12 @@ function renderObsPublicasAlumno(){
       if(horasVal!=null){const s=document.createElement('span');s.textContent='⏱ '+Number(horasVal).toFixed(1)+' hs';datos.appendChild(s);}
       if(aterrVal!=null){const s=document.createElement('span');s.textContent='⬇ '+aterrVal+' aterrizajes';datos.appendChild(s);}
       div.appendChild(datos);
+    }
+    if(r.ts_despegue||r.ts_aterrizaje){
+      const utc=document.createElement('div');
+      utc.style.cssText='font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-bottom:.3rem';
+      utc.textContent='🕐 '+(fmtHoraUTC(r.ts_despegue)||'—')+' → '+(fmtHoraUTC(r.ts_aterrizaje)||'—')+' UTC';
+      div.appendChild(utc);
     }
     if(obsTexto){
       const cuerpo=document.createElement('div');
@@ -6341,6 +6369,12 @@ function renderNotasPrivadasAlumno(){
       if(horasVal!=null){const s=document.createElement('span');s.textContent='⏱ '+Number(horasVal).toFixed(1)+' hs';datos.appendChild(s);}
       if(aterrVal!=null){const s=document.createElement('span');s.textContent='⬇ '+aterrVal+' aterrizajes';datos.appendChild(s);}
       div.appendChild(datos);
+    }
+    if(r.ts_despegue||r.ts_aterrizaje){
+      const utc=document.createElement('div');
+      utc.style.cssText='font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-bottom:.3rem';
+      utc.textContent='🕐 '+(fmtHoraUTC(r.ts_despegue)||'—')+' → '+(fmtHoraUTC(r.ts_aterrizaje)||'—')+' UTC';
+      div.appendChild(utc);
     }
     // obs_privada (nota del instructor) se oculta en modo alumno — es privada.
     // piloto_obs NO se oculta nunca: no es "privada", es autorreporte del propio
