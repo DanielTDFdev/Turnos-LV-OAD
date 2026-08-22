@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.59
+  FECHA   : 2026-08-22
+  CAMBIOS : Pedido de Daniel: distinguir a golpe de vista qué avión es cada
+            turno en el calendario, sin tocar la codificación de colores por
+            ESTADO (pendiente/aprobado/vencido/etc, vigente desde v6.16).
+            Nueva franja sólida en el borde izquierdo (.cal-block.acc-oad/
+            acc-art/acc-mph, 4px) con los mismos colores que la matrícula
+            usaba antes de v6.15 (OAD=cyan, ART=ámbar, MPH=verde) — no pisa
+            el resto del borde/fondo, que sigue marcando el estado. Aplicado
+            en las dos vistas de calendario (LISTA y SEMANA) incluyendo los
+            bloques "rango-continua". Nuevo helper accForAvion(). Leyenda
+            actualizada en ambas vistas con las tres matrículas.
   VERSION : 7.58
   FECHA   : 2026-08-22
   CAMBIOS : Pedido de Daniel: el Log del Alumno (tanto la pestaña pública
@@ -2604,6 +2616,23 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .cal-block.oad.pendiente{background:rgba(0,200,212,.08);border-style:dashed;}
 .cal-block.art.pendiente{background:rgba(240,165,0,.08);border-style:dashed;}
 .cal-block.mph.pendiente{background:rgba(57,211,83,.08);border-style:dashed;}
+/* v7.59: pedido de Daniel — el color del bloque ya codifica el ESTADO del turno
+   (pendiente/aprobado/vencido/etc, ver .cal-block.pendiente y hnos arriba), y desde
+   v6.15 el avión ya no tiene color propio, solo la matrícula como texto chico. A
+   golpe de vista costaba distinguir OAD de ART. Se agrega un "sello" por avión que
+   no toca el color de fondo/borde general: una franja sólida en el borde izquierdo
+   (border-left, 4px), en el mismo color que YA se usaba históricamente para cada
+   avión antes de v6.15 (footer/leyenda: OAD=cyan, ART=ámbar, MPH=verde) — así
+   Daniel no tiene que aprender un código nuevo. Van DESPUÉS de las reglas de
+   estado a propósito: mismo selector de dos clases (.cal-block.XXX), así que por
+   orden de cascada esta franja gana sobre el border-left que ya puso el color de
+   estado, sin pisarle el resto del borde (arriba/derecha/abajo siguen con el color
+   de estado). border-left-style se fuerza a solid siempre, incluso en estados con
+   border dashed (pendiente, vencido-sin-confirmar, rango-continua) — la franja de
+   avión es una identidad fija, no debe parecer punteada. */
+.cal-block.acc-oad{border-left-width:4px;border-left-style:solid;border-left-color:var(--cyan);}
+.cal-block.acc-art{border-left-width:4px;border-left-style:solid;border-left-color:var(--amber);}
+.cal-block.acc-mph{border-left-width:4px;border-left-style:solid;border-left-color:var(--green);}
 .cal-leyenda{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10px;margin-top:.75rem;}
 .cal-leyenda-item{display:flex;align-items:center;gap:5px;color:var(--text3);}
 .cal-leyenda-dot{width:10px;height:10px;border-radius:2px;}
@@ -2715,7 +2744,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.58</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.59</div>
   </div>
 
 </div>
@@ -3010,6 +3039,9 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--cyan)"></div>LV-OAD</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--amber)"></div>LV-ART</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--green)"></div>LV-MPH</div>
         </div>
       </div>
     </div>
@@ -3030,6 +3062,9 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--cyan)"></div>LV-OAD</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--amber)"></div>LV-ART</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:var(--bg2);border-left:3px solid var(--green)"></div>LV-MPH</div>
         </div>
       </div>
     </div>
@@ -5588,6 +5623,12 @@ function claseVencido(r){
     :{cls:'vencido-sin-confirmar',tip:' — VENCIDO (sin confirmar: ningún instructor lo aprobó a tiempo)'};
 }
 
+// v7.59: franja de acento por avión en los cal-block (ver comentario CSS junto a
+// .cal-block.acc-oad/art/mph). Solo el mapeo matrícula → clase.
+function accForAvion(avion){
+  return avion==='LV-ART'?'acc-art':avion==='LV-MPH'?'acc-mph':'acc-oad';
+}
+
 // v6.50: sufijo del tooltip del calendario con el saldo de cuota semanal (turnos
 // restantes esa semana) del alumno dueño del turno. Solo aplica a rol alumno (no
 // pilotos, que no tienen cuota). todosLosDatos es el array/objeto completo de reservas
@@ -5736,7 +5777,7 @@ async function renderTodasReservas(data){
         const aprobPil=(r.rol==='piloto')&&r.estado==='aprobado'&&tipoVueloDe(r)==='particular';
         const coincideDisp=r.estado==='pendiente'&&dispCompleta[r.fecha]?.misHoras?.has(r.hora);
         const venc=r.estado==='vencido'?claseVencido(r):null;
-        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'');
+        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' '+accForAvion(r.avion||'LV-OAD');
         const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(aprobPil?' — turno de piloto (particular)':(venc?venc.tip:''));
         const tipDisp=coincideDisp?' — ✓ Coincide con tu disponibilidad':'';
         const tipQuien=r.estado==='pendiente'?tipQuienesPueden(dispCompleta,r.fecha,r.hora):'';
@@ -5756,7 +5797,7 @@ async function renderTodasReservas(data){
       // celda quedaba vacía y parecía disponible, aunque slotsTomados() ya la bloqueaba.
       enRango.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
         const avLabelC=calAvionFiltro==='todos'?`<span style="font-size:9px;opacity:.7">${r.avion||'LV-OAD'}</span><br>`:'';
-        html+=`<div class="cal-block rango-continua" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">${avLabelC}⋯ ocupado</div>`;
+        html+=`<div class="cal-block rango-continua ${accForAvion(r.avion||'LV-OAD')}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">${avLabelC}⋯ ocupado</div>`;
       });
       html+='</td>';
     });
@@ -5879,7 +5920,7 @@ async function renderVistaSemana(){
         const coincideDisp=r.estado==='pendiente'&&dispCompleta[ds]?.misHoras?.has(r.hora);
         // v6.16: color por ESTADO igual que vista LISTA; matricula visible en el bloque
         const venc=r.estado==='vencido'?claseVencido(r):null;
-        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'');
+        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' '+accForAvion(r.avion||'LV-OAD');
         const estiloExtra=(r.estado==='cancelado'||r.estado==='vencido')?'text-decoration:line-through;':'';
         const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(aprobPil?' — turno de piloto (particular)':(venc?venc.tip:''));
         const tipDisp=coincideDisp?' — ✓ Coincide con tu disponibilidad':'';
@@ -5897,7 +5938,7 @@ async function renderVistaSemana(){
       // v7.01: mismo criterio que renderTodasReservas — pintar continuación de rango en las
       // horas intermedias que ocupa un turno con horaInicio/horaFin.
       enSemana.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
-        html+=`<div class="cal-block rango-continua" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">
+        html+=`<div class="cal-block rango-continua ${accForAvion(r.avion||'LV-OAD')}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)">
           <span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>⋯ ocupado
         </div>`;
       });
