@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.16 · 2026-08-23
+  Mismo fix que vuelo.html v5.37 — ver ese changelog para el detalle
+  completo. El header del visor de mapa GPS (nombre/avión + "Cerrar") pasa
+  de fila normal arriba de #map-container a overlay fijo DENTRO de él,
+  mismo criterio que el botón flotante redondo y los controles +/- de
+  Leaflet (que se empujan hacia abajo con .leaflet-top{top:66px} para no
+  quedar tapados).
+
   v4.15 · 2026-08-23
   FIX real del bug de "pantalla negra en PC" — el try/catch de v4.13 lo
   estaba tapando (mostraba el mensaje de error en vez de negro), pero no
@@ -725,14 +733,26 @@ select:disabled{opacity:.55}
   padding-top:env(safe-area-inset-top,0);
 }
 .map-modal-overlay.open{display:flex}
+
+/* v4.16: pedido de Daniel — el header (nombre/avión + botón Cerrar) vivía
+   ARRIBA del mapa, como fila normal del flujo de la página — no como overlay
+   fijo. Pasa a vivir DENTRO de #map-container, position:absolute, mismo
+   criterio que el botón flotante de v4.11 y que los propios controles +/- de
+   Leaflet: queda pegado arriba del mapa, no se mueve ni desaparece pase lo
+   que pase con el resto de la pantalla. #map-leaflet .leaflet-top se empuja
+   hacia abajo (top:66px, altura aproximada de este header) para que los
+   controles +/- de Leaflet no queden tapados detrás. Mismo criterio que
+   vuelo.html v5.37 (implementación gemela).*/
 .map-modal-header{
+  position:absolute;top:0;left:0;right:0;z-index:15;
   display:flex;align-items:center;gap:12px;
   padding:14px 18px;background:var(--bg2);
-  border-bottom:1px solid rgba(0,200,212,.15);flex:none;
+  border-bottom:1px solid rgba(0,200,212,.15);
 }
 .map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
 .map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
 .btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
+#map-leaflet .leaflet-top{top:66px}
 
 /* v4.14: pedido de Daniel — el botón Cerrar de arriba del mapa quedaba fuera
    del alcance del pulgar en celular con el mapa a pantalla completa. Botón
@@ -1094,7 +1114,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.15';
+const APP_VERSION = '4.16';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2714,14 +2734,14 @@ if('serviceWorker' in navigator){
 </script>
 <!-- Modal mapa GPS -->
 <div class="map-modal-overlay" id="map-modal">
-  <div class="map-modal-header">
-    <div>
-      <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
-      <div class="map-sub" id="map-modal-sub"></div>
-    </div>
-    <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
-  </div>
   <div id="map-container">
+    <div class="map-modal-header">
+      <div>
+        <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
+        <div class="map-sub" id="map-modal-sub"></div>
+      </div>
+      <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
+    </div>
     <div class="map-loading" id="map-loading">
       <div class="spinner"></div>
       <span>Cargando traza...</span>

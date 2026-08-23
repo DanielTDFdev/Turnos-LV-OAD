@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.37 · 2026-08-23
+  Pedido de Daniel: el header del visor de mapa GPS (nombre/avión + botón
+  "Cerrar") vivía como fila normal ARRIBA de #map-container, en el flujo de
+  la página — no como overlay fijo. .map-modal-header pasa a vivir DENTRO de
+  #map-container, position:absolute (top:0, ancho completo), mismo criterio
+  que el botón flotante de v5.35 y que los propios controles +/- de Leaflet:
+  ahora queda pegado arriba del mapa, siempre visible, sin depender de nada
+  del resto de la pantalla. Se agrega #map-leaflet .leaflet-top{top:66px}
+  para que los controles +/- de Leaflet (que por defecto se ubican arriba a
+  la izquierda) no queden tapados detrás de este header. z-index 15, por
+  encima de .map-loading (10) y por debajo del botón flotante redondo (20).
+
   v5.36 · 2026-08-23
   FIX real del bug de "pantalla negra en PC" reportado por Daniel (el
   try/catch de vuelo-piloto.html v4.13 solo lo tapaba en ese archivo — acá
@@ -953,14 +965,25 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   padding-top:env(safe-area-inset-top,0);
 }
 .map-modal-overlay.open{display:flex}
+
+/* v5.37: pedido de Daniel — el header (nombre/avión + botón Cerrar) vivía
+   ARRIBA del mapa, como fila normal del flujo de la página — no como overlay
+   fijo. Pasa a vivir DENTRO de #map-container, position:absolute, mismo
+   criterio que el botón flotante de v5.35 y que los propios controles +/- de
+   Leaflet: queda pegado arriba del mapa, no se mueve ni desaparece pase lo
+   que pase con el resto de la pantalla. #map-leaflet .leaflet-top se empuja
+   hacia abajo (top:66px, altura aproximada de este header) para que los
+   controles +/- de Leaflet no queden tapados detrás. */
 .map-modal-header{
+  position:absolute;top:0;left:0;right:0;z-index:15;
   display:flex;align-items:center;gap:12px;
   padding:14px 18px;background:var(--bg2);
-  border-bottom:1px solid rgba(0,200,212,.15);flex:none;
+  border-bottom:1px solid rgba(0,200,212,.15);
 }
 .map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
 .map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
 .btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
+#map-leaflet .leaflet-top{top:66px}
 
 /* v5.35: pedido de Daniel — el botón Cerrar de arriba del mapa quedaba fuera
    del alcance del pulgar en celular con el mapa a pantalla completa. Botón
@@ -1279,7 +1302,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.36'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.37'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2871,14 +2894,14 @@ if('serviceWorker' in navigator){
 </script>
 <!-- Modal mapa GPS -->
 <div class="map-modal-overlay" id="map-modal">
-  <div class="map-modal-header">
-    <div>
-      <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
-      <div class="map-sub" id="map-modal-sub"></div>
-    </div>
-    <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
-  </div>
   <div id="map-container">
+    <div class="map-modal-header">
+      <div>
+        <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
+        <div class="map-sub" id="map-modal-sub"></div>
+      </div>
+      <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
+    </div>
     <div class="map-loading" id="map-loading">
       <div class="spinner"></div>
       <span>Cargando traza...</span>
