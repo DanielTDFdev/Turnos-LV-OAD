@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.34 · 2026-08-23
+  Pedido de Daniel: reborde sutil (1px, cyan tenue) en las celdas del
+  mini-calendario del LIBRO (v5.33) — no le gustaba el número flotando sin
+  ningún límite visual.
+
   v5.33 · 2026-08-23
   Pedido de Daniel: en el tab LIBRO, mini-calendario de mes con un puntito en
   los días que tienen vuelos suyos (mismo criterio de "míos" que ya usaba
@@ -885,9 +890,9 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .libro-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px}
 .libro-cal-dow span{text-align:center;font-family:var(--mono);font-size:10px;color:var(--gray);letter-spacing:.05em}
 .libro-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-.libro-cal-day{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--white);border-radius:8px;cursor:pointer;background:transparent}
+.libro-cal-day{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--white);border-radius:8px;cursor:pointer;background:transparent;border:1px solid rgba(0,200,212,.12)}
 .libro-cal-day:active{background:rgba(0,200,212,.1)}
-.libro-cal-day.blank{cursor:default;visibility:hidden}
+.libro-cal-day.blank{cursor:default;visibility:hidden;border:none}
 .libro-cal-day.hoy{border:1px solid rgba(0,200,212,.4)}
 .libro-cal-day.sel{background:var(--cyan);color:var(--bg);font-weight:700}
 .libro-cal-day .lcd-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--amber)}
@@ -1223,7 +1228,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.33'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.34'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)

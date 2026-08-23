@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.12 · 2026-08-23
+  Pedido de Daniel: mismo fix de reborde que vuelo.html v5.34 en las celdas
+  del mini-calendario del LIBRO.
+
   v4.11 · 2026-08-23
   Pedido de Daniel: mismo mini-calendario con puntito que vuelo.html v5.33 —
   ver ese changelog para el detalle completo. Acá el criterio de "mis
@@ -660,9 +664,9 @@ select:disabled{opacity:.55}
 .libro-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px}
 .libro-cal-dow span{text-align:center;font-family:var(--mono);font-size:10px;color:var(--gray);letter-spacing:.05em}
 .libro-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-.libro-cal-day{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--white);border-radius:8px;cursor:pointer;background:transparent}
+.libro-cal-day{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--white);border-radius:8px;cursor:pointer;background:transparent;border:1px solid rgba(0,200,212,.12)}
 .libro-cal-day:active{background:rgba(0,200,212,.1)}
-.libro-cal-day.blank{cursor:default;visibility:hidden}
+.libro-cal-day.blank{cursor:default;visibility:hidden;border:none}
 .libro-cal-day.hoy{border:1px solid rgba(0,200,212,.4)}
 .libro-cal-day.sel{background:var(--cyan);color:var(--bg);font-weight:700}
 .libro-cal-day .lcd-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--amber)}
@@ -1031,7 +1035,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.11';
+const APP_VERSION = '4.12';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
