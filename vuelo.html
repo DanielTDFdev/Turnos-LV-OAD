@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.35 · 2026-08-23
+  Dos pedidos de Daniel:
+  (1) El mini-calendario del LIBRO (v5.33) se veía "ridículamente enorme" en
+  PC — sin max-width, las celdas (aspect-ratio:1 en un grid de 7 columnas)
+  escalaban con el ancho completo del viewport de escritorio. .libro-cal
+  ahora tiene max-width:380px centrado (mismo criterio que .login-card, que
+  ya usaba ese límite para lo mismo).
+  (2) El botón "Cerrar" del visor de mapa GPS quedaba fuera del alcance del
+  pulgar en celular con el mapa a pantalla completa. Nuevo botón flotante
+  redondo (btn-map-close-float) DENTRO de #map-container (ya era
+  position:relative, se reusa para el spinner de carga) — esquina inferior
+  derecha, siempre visible sobre el mapa sin taparle la barra de info de
+  abajo (que es un hermano fuera de ese contenedor). El botón de arriba se
+  deja intacto, ahora hay dos formas de cerrar.
+
   v5.34 · 2026-08-23
   Pedido de Daniel: reborde sutil (1px, cyan tenue) en las celdas del
   mini-calendario del LIBRO (v5.33) — no le gustaba el número flotando sin
@@ -882,7 +897,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
 
 /* Mini-calendario con puntito de actividad — v5.33, pedido de Daniel */
-.libro-cal{background:var(--bg3);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:14px 12px;margin-bottom:16px}
+.libro-cal{background:var(--bg3);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:14px 12px;margin:0 auto 16px;max-width:380px}
 .libro-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .libro-cal-nav button{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--cyan);font-family:var(--mono);font-size:15px;padding:6px 14px;cursor:pointer}
 .libro-cal-nav button:active{background:rgba(0,200,212,.12)}
@@ -928,6 +943,24 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
 .map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
 .btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
+
+/* v5.35: pedido de Daniel — el botón Cerrar de arriba del mapa quedaba fuera
+   del alcance del pulgar en celular con el mapa a pantalla completa. Botón
+   flotante redondo DENTRO de #map-container (que ya es position:relative,
+   se reusa para el spinner de carga) — así queda "sobre el mapa" en la
+   esquina inferior derecha sin taparle nunca la barra de info de abajo
+   (que es un hermano fuera de este contenedor). El botón de arriba se deja
+   igual, no molesta. */
+.btn-map-close-float{
+  position:absolute;z-index:20;
+  right:14px;bottom:14px;
+  width:56px;height:56px;border-radius:50%;
+  background:var(--red);border:none;color:#fff;
+  font-family:var(--mono);font-size:22px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
+}
+.btn-map-close-float:active{transform:scale(.93)}
 
 /* Spinner de aterrizajes */
 .spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
@@ -1228,7 +1261,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.34'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.35'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2704,10 +2737,12 @@ function calcDistanciaKm(coords) {
   return total;
 }
 
-$('btn-map-close').addEventListener('click', () => {
+function cerrarModalMapa(){
   $('map-modal').classList.remove('open');
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
-});
+}
+$('btn-map-close').addEventListener('click', cerrarModalMapa);
+$('btn-map-close-float').addEventListener('click', cerrarModalMapa);
 
 // ── LOGOUT ────────────────────────────────────────────────
 $('btn-logout').addEventListener('click',()=>{
@@ -2816,6 +2851,7 @@ if('serviceWorker' in navigator){
       <span>Cargando traza...</span>
     </div>
     <div id="map-leaflet"></div>
+    <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
   </div>
   <div class="map-info-bar" id="map-info-bar" style="display:none">
     <span>📍 Puntos: <span class="mv" id="mi-puntos">—</span></span>

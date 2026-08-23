@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.14 · 2026-08-23
+  Mismos dos fixes que vuelo.html v5.35 — ver ese changelog para el detalle
+  completo: (1) .libro-cal con max-width:380px, ya no se ve enorme en PC.
+  (2) Botón flotante redondo (btn-map-close-float) sobre el visor de mapa
+  GPS, esquina inferior derecha, siempre al alcance del pulgar.
+
   v4.13 · 2026-08-23
   FIX reportado por Daniel: en PC, la app mostraba el login un instante y
   después quedaba en negro. Causa: screen-login arranca con class="screen
@@ -678,7 +684,7 @@ select:disabled{opacity:.55}
 .empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
 
 /* Mini-calendario con puntito de actividad — v4.11, pedido de Daniel */
-.libro-cal{background:var(--bg3);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:14px 12px;margin-bottom:16px}
+.libro-cal{background:var(--bg3);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:14px 12px;margin:0 auto 16px;max-width:380px}
 .libro-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .libro-cal-nav button{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--cyan);font-family:var(--mono);font-size:15px;padding:6px 14px;cursor:pointer}
 .libro-cal-nav button:active{background:rgba(0,200,212,.12)}
@@ -714,6 +720,24 @@ select:disabled{opacity:.55}
 .map-modal-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
 .map-modal-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
 .btn-map-close{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--gray);font-family:var(--mono);font-size:11px;padding:8px 12px;cursor:pointer}
+
+/* v4.14: pedido de Daniel — el botón Cerrar de arriba del mapa quedaba fuera
+   del alcance del pulgar en celular con el mapa a pantalla completa. Botón
+   flotante redondo DENTRO de #map-container (ya es position:relative, se
+   reusa para el spinner de carga) — esquina inferior derecha, siempre
+   visible sobre el mapa sin taparle la barra de info de abajo (hermano
+   fuera de este contenedor). El botón de arriba se deja igual, no molesta.
+   Mismo criterio que vuelo.html v5.35 (implementación gemela). */
+.btn-map-close-float{
+  position:absolute;z-index:20;
+  right:14px;bottom:14px;
+  width:56px;height:56px;border-radius:50%;
+  background:var(--red);border:none;color:#fff;
+  font-family:var(--mono);font-size:22px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
+}
+.btn-map-close-float:active{transform:scale(.93)}
 .spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
 .spinner-btn{width:56px;height:56px;border:none;border-radius:12px;font-size:28px;font-weight:700;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);-webkit-tap-highlight-color:transparent}
 .spinner-btn.minus{background:var(--gray2);border-radius:12px 0 0 12px}
@@ -1057,7 +1081,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.13';
+const APP_VERSION = '4.14';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2617,10 +2641,12 @@ function calcDistanciaKm(coords) {
   return total;
 }
 
-$('btn-map-close').addEventListener('click', () => {
+function cerrarModalMapa(){
   $('map-modal').classList.remove('open');
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
-});
+}
+$('btn-map-close').addEventListener('click', cerrarModalMapa);
+$('btn-map-close-float').addEventListener('click', cerrarModalMapa);
 
 // ── CHEQUEO DE VERSIÓN ────────────────────────────────────
 // Mismo mecanismo que vuelo.html/turnos.html.
@@ -2677,6 +2703,7 @@ if('serviceWorker' in navigator){
       <span>Cargando traza...</span>
     </div>
     <div id="map-leaflet"></div>
+    <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
   </div>
   <div class="map-info-bar" id="map-info-bar" style="display:none">
     <span>📍 Puntos: <span class="mv" id="mi-puntos">—</span></span>
