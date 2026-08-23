@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.15 · 2026-08-23
+  FIX real del bug de "pantalla negra en PC" — el try/catch de v4.13 lo
+  estaba tapando (mostraba el mensaje de error en vez de negro), pero no
+  arreglaba la causa. Causa confirmada con la consola que mandó Daniel:
+  ReferenceError "Cannot access '_libroCalYear' before initialization" en
+  _abrirAppInner() — temporal dead zone. Mismo tipo de bug que ya se había
+  pisado antes en este archivo con FLOTA/NOMBRE_AVION (ver comentario ahí):
+  las 4 variables del mini-calendario del LIBRO (v4.11) se declaraban con
+  `let` mucho más abajo en el archivo, pero _abrirAppInner() las usa ANTES
+  de esa línea cuando hay sesión auto-restaurada. Fix: se mueven junto a
+  FLOTA/NOMBRE_AVION, antes de init(). Mismo fix en vuelo.html v5.36
+  (implementación gemela).
+
   v4.14 · 2026-08-23
   Mismos dos fixes que vuelo.html v5.35 — ver ese changelog para el detalle
   completo: (1) .libro-cal con max-width:380px, ya no se ve enorme en PC.
@@ -1081,7 +1094,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.14';
+const APP_VERSION = '4.15';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1113,6 +1126,19 @@ let gpsUltimoPunto = 0;
 // antes de init().
 const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
 const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
+
+// v4.15 FIX: mismo tipo de bug que el de arriba (FLOTA/NOMBRE_AVION) — estas 4
+// variables del mini-calendario del LIBRO (v4.11) vivían más abajo, junto al resto
+// de ese código, pero _abrirAppInner() las usa ANTES de esa declaración cuando hay
+// sesión auto-restaurada. Con let eso es temporal dead zone → ReferenceError:
+// "Cannot access '_libroCalYear' before initialization" — exactamente el bug
+// reportado por Daniel (pantalla negra en PC, confirmado con la consola: el error
+// cortaba _abrirAppInner() a la mitad, el try/catch de v4.13 lo atajó pero no
+// arreglaba la causa real). Se mueven acá, antes de init(), mismo criterio que
+// FLOTA/NOMBRE_AVION.
+let _libroCalYear=null, _libroCalMes=null; // mes 0-indexado
+let _libroCalSel=null;                     // 'YYYY-MM-DD' del día tocado
+let _libroCalDias=new Set();               // 'YYYY-MM-DD' con al menos un vuelo mío
 
 init();
 
@@ -2250,9 +2276,7 @@ $('libro-fecha').addEventListener('change',()=>{
 // v4.11: pedido de Daniel — mismo criterio que cargarLibro (session.email,
 // con piloto_tiempo_vuelo u obs_privada_tiempo_vuelo cargado). Ver comentario
 // completo de esta feature en vuelo.html v5.33 (implementación gemela).
-let _libroCalYear=null, _libroCalMes=null; // mes 0-indexado
-let _libroCalSel=null;                     // 'YYYY-MM-DD' del día tocado
-let _libroCalDias=new Set();               // 'YYYY-MM-DD' con al menos un vuelo mío
+// (las 4 variables de estado se declaran arriba de init(), ver comentario v4.15 ahí)
 
 async function cargarLibroCalMes(){
   const cal=$('libro-cal');
