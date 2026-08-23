@@ -2,6 +2,22 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.38 · 2026-08-23
+  FIX real de v5.37: Daniel reportó que el header y el botón quedaban
+  DETRÁS del mapa (solo se veían un instante al hacer zoom). Causa: al
+  convertir .map-modal-header en overlay position:absolute dentro de
+  #map-container (v5.37), #map-leaflet seguía sin z-index propio — solo
+  position:relative, que NO alcanza para crear un contexto de apilamiento
+  aislado. Los paneles internos de Leaflet (tiles, marcadores, hasta
+  z-index:700) quedaban "sueltos": comparaban su z-index directo contra el
+  header (15) y el botón flotante (20) de afuera, sin nada que los
+  encerrara — y ganaban. El parpadeo al hacer zoom era la animación interna
+  de Leaflet cambiando opacidades por un instante, dejando ver el header
+  detrás antes de que las tiles nuevas volvieran a taparlo. Fix:
+  isolation:isolate en #map-leaflet — encierra TODO lo de Leaflet en su
+  propio contexto de apilamiento, así ningún z-index interno puede
+  "escaparse" y competir con hermanos de #map-container nunca más.
+
   v5.37 · 2026-08-23
   Pedido de Daniel: el header del visor de mapa GPS (nombre/avión + botón
   "Cerrar") vivía como fila normal ARRIBA de #map-container, en el flujo de
@@ -1012,7 +1028,14 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .spinner-val{font-family:var(--disp);font-size:36px;color:var(--white);min-width:80px;text-align:center;letter-spacing:.05em;background:var(--bg3);border-top:1px solid rgba(0,200,212,.2);border-bottom:1px solid rgba(0,200,212,.2);height:56px;display:flex;align-items:center;justify-content:center}
 .spinner-label{font-family:var(--mono);font-size:10px;color:var(--gray);text-align:center;margin-top:6px;letter-spacing:.08em}
 #map-container{flex:1;min-height:0;position:relative}
-#map-leaflet{width:100%;height:100%}
+/* v5.38 FIX: #map-leaflet tenía position:relative pero SIN z-index propio,
+   así que no formaba un contexto de apilamiento aislado — los paneles
+   internos de Leaflet (tiles, marcadores; z-index hasta 700) competían
+   DIRECTO contra el header (z-index:15) y el botón flotante (z-index:20) de
+   afuera, y ganaban: quedaban tapando el header. isolation:isolate encierra
+   todo lo de Leaflet en su propio contexto — de ahora en más nada de adentro
+   puede "escaparse" y competir con hermanos de #map-container. */
+#map-leaflet{width:100%;height:100%;isolation:isolate}
 .map-info-bar{padding:12px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:22px;flex-wrap:wrap;flex:none}
 .map-info-bar span{font-family:var(--mono);font-size:14px;color:var(--gray)}
 .map-info-bar .mv{color:var(--white);font-weight:700;font-size:15px}
@@ -1302,7 +1325,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.37'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.38'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)

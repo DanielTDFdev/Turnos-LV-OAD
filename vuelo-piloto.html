@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.17 · 2026-08-23
+  Mismo fix que vuelo.html v5.38 — ver ese changelog para el detalle
+  completo. #map-leaflet no tenía z-index propio, así que los paneles
+  internos de Leaflet (hasta z-index:700) competían directo contra el
+  header/botón de v4.16 y ganaban, tapándolos (solo se veían un instante al
+  hacer zoom). isolation:isolate en #map-leaflet encierra todo lo de
+  Leaflet en su propio contexto de apilamiento.
+
   v4.16 · 2026-08-23
   Mismo fix que vuelo.html v5.37 — ver ese changelog para el detalle
   completo. El header del visor de mapa GPS (nombre/avión + "Cerrar") pasa
@@ -779,7 +787,11 @@ select:disabled{opacity:.55}
 .spinner-val{font-family:var(--disp);font-size:36px;color:var(--white);min-width:80px;text-align:center;letter-spacing:.05em;background:var(--bg3);border-top:1px solid rgba(0,200,212,.2);border-bottom:1px solid rgba(0,200,212,.2);height:56px;display:flex;align-items:center;justify-content:center}
 .spinner-label{font-family:var(--mono);font-size:10px;color:var(--gray);text-align:center;margin-top:6px;letter-spacing:.08em}
 #map-container{flex:1;min-height:0;position:relative}
-#map-leaflet{width:100%;height:100%}
+/* v4.17 FIX: mismo fix que vuelo.html v5.38 — #map-leaflet no tenía z-index
+   propio, así que los paneles internos de Leaflet (hasta z-index:700)
+   competían directo contra el header/botón de afuera y ganaban, tapándolos.
+   isolation:isolate encierra todo lo de Leaflet en su propio contexto. */
+#map-leaflet{width:100%;height:100%;isolation:isolate}
 .map-info-bar{padding:12px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:22px;flex-wrap:wrap;flex:none}
 .map-info-bar span{font-family:var(--mono);font-size:14px;color:var(--gray)}
 .map-info-bar .mv{color:var(--white);font-weight:700;font-size:15px}
@@ -1114,7 +1126,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.16';
+const APP_VERSION = '4.17';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
