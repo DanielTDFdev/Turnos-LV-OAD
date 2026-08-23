@@ -2,6 +2,28 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.13 · 2026-08-23
+  FIX reportado por Daniel: en PC, la app mostraba el login un instante y
+  después quedaba en negro. Causa: screen-login arranca con class="screen
+  active" en el HTML estático (se ve siempre, aunque sea un instante), y si
+  hay una sesión guardada en sessionStorage (mismo storage que turnos.html —
+  ver login()/init()) abrirApp() se dispara SOLA al cargar, sin que el
+  usuario toque nada. Si algo fallaba ahí adentro (Firebase lento, un error
+  inesperado), no había ningún catch — la clase 'active' ya se le había
+  sacado a screen-login y nada la reemplazaba: pantalla vacía, que con la
+  paleta oscura de la app se ve negra, sin ningún mensaje de qué pasó.
+  Dos capas de fix: (1) abrirApp() ahora envuelve su lógica real
+  (_abrirAppInner()) en try/catch — si falla, vuelve a screen-login con un
+  mensaje visible pidiendo reintentar y, si persiste, revisar la consola
+  (F12). (2) Red de seguridad global (window.onerror/unhandledrejection):
+  si CUALQUIER error no atrapado deja la app sin ninguna pantalla activa,
+  fuerza volver al login en vez de quedar en negro — cubre rutas que no
+  haya previsto el fix puntual de (1).
+  NOTA: esto blinda contra quedar en negro y da visibilidad del error real,
+  pero no identifica la causa raíz de qué estaba fallando en el PC de
+  Daniel — para eso hace falta ver qué dice la consola del navegador la
+  próxima vez que pase.
+
   v4.12 · 2026-08-23
   Pedido de Daniel: mismo fix de reborde que vuelo.html v5.34 en las celdas
   del mini-calendario del LIBRO.
@@ -1035,7 +1057,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.12';
+const APP_VERSION = '4.13';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1069,6 +1091,28 @@ const FLOTA=['LV-OAD','LV-ART','LV-MPH'];
 const NOMBRE_AVION={'LV-OAD':'Tomahawk','LV-ART':'Archer II','LV-MPH':'Lance II'};
 
 init();
+
+// v4.13: red de seguridad — además del try/catch puntual en abrirApp(), esto
+// cubre cualquier otro camino que no haya previsto: si un error JS no
+// atrapado deja la app sin NINGUNA pantalla activa (ni login, ni app-shell,
+// ni ninguno de los modales de turno), fuerza volver al login en vez de
+// quedar en negro sin explicación. No interfiere con errores normales que
+// ya tienen su propio manejo (los try/catch existentes siguen resolviendo
+// primero); esto es solo el último resorte.
+function _hayPantallaActiva(){
+  return document.querySelector('.screen.active')
+      || $('app-shell').classList.contains('active')
+      || $('app-shell-alumno').classList.contains('active');
+}
+function _forzarLoginSiPantallaNegra(origen,detalle){
+  console.error('Error no atrapado ('+origen+'):',detalle);
+  if(!_hayPantallaActiva()){
+    $('screen-login').classList.add('active');
+    $('l-err').textContent='Ocurrió un error inesperado. Volvé a ingresar. Si persiste, avisale a Daniel con lo que dice la consola del navegador (F12).';
+  }
+}
+window.addEventListener('error',e=>_forzarLoginSiPantallaNegra('error',e.error||e.message));
+window.addEventListener('unhandledrejection',e=>_forzarLoginSiPantallaNegra('promise',e.reason));
 
 let _avionRestaurado=null; // valor guardado en localStorage, se aplica recién cuando el <select> ya tiene opciones
 let _cierreRestaurado=null; // borrador del formulario de cierre, se aplica en mostrarCierre()
@@ -1170,6 +1214,30 @@ async function login(){
 
 // ── APP SHELL ─────────────────────────────────────────────
 async function abrirApp(){
+  // v4.13: pedido de Daniel — reportó pantalla en negro en PC (login se ve un
+  // instante y desaparece, sin que nada más se muestre). Causa: screen-login
+  // arranca con class="screen active" en el HTML estático, y si hay una
+  // sesión guardada en sessionStorage (mismo storage que turnos.html —
+  // ver login() y init()) esta función se dispara SOLA al cargar la página,
+  // sin que el usuario toque nada. Hasta acá, si algo fallaba en el medio
+  // (Firebase lento/caído, un error inesperado), no había ningún catch: la
+  // clase 'active' ya se le había sacado a screen-login y nada más la
+  // reemplazaba — pantalla vacía, que con la paleta oscura de la app se ve
+  // negra. Ahora, si algo tira error acá adentro, se vuelve a screen-login
+  // con un mensaje visible en vez de quedar en negro sin explicación.
+  try{
+    await _abrirAppInner();
+  }catch(e){
+    console.error('abrirApp() falló:',e);
+    $('app-shell').classList.remove('active');
+    $('app-shell-alumno').classList.remove('active');
+    $('screen-conflicto').classList.remove('active');
+    $('screen-confirmar-turno').classList.remove('active');
+    $('screen-login').classList.add('active');
+    $('l-err').textContent='Ocurrió un error al abrir la app. Volvé a ingresar. Si persiste, avisale a Daniel con lo que dice la consola del navegador (F12).';
+  }
+}
+async function _abrirAppInner(){
   $('screen-login').classList.remove('active');
   if(session.rol==='alumno'){
     $('app-shell-alumno').classList.add('active');
