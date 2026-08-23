@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.33 · 2026-08-23
+  Pedido de Daniel: en el tab LIBRO, mini-calendario de mes con un puntito en
+  los días que tienen vuelos suyos (mismo criterio de "míos" que ya usaba
+  cargarLibro: instructor/aprobado_por = mi nombre o usuario, aprobado o
+  vencido, con tiempo de vuelo cargado). Tocar un día carga ese día en
+  libro-fecha y dispara cargarLibro(), igual que si se hubiera tipeado la
+  fecha a mano. Navegación de mes con ◀▶ (cargarLibroCalMes() por mes,
+  fetch de /reservas filtrado client-side — sin .indexOn, mismo criterio que
+  el resto del archivo). El input de fecha nativo se mantiene como estaba,
+  ahora sincronizado en los dos sentidos: tipear una fecha ahí también mueve
+  el calendario al mes correspondiente.
+
   v5.32 · 2026-08-22
   Pedido de Daniel: el botón "Cancelar" se tocaba por error y cancelaba el
   vuelo. Ahora requiere mantenerlo presionado 4s seguidos (fill visual) antes
@@ -864,6 +876,23 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .vr-val{color:var(--white)}
 .empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
 
+/* Mini-calendario con puntito de actividad — v5.33, pedido de Daniel */
+.libro-cal{background:var(--bg3);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:14px 12px;margin-bottom:16px}
+.libro-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.libro-cal-nav button{background:transparent;border:1px solid var(--gray2);border-radius:8px;color:var(--cyan);font-family:var(--mono);font-size:15px;padding:6px 14px;cursor:pointer}
+.libro-cal-nav button:active{background:rgba(0,200,212,.12)}
+.libro-cal-mes{font-family:var(--disp);font-size:13px;color:var(--white);letter-spacing:.1em;text-transform:uppercase}
+.libro-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px}
+.libro-cal-dow span{text-align:center;font-family:var(--mono);font-size:10px;color:var(--gray);letter-spacing:.05em}
+.libro-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.libro-cal-day{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--white);border-radius:8px;cursor:pointer;background:transparent}
+.libro-cal-day:active{background:rgba(0,200,212,.1)}
+.libro-cal-day.blank{cursor:default;visibility:hidden}
+.libro-cal-day.hoy{border:1px solid rgba(0,200,212,.4)}
+.libro-cal-day.sel{background:var(--cyan);color:var(--bg);font-weight:700}
+.libro-cal-day .lcd-dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--amber)}
+.libro-cal-day.sel .lcd-dot{background:var(--bg)}
+
 /* Toast */
 .toast{
   position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
@@ -1136,6 +1165,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:16px">
       Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande
     </div>
+    <div id="libro-cal" class="libro-cal"></div>
     <div id="libro-contenido"><div class="empty-libro">Seleccioná una fecha para ver tu actividad.</div></div>
   </div>
 
@@ -1193,7 +1223,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.32'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.33'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1300,6 +1330,7 @@ function abrirApp(){
   $('sh-fecha').textContent=fmtFecha(hoy());
   // Libro: fecha default = hoy
   $('libro-fecha').value=hoy();
+  { const [y,m,d]=hoy().split('-').map(Number); _libroCalYear=y; _libroCalMes=m-1; _libroCalSel=hoy(); }
   cargarTabVuelo();
 }
 
@@ -1311,7 +1342,7 @@ function cambiarATab(nombre){
 document.querySelectorAll('.tab-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
     cambiarATab(btn.dataset.tab);
-    if(btn.dataset.tab==='libro') cargarLibro();
+    if(btn.dataset.tab==='libro'){ cargarLibro(); cargarLibroCalMes(); }
     else if(btn.dataset.tab==='pendientes') cargarPendientes();
   });
 });
@@ -2357,7 +2388,96 @@ window.exportarTrazaKML = async function(key, nombre, avion, fecha) {
   }
 };
 
-$('libro-fecha').addEventListener('change',cargarLibro);
+$('libro-fecha').addEventListener('change',()=>{
+  // v5.33: si el usuario tipea/elige la fecha con el input nativo (en vez de
+  // tocar un día del mini-calendario), el calendario debe seguirla — saltar
+  // de mes si hace falta y marcar el día como seleccionado.
+  const f=$('libro-fecha').value;
+  if(!f) return;
+  const [y,m]=f.split('-').map(Number);
+  if(y!==_libroCalYear||m-1!==_libroCalMes){ _libroCalYear=y; _libroCalMes=m-1; cargarLibroCalMes(); }
+  else { _libroCalSel=f; renderLibroCal(); }
+  cargarLibro();
+});
+
+// ── MINI-CALENDARIO CON PUNTITO (tab LIBRO) ─────────────────────────
+// v5.33: pedido de Daniel — marcar con un puntito los días del mes que
+// tienen vuelos suyos (mismo criterio de "míos" que cargarLibro: instructor/
+// aprobado_por = mi nombre o usuario, estado aprobado o vencido, con tiempo
+// de vuelo cargado), para no tener que ir tanteando fecha por fecha con el
+// input nativo. Tocar un día carga ese día en libro-fecha y dispara
+// cargarLibro() como si se hubiera tipeado la fecha a mano.
+let _libroCalYear=null, _libroCalMes=null; // mes 0-indexado
+let _libroCalSel=null;                     // 'YYYY-MM-DD' del día tocado
+let _libroCalDias=new Set();               // 'YYYY-MM-DD' con al menos un vuelo mío
+
+async function cargarLibroCalMes(){
+  const cal=$('libro-cal');
+  cal.innerHTML='<div class="spinner" style="margin:20px auto"></div>';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    const p=n=>String(n).padStart(2,'0');
+    const prefijo=`${_libroCalYear}-${p(_libroCalMes+1)}-`;
+    _libroCalDias=new Set(
+      todas.filter(r=>
+        (r.fecha||'').startsWith(prefijo)&&
+        (r.instructor===session.nombre||r.aprobado_por===session.nombre||
+         r.instructor===session.user||r.aprobado_por===session.user)&&
+        (r.estado==='aprobado'||r.estado==='vencido')&&
+        !!r.obs_privada_tiempo_vuelo
+      ).map(r=>r.fecha)
+    );
+  }catch(e){
+    cal.innerHTML=`<div style="text-align:center;padding:20px;font-family:var(--mono);font-size:12px;color:var(--red)">Error cargando calendario: ${e.message}</div>`;
+    return;
+  }
+  renderLibroCal();
+}
+
+function renderLibroCal(){
+  const cal=$('libro-cal');
+  const p=n=>String(n).padStart(2,'0');
+  const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const DOW=['D','L','M','M','J','V','S'];
+  const primerDiaSemana=new Date(_libroCalYear,_libroCalMes,1).getDay(); // 0=domingo
+  const diasEnMes=new Date(_libroCalYear,_libroCalMes+1,0).getDate();
+  const hoyStr=hoy();
+
+  let grid='';
+  for(let i=0;i<primerDiaSemana;i++) grid+='<div class="libro-cal-day blank"></div>';
+  for(let d=1;d<=diasEnMes;d++){
+    const fecha=`${_libroCalYear}-${p(_libroCalMes+1)}-${p(d)}`;
+    const clases=['libro-cal-day'];
+    if(fecha===hoyStr) clases.push('hoy');
+    if(fecha===_libroCalSel) clases.push('sel');
+    const dot=_libroCalDias.has(fecha)?'<span class="lcd-dot"></span>':'';
+    grid+=`<div class="${clases.join(' ')}" onclick="seleccionarDiaLibroCal('${fecha}')">${d}${dot}</div>`;
+  }
+
+  cal.innerHTML=`
+    <div class="libro-cal-nav">
+      <button onclick="libroCalMes(-1)">◀</button>
+      <span class="libro-cal-mes">${MESES[_libroCalMes]} ${_libroCalYear}</span>
+      <button onclick="libroCalMes(1)">▶</button>
+    </div>
+    <div class="libro-cal-dow">${DOW.map(d=>`<span>${d}</span>`).join('')}</div>
+    <div class="libro-cal-grid">${grid}</div>`;
+}
+
+window.libroCalMes=function(delta){
+  _libroCalMes+=delta;
+  if(_libroCalMes<0){_libroCalMes=11;_libroCalYear--;}
+  else if(_libroCalMes>11){_libroCalMes=0;_libroCalYear++;}
+  cargarLibroCalMes();
+};
+
+window.seleccionarDiaLibroCal=function(fecha){
+  _libroCalSel=fecha;
+  $('libro-fecha').value=fecha;
+  renderLibroCal();
+  cargarLibro();
+};
 
 async function cargarLibro(){
   const fecha=$('libro-fecha').value;
@@ -2620,6 +2740,7 @@ function autoRefrescar(){
     cargarPendientes();
   } else if($('tab-libro').classList.contains('active')){
     cargarLibro();
+    cargarLibroCalMes();
   }
 }
 setInterval(autoRefrescar,60000); // cada 60s
