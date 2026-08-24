@@ -2,6 +2,51 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.22 · 2026-08-24
+  Ajuste de Daniel sobre v4.21 (recién hecho): en vez de solo MARCAR el
+  turno pisado (conflicto_detectado sin tocar estado), ahora se CANCELA de
+  verdad. Renombrada marcarConflictoAvion() → cancelarTurnoPorConflicto():
+  estado:'cancelado', cancelado_por:'Sistema (conflicto de avión)',
+  cancelado_rol:'instructor' (a propósito, no es error — ver comentario
+  largo en la función: es el único de los dos valores posibles que
+  turnosRestantesSemana() en turnos.html NO cuenta contra la cuota semanal
+  del alumno pisado, mismo bucket que usa el sistema para bajas por
+  meteorología/mantenimiento), ts_cancelacion, obs_cancelacion con texto
+  explicando el conflicto — mismos campos/convención exacta que usa
+  turnos.html para cualquier cancelación. Se conservan además los campos
+  conflicto_* (detalle forense) del intento anterior. El confirm() ahora
+  avisa explícitamente "ESE TURNO SE VA A CANCELAR automáticamente" antes
+  de proceder — el piloto sabe la consecuencia real, no solo que "hay un
+  turno reservado". La creación del turno nuevo con toda la info (inicio,
+  fin, track GPS) no necesitó cambios — ya la hacía escribirPendiente() sin
+  importar si hubo conflicto o no.
+  PENDIENTE (no incluido, ninguno de los dos cambios): (1) mostrar/resaltar
+  conflicto_detectado en el calendario de turnos.html; (2) avisar por email
+  al alumno/piloto cuyo turno se canceló — vuelo-piloto.html no tiene
+  EmailJS integrado, agregar esto sería una integración nueva, no un ajuste
+  chico.
+
+  v4.21 · 2026-08-24
+  Pedido de Daniel: antes de iniciar un vuelo, avisar si el avión elegido ya
+  tiene un turno de OTRA persona reservado justo en ese horario (antes no
+  había ningún chequeo — se podía iniciar sobre cualquier avión habilitado
+  sin importar ocupación). Nueva chequearConflictoAvion(avion): busca en
+  /reservas de hoy, mismo avión, otro email, estado pendiente/aprobado, con
+  ventana ocupada = horaInicio–horaFin si es turno "rango" o hora+1h si es
+  turno simple. Si hay conflicto, confirm() claro con el nombre del dueño
+  del turno pisado y la hora — el piloto decide si sigue igual (NO bloquea).
+  Si confirma seguir, se registra en el turno pisado (nueva
+  marcarConflictoAvion(), opción elegida por Daniel de 3 posibles: no tocar
+  el estado del turno, solo agregar conflicto_detectado/conflicto_pisado_por/
+  conflicto_pisado_email/conflicto_avion/conflicto_ts vía update() — no se
+  cancela ni edita el turno original) + entrada en /auditoria
+  (accion:'conflicto_avion'). Todo best-effort: si la escritura del
+  marcador falla por red, no le corta el vuelo al piloto.
+  PENDIENTE (no incluido en este cambio): mostrar/resaltar
+  conflicto_detectado en el calendario de turnos.html para que instructores/
+  admin lo vean de un vistazo — hoy el campo se escribe pero no se
+  visualiza en ningún lado todavía.
+
   v4.20 · 2026-08-24
   Mismo cambio que vuelo.html v5.41: íconos de las pestañas (Vuelo/Libro/
   Reporte) pasan de emoji a SVG inline minimalista (stroke=currentColor),
@@ -1178,7 +1223,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.20';
+const APP_VERSION = '4.22';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1946,13 +1991,117 @@ $('btn-logout-alumno').addEventListener('click',()=>{
   $('l-pass').value='';$('l-err').textContent='';
 });
 
+// v4.21: pedido de Daniel — antes de iniciar un vuelo, avisar si el avión
+// elegido ya tiene un turno de OTRA persona reservado justo en ese horario.
+// No bloquea (el piloto puede seguir igual, es su decisión — puede ser un
+// error de carga del otro turno, o simplemente decidir arreglarse entre
+// ellos), pero deja rastro en el turno pisado: opción 2 de las 3 que se
+// charlaron (no tocar / MARCAR sin tocar estado / auto-cancelar) — acá se
+// eligió marcar. El turno original NO se cancela ni se edita en su estado,
+// solo se le agregan campos de auditoría (conflicto_detectado, quién lo
+// pisó, cuándo) para que instructores/admin lo puedan revisar después.
+//
+// Ventana ocupada de un turno: si tiene horaInicio/horaFin (turno "rango"),
+// esa ventana tal cual. Si es un turno simple (solo `hora`), se asume 1
+// hora de bloque — mismo criterio que usa el resto del sistema para turnos
+// simples (grilla horaria de turnos.html).
+async function chequearConflictoAvion(avion){
+  try{
+    const ahora=ahoraServidor();
+    const fechaHoy=hoy();
+    const snap=await Promise.race([
+      get(ref(db,'reservas')),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),5000))
+    ]);
+    const todas=rArr(snap.val());
+    return todas.find(r=>{
+      if(r.avion!==avion) return false;
+      if(r.fecha!==fechaHoy) return false;
+      if(r.email===session.email) return false; // nunca conflicto contra uno mismo
+      if(r.estado!=='pendiente'&&r.estado!=='aprobado') return false;
+      let ini,fin;
+      if(r.horaInicio&&r.horaFin){ ini=r.horaInicio; fin=r.horaFin; }
+      else if(r.hora){
+        ini=r.hora;
+        const [hh,mm]=r.hora.split(':').map(Number);
+        fin=String((hh+1)%24).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+      } else return false;
+      const [ih,im]=ini.split(':').map(Number),[fh,fm]=fin.split(':').map(Number);
+      const iniTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),ih,im);
+      let finTs=new Date(ahora.getFullYear(),ahora.getMonth(),ahora.getDate(),fh,fm);
+      if(finTs<=iniTs) finTs=new Date(finTs.getTime()+24*3600000); // turno que cruza medianoche, edge case raro
+      return ahora>=iniTs && ahora<finTs;
+    }) || null;
+  }catch(e){
+    console.warn('No se pudo chequear conflicto de avión (se sigue sin chequeo):',e);
+    return null;
+  }
+}
+
+// v4.22: pedido de Daniel — el turno pisado pasa a CANCELARSE de verdad (no
+// solo marcarse), mismos campos/convención que usa turnos.html para
+// cualquier cancelación (cancelarTurnoAlumno/instructor, ver ese archivo):
+// estado:'cancelado', cancelado_por, cancelado_rol, ts_cancelacion,
+// obs_cancelacion. cancelado_rol:'instructor' A PROPÓSITO — no es que un
+// instructor lo haya cancelado, pero ES el valor correcto: es el único de
+// los dos posibles ('alumno'|'instructor') que turnosRestantesSemana() NO
+// cuenta contra la cuota semanal del dueño del turno pisado (mismo bucket
+// que usa el sistema para bajas por meteorología/mantenimiento — "no fue
+// decisión ni culpa del alumno"). Si acá pusiera 'alumno' (o cualquier otro
+// valor), el alumno pisado perdería un cupo de su semana sin haber hecho
+// nada. cancelado_por identifica que fue automático, no un instructor real.
+// Se conservan los campos conflicto_* (detalle forense: quién pisó, con qué
+// avión, cuándo) además de los campos estándar de cancelación.
+async function cancelarTurnoPorConflicto(conflicto,avion){
+  try{
+    const horaTxt=conflicto.horaInicio&&conflicto.horaFin?conflicto.horaInicio+'–'+conflicto.horaFin:conflicto.hora;
+    const upd={
+      estado:'cancelado',
+      cancelado_por:'Sistema (conflicto de avión)',
+      cancelado_rol:'instructor', // ver comentario arriba — a propósito, no es un error
+      ts_cancelacion:new Date().toISOString(),
+      obs_cancelacion:'Cancelado por conflicto con otro vuelo — '+session.nombre+' inició un vuelo en '+avion+' a las '+horaTxt+' hs y confirmó seguir pese al aviso de conflicto.',
+      conflicto_detectado:true,
+      conflicto_pisado_por:session.nombre,
+      conflicto_pisado_email:session.email,
+      conflicto_avion:avion,
+      conflicto_ts:new Date().toISOString()
+    };
+    await conTimeout(update(ref(db,'reservas/'+conflicto.key),upd));
+    await conTimeout(set(push(ref(db,'auditoria')),{
+      accion:'cancelacion_turno',
+      rol:'piloto',
+      resultado:'exito',
+      detalle:`Turno de ${conflicto.nombre} (${avion}, ${conflicto.fecha} ${horaTxt} hs) cancelado automáticamente por conflicto — ${session.nombre} inició un vuelo en el mismo avión y confirmó seguir pese al aviso`,
+      ts:new Date().toISOString()
+    }));
+  }catch(e){
+    // best-effort: si esto falla, no le arruinamos el vuelo al piloto por un
+    // problema de red al cancelar el turno pisado.
+    console.warn('No se pudo cancelar el turno pisado por conflicto (no bloquea el vuelo):',e);
+  }
+}
+
 // ── START / STOP ──────────────────────────────────────────
-$('btn-start-stop').addEventListener('click',()=>{
+$('btn-start-stop').addEventListener('click',async()=>{
   if(!tsInicio){
     if(!$('p-avion').value){
       pintarEstadoAvion();
       toast('⚠ Elegí el avión antes de iniciar el vuelo');
       return;
+    }
+    const avionElegido=$('p-avion').value;
+    const conflicto=await chequearConflictoAvion(avionElegido);
+    if(conflicto){
+      const horaTxt=conflicto.horaInicio&&conflicto.horaFin?conflicto.horaInicio+'–'+conflicto.horaFin:conflicto.hora;
+      const seguirIgual=confirm(
+        '⚠ CONFLICTO DE AVIÓN\n\n'+
+        avionElegido+' ya tiene un turno reservado hoy a las '+horaTxt+' hs, a nombre de '+conflicto.nombre+'.\n\n'+
+        'Si iniciás igual, ESE TURNO SE VA A CANCELAR automáticamente.\n\n'+
+        '¿Iniciar el vuelo igual?'
+      );
+      if(!seguirIgual) return;
+      await cancelarTurnoPorConflicto(conflicto,avionElegido);
     }
     if(!confirm('¿Iniciar el vuelo ahora?')) return;
     tsInicio=new Date().toISOString();
