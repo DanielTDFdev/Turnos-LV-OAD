@@ -2,7 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
-  v5.38 · 2026-08-23
+  v5.39 · 2026-08-24
+  Pedido de Daniel: unificar el look de los links "Plan de Vuelo" y "Peso y
+  Balance" con el de turnos.html. Antes eran pills sólidas (fondo ámbar/verde,
+  texto oscuro). Ahora usan .avnc-panel/.avnc-btn: panel oscuro con gradiente,
+  texto de dos líneas con glow de color (ámbar/verde) — misma clase que ya
+  usa turnos.html.
+
   FIX real de v5.37: Daniel reportó que el header y el botón quedaban
   DETRÁS del mapa (solo se veían un instante al hacer zoom). Causa: al
   convertir .map-modal-header en overlay position:absolute dentro de
@@ -817,11 +823,12 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
    adaptado a este layout mobile-first: fila propia entre top-bar y tab-bar, mitad y
    mitad (flex:1 c/u) en vez del layout de escritorio con espacio libre alrededor. */
 .links-row{display:flex;gap:8px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;}
-.fpl-link,.wb-link{flex:1;text-align:center;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;color:#0a0a0a;border-radius:8px;padding:9px 6px;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:5px;text-transform:uppercase;white-space:nowrap;}
-.fpl-link{background:var(--amber);border:1px solid var(--amber);}
-.fpl-link:active{background:#ffc840}
-.wb-link{background:var(--green);border:1px solid var(--green);}
-.wb-link:active{filter:brightness(1.12)}
+.avnc-panel{display:flex;gap:6px;background:#050505;padding:8px;border-radius:6px;box-shadow:inset 0 2px 6px rgba(0,0,0,.8);flex-wrap:wrap;width:100%;}
+.avnc-btn{flex:1;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.03em;text-decoration:none;transition:all .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-width:78px;padding:12px 10px;border-radius:3px;text-transform:uppercase;line-height:1.35;background:linear-gradient(180deg,#1c1c1c 0%,#0d0d0d 60%,#000 100%);border:1px solid #000;border-top:1px solid #3a3a3a;box-shadow:0 2px 0 #000,inset 0 1px 1px rgba(255,255,255,.06);}
+.avnc-btn:active{transform:translateY(1px);box-shadow:0 1px 0 #000,inset 0 1px 1px rgba(255,255,255,.06);}
+.avnc-sub{font-size:9px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;}
+.fpl-link,.fpl-link .avnc-sub{color:#ffb020;text-shadow:0 0 8px rgba(255,176,32,.9);}
+.wb-link,.wb-link .avnc-sub{color:#5be888;text-shadow:0 0 8px rgba(91,232,136,.9);}
 
 /* Tab content */
 .tab-content{display:none;flex:1;overflow-y:auto;padding:20px}
@@ -1124,8 +1131,10 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
   <!-- Links a otras apps del Aeroclub (v5.18) -->
   <div class="links-row">
-    <a href="fpl.html?volver=vuelo.html" class="fpl-link">✈ Plan de Vuelo</a>
-    <a href="peso-balance.html?volver=vuelo.html" class="wb-link">⚖ Peso y Balance</a>
+    <span class="avnc-panel">
+    <a href="fpl.html?volver=vuelo.html" class="avnc-btn fpl-link"><span>PLAN DE</span><span class="avnc-sub">vuelo</span></a>
+    <a href="peso-balance.html?volver=vuelo.html" class="avnc-btn wb-link"><span>PESO Y</span><span class="avnc-sub">balance</span></a>
+    </span>
   </div>
 
   <!-- Tab bar -->
@@ -1325,7 +1334,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.38'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.39'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
