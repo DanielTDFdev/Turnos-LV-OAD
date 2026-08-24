@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.23 · 2026-08-24
+  Mismos dos pedidos que vuelo.html v5.42 — ver ese changelog para el
+  detalle completo. (1) max-width:640px + margin:0 auto en .screen,
+  #app-shell Y #app-shell-alumno (acá hay 3 contenedores de pantalla
+  completa, no 2 — el modo alumno de tracking GPS tiene su propio shell
+  separado). (2) Ícono de usuario junto a Salir: piloto_icon.png en
+  #app-shell (piloto), alumno_icon.png en #app-shell-alumno (modo alumno)
+  — ya existía ese tercer ícono en repo_fotos/ sin usar en ningún lado, con
+  nombre pensado justo para esto. Daniel solo pidió piloto_icon.png para
+  "la app vuelo-piloto" sin mencionar el modo alumno explícitamente — se
+  interpretó que correspondía usar alumno_icon.png ahí, dado que existe con
+  ese propósito específico y sería raro mostrar el avatar de piloto en la
+  pantalla de un alumno. Avisado en la respuesta, no es un pedido explícito
+  de Daniel.
+
   v4.22 · 2026-08-24
   Ajuste de Daniel sobre v4.21 (recién hecho): en vez de solo MARCAR el
   turno pisado (conflicto_detectado sin tocar estado), ahora se CANCELA de
@@ -625,13 +640,21 @@
 html,body{height:100%;overscroll-behavior:none;touch-action:manipulation}
 body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 
-.screen{display:none;min-height:100dvh;flex-direction:column;padding:20px}
+.screen{display:none;min-height:100dvh;flex-direction:column;padding:20px;max-width:640px;margin:0 auto;width:100%;box-sizing:border-box}
 .screen.active{display:flex}
 
-#app-shell{display:none;flex-direction:column;min-height:100dvh}
+/* v4.23: pedido de Daniel — en PC/Mac (ventana ancha) la app se veía
+   estirada de punta a punta, sin ningún límite. max-width + margin:0 auto
+   centra en pantallas anchas sin afectar mobile (no hace nada cuando el
+   viewport ya es más angosto que el límite). Reborde sutil a los costados
+   para que se lea como columna contenida. Mismo criterio en los 3
+   contenedores de pantalla completa (screen, app-shell, app-shell-alumno).
+   El visor de mapa GPS (.map-modal-overlay) queda afuera a propósito — un
+   mapa se beneficia de más espacio. */
+#app-shell{display:none;flex-direction:column;min-height:100dvh;max-width:640px;margin:0 auto;width:100%;box-sizing:border-box;border-left:1px solid rgba(0,200,212,.12);border-right:1px solid rgba(0,200,212,.12)}
 #app-shell.active{display:flex}
 
-#app-shell-alumno{display:none;flex-direction:column;min-height:100dvh}
+#app-shell-alumno{display:none;flex-direction:column;min-height:100dvh;max-width:640px;margin:0 auto;width:100%;box-sizing:border-box;border-left:1px solid rgba(0,200,212,.12);border-right:1px solid rgba(0,200,212,.12)}
 #app-shell-alumno.active{display:flex}
 
 .top-bar{
@@ -645,6 +668,14 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 .top-bar .inst-info .sub{font-family:var(--mono);font-size:12px;color:var(--gray);margin-top:2px}
 .ver{font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.06em;opacity:.75}
 .top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+/* v4.23: ícono de usuario a la izquierda del botón Salir (piloto_icon.png /
+   alumno_icon.png, repo_fotos/ — ya servido en producción, mismo criterio
+   que flota.html). Circular, tamaño en sintonía con .btn-sm (~padding 8px +
+   texto 12px ≈ 32px de alto). object-fit:cover porque el PNG fuente es
+   cuadrado 1254×1254 con la ilustración ya centrada — el recorte circular
+   cae natural sobre la cara sin desencuadrar. */
+.top-actions-row{display:flex;align-items:center;gap:8px}
+.user-icon{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,200,212,.35);flex:none}
 .btn-sm{
   background:transparent;border:1px solid var(--gray2);border-radius:8px;
   color:var(--gray);font-family:var(--mono);font-size:12px;padding:8px 12px;
@@ -963,7 +994,10 @@ select:disabled{opacity:.55}
       <div class="sub" id="sh-fecha">—</div>
     </div>
     <div class="top-actions">
-      <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+      <div class="top-actions-row">
+        <img src="repo_fotos/piloto_icon.png" alt="" class="user-icon">
+        <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+      </div>
       <div class="ver" id="app-ver">—</div>
     </div>
   </div>
@@ -1129,7 +1163,10 @@ select:disabled{opacity:.55}
       <div class="sub" id="sha-fecha">—</div>
     </div>
     <div class="top-actions">
-      <button class="btn-sm" id="btn-logout-alumno">⏻ Salir</button>
+      <div class="top-actions-row">
+        <img src="repo_fotos/alumno_icon.png" alt="" class="user-icon">
+        <button class="btn-sm" id="btn-logout-alumno">⏻ Salir</button>
+      </div>
       <div class="ver" id="app-ver-alumno">—</div>
     </div>
   </div>
@@ -1223,7 +1260,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.22';
+const APP_VERSION = '4.23';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────

@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.42 · 2026-08-24
+  Dos pedidos de Daniel:
+  (1) En PC/Mac (ventana ancha) la app se veía estirada de punta a punta,
+  sin ningún límite. #app-shell y .screen ahora tienen max-width:640px +
+  margin:0 auto — no afecta mobile (max-width no hace nada si el viewport ya
+  es más angosto), centra en desktop, con reborde sutil a los costados para
+  que se lea como columna contenida. El visor de mapa GPS
+  (.map-modal-overlay) queda afuera a propósito — un mapa se beneficia de
+  más espacio, no lo estira artificialmente.
+  (2) Ícono de usuario (repo_fotos/instructor_icon.png — carpeta ya servida
+  en producción, mismo criterio que flota.html) a la izquierda del botón
+  Salir. Circular 32px, en sintonía con el alto de .btn-sm, object-fit:cover
+  (el PNG fuente es cuadrado 1254×1254 con la ilustración ya centrada, el
+  recorte circular cae natural sobre la cara).
+
   v5.41 · 2026-08-24
   Pedido de Daniel: los íconos de las 4 pestañas (Vuelo/Pendientes/Libro/
   Reporte) tenían estilo inconsistente — ✈ (glifo de texto, monocromo) vs
@@ -791,11 +806,20 @@ html,body{height:100%;overscroll-behavior:none;touch-action:manipulation}
 body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 
 /* ── Screens ── */
-.screen{display:none;min-height:100dvh;flex-direction:column;padding:20px}
+.screen{display:none;min-height:100dvh;flex-direction:column;padding:20px;max-width:640px;margin:0 auto;width:100%;box-sizing:border-box}
 .screen.active{display:flex}
 
 /* ── App shell con tabs ── */
-#app-shell{display:none;flex-direction:column;min-height:100dvh}
+/* v5.42: pedido de Daniel — en PC/Mac (ventana ancha) la app se veía
+   estirada de punta a punta de la pantalla, sin ningún límite. Mismo
+   criterio que .screen arriba: max-width + margin:0 auto centra el shell
+   en pantallas anchas sin afectar nada en mobile (max-width no hace nada
+   cuando el viewport ya es más angosto que el límite). Reborde sutil a los
+   costados para que se lea como una "columna" contenida, no contenido
+   flotando sin límite visual sobre el fondo. El visor de mapa GPS
+   (.map-modal-overlay) queda AFUERA de este límite a propósito — un mapa
+   se beneficia de más espacio, no lo estira artificialmente. */
+#app-shell{display:none;flex-direction:column;min-height:100dvh;max-width:640px;margin:0 auto;width:100%;box-sizing:border-box;border-left:1px solid rgba(0,200,212,.12);border-right:1px solid rgba(0,200,212,.12)}
 #app-shell.active{display:flex}
 
 .top-bar{
@@ -813,6 +837,12 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 }
 .ver{font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.06em;opacity:.75}
 .top-actions{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+/* v5.42: ícono de usuario a la izquierda del botón Salir (instructor_icon.png,
+   repo_fotos/ — ya servido en producción, mismo criterio que flota.html).
+   Circular, tamaño en sintonía con .btn-sm. object-fit:cover porque el PNG
+   fuente es cuadrado 1254×1254 con la ilustración ya centrada. */
+.top-actions-row{display:flex;align-items:center;gap:8px}
+.user-icon{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,200,212,.35);flex:none}
 .btn-sm{
   background:transparent;border:1px solid var(--gray2);border-radius:8px;
   color:var(--gray);font-family:var(--mono);font-size:12px;padding:8px 12px;
@@ -1148,7 +1178,10 @@ textarea{resize:none;min-height:80px;line-height:1.5}
       <div class="sub" id="sh-fecha">—</div>
     </div>
     <div class="top-actions">
-      <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+      <div class="top-actions-row">
+        <img src="repo_fotos/instructor_icon.png" alt="" class="user-icon">
+        <button class="btn-sm" id="btn-logout">⏻ Salir</button>
+      </div>
       <div class="ver" id="app-ver">—</div>
     </div>
   </div>
@@ -1380,7 +1413,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.41'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.42'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
