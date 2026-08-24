@@ -2,7 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
-  v5.39 · 2026-08-24
+  v5.40 · 2026-08-24
+  Pedido de Daniel: nueva pestaña "Reporte" con rango de fechas (desde/hasta).
+  Mismo criterio de "mis vuelos" que el Libro (instructor/aprobado_por,
+  estado aprobado/vencido, obs_privada_tiempo_vuelo cargado) pero sobre un
+  rango en vez de un día. Tabla: Fecha/Matrícula/Hora desde/Hora hasta/
+  Tiempo/Aterrizajes + fila de totales. Botón "Descargar Excel" (SheetJS,
+  cdnjs) genera un .xlsx real con las mismas columnas + fila TOTAL.
+
   Pedido de Daniel: unificar el look de los links "Plan de Vuelo" y "Peso y
   Balance" con el de turnos.html. Antes eran pills sólidas (fondo ámbar/verde,
   texto oscuro). Ahora usan .avnc-panel/.avnc-btn: panel oscuro con gradiente,
@@ -752,6 +759,7 @@
 <title>Vuelo · ACRG</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
 
@@ -949,6 +957,14 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .vr-val{color:var(--white)}
 .empty-libro{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:14px;color:var(--gray);line-height:1.9}
 
+/* v5.39: tabla del reporte de horas */
+.rep-table-wrap{overflow-x:auto;margin-bottom:12px;border:1px solid rgba(0,200,212,.15);border-radius:var(--r)}
+.rep-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;white-space:nowrap}
+.rep-table th,.rep-table td{padding:9px 10px;text-align:left;border-bottom:1px solid rgba(0,200,212,.08)}
+.rep-table thead th{color:var(--cyan);font-size:10px;letter-spacing:.06em;text-transform:uppercase;background:var(--bg2)}
+.rep-table tbody tr:last-child td{border-bottom:none}
+.rep-table tfoot td{font-weight:700;color:var(--green);border-top:1px solid rgba(34,197,94,.35);border-bottom:none}
+
 /* Mini-calendario con puntito de actividad — v5.33, pedido de Daniel */
 .libro-cal{background:var(--bg3);border:1px solid rgba(0,200,212,.15);border-radius:var(--r);padding:14px 12px;margin:0 auto 16px;max-width:380px}
 .libro-cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
@@ -1142,6 +1158,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     <button class="tab-btn active" data-tab="vuelo">✈ Vuelo</button>
     <button class="tab-btn" data-tab="pendientes">⏳ Pendientes</button>
     <button class="tab-btn" data-tab="libro">📋 Libro</button>
+    <button class="tab-btn" data-tab="reporte">📊 Reporte</button>
   </div>
 
   <!-- Tab: VUELO -->
@@ -1280,6 +1297,27 @@ textarea{resize:none;min-height:80px;line-height:1.5}
     <div id="libro-contenido"><div class="empty-libro">Seleccioná una fecha para ver tu actividad.</div></div>
   </div>
 
+  <!-- Tab: REPORTE -->
+  <div id="tab-reporte" class="tab-content">
+    <span class="label">Reporte de horas de vuelo</span>
+    <div class="card" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div style="flex:1;min-width:120px">
+        <span class="label" style="margin-bottom:4px">Desde</span>
+        <input id="rep-desde" type="date">
+      </div>
+      <div style="flex:1;min-width:120px">
+        <span class="label" style="margin-bottom:4px">Hasta</span>
+        <input id="rep-hasta" type="date">
+      </div>
+      <button class="btn btn-cyan" id="btn-rep-generar" style="flex:none;width:auto;padding:12px 20px">Generar</button>
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:12px">
+      Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande
+    </div>
+    <div id="reporte-contenido"><div class="empty-libro">Elegí un rango de fechas y tocá Generar.</div></div>
+    <button class="btn btn-ghost" id="btn-rep-excel" style="display:none;border-color:var(--green);color:var(--green)">⬇ Descargar Excel</button>
+  </div>
+
 </div><!-- /app-shell -->
 
 <div class="toast" id="toast"></div>
@@ -1334,7 +1372,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.39'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.40'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1471,6 +1509,11 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     cambiarATab(btn.dataset.tab);
     if(btn.dataset.tab==='libro'){ cargarLibro(); cargarLibroCalMes(); }
     else if(btn.dataset.tab==='pendientes') cargarPendientes();
+    else if(btn.dataset.tab==='reporte'&&!$('rep-desde').value){
+      const h=hoy();
+      $('rep-hasta').value=h;
+      $('rep-desde').value=h.slice(0,8)+'01'; // primer día del mes actual
+    }
   });
 });
 
@@ -2515,6 +2558,9 @@ window.exportarTrazaKML = async function(key, nombre, avion, fecha) {
   }
 };
 
+$('btn-rep-generar').addEventListener('click',cargarReporte);
+$('btn-rep-excel').addEventListener('click',descargarReporteExcel);
+
 $('libro-fecha').addEventListener('change',()=>{
   // v5.33: si el usuario tipea/elige la fecha con el input nativo (en vez de
   // tocar un día del mini-calendario), el calendario debe seguirla — saltar
@@ -2659,6 +2705,96 @@ async function cargarLibro(){
   }catch(e){
     $('libro-contenido').innerHTML=`<div class="empty-libro">Error: ${e.message}</div>`;
   }
+}
+
+// ── REPORTE DE HORAS (rango de fechas, descargable a Excel) ─
+// v5.39 — pedido de Daniel. Mismo criterio de "mis vuelos" que cargarLibro
+// (instructor/aprobado_por === session, estado aprobado/vencido,
+// obs_privada_tiempo_vuelo cargado) pero sobre un rango [desde,hasta] en
+// vez de un solo día. _repRows guarda la última corrida para que el botón
+// Excel no tenga que re-consultar Firebase.
+let _repRows=[];
+
+function _repFilasDe(todas,desde,hasta){
+  return todas.filter(r=>
+    r.fecha>=desde&&r.fecha<=hasta&&
+    (r.instructor===session.nombre||r.aprobado_por===session.nombre||
+     r.instructor===session.user||r.aprobado_por===session.user)&&
+    (r.estado==='aprobado'||r.estado==='vencido')&&
+    !!r.obs_privada_tiempo_vuelo
+  ).sort((a,b)=>(a.fecha+((a.hora||a.horaInicio)||'')).localeCompare(b.fecha+((b.hora||b.horaInicio)||'')));
+}
+
+async function cargarReporte(){
+  const desde=$('rep-desde').value, hasta=$('rep-hasta').value;
+  if(!desde||!hasta){ toast('Elegí fecha desde y hasta'); return; }
+  if(desde>hasta){ toast('El rango de fechas es inválido'); return; }
+  $('reporte-contenido').innerHTML='<div class="spinner"></div>';
+  $('btn-rep-excel').style.display='none';
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=rArr(snap.val());
+    _repRows=_repFilasDe(todas,desde,hasta);
+
+    if(!_repRows.length){
+      $('reporte-contenido').innerHTML=`<div class="empty-libro">Sin vuelos registrados entre ${fmtFecha(desde)} y ${fmtFecha(hasta)}.</div>`;
+      return;
+    }
+
+    const totalHoras=_repRows.reduce((acc,r)=>acc+(parseFloat(r.obs_privada_tiempo_vuelo)||0),0);
+    const totalAterr=_repRows.reduce((acc,r)=>acc+(parseInt(r.obs_privada_aterrizajes)||0),0);
+
+    const filas=_repRows.map(r=>{
+      const desdeH=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
+      const hastaH=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
+      return `<tr>
+        <td>${fmtFecha(r.fecha)}</td>
+        <td>${r.avion||'—'}</td>
+        <td>${desdeH}</td>
+        <td>${hastaH}</td>
+        <td>${r.obs_privada_tiempo_vuelo||'—'}</td>
+        <td>${r.obs_privada_aterrizajes??'—'}</td>
+      </tr>`;
+    }).join('');
+
+    $('reporte-contenido').innerHTML=`
+      <div class="rep-table-wrap">
+        <table class="rep-table">
+          <thead><tr><th>Fecha</th><th>Matrícula</th><th>Hora desde</th><th>Hora hasta</th><th>Tiempo</th><th>Aterr.</th></tr></thead>
+          <tbody>${filas}</tbody>
+          <tfoot><tr><td colspan="4">TOTAL · ${_repRows.length} vuelo${_repRows.length===1?'':'s'}</td><td>${Math.round(totalHoras*10)/10}</td><td>${totalAterr}</td></tr></tfoot>
+        </table>
+      </div>`;
+    $('btn-rep-excel').style.display='block';
+  }catch(e){
+    $('reporte-contenido').innerHTML=`<div class="empty-libro">Error: ${e.message}</div>`;
+  }
+}
+
+function descargarReporteExcel(){
+  if(!_repRows.length) return;
+  const desde=$('rep-desde').value, hasta=$('rep-hasta').value;
+  const totalHoras=_repRows.reduce((acc,r)=>acc+(parseFloat(r.obs_privada_tiempo_vuelo)||0),0);
+  const totalAterr=_repRows.reduce((acc,r)=>acc+(parseInt(r.obs_privada_aterrizajes)||0),0);
+
+  const aoa=[['Fecha','Matrícula','Hora desde','Hora hasta','Tiempo','Aterrizajes']];
+  _repRows.forEach(r=>{
+    aoa.push([
+      fmtFecha(r.fecha),
+      r.avion||'—',
+      r.ts_despegue?fmtUTC(r.ts_despegue):'—',
+      r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—',
+      parseFloat(r.obs_privada_tiempo_vuelo)||0,
+      parseInt(r.obs_privada_aterrizajes)||0
+    ]);
+  });
+  aoa.push(['TOTAL','','','',Math.round(totalHoras*10)/10,totalAterr]);
+
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:12},{wch:11},{wch:11},{wch:11},{wch:9},{wch:11}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Horas de vuelo');
+  XLSX.writeFile(wb,`horas_vuelo_${session.nombre.replace(/\s+/g,'_')}_${desde}_${hasta}.xlsx`);
 }
 
 // ── MAPA GPS ──────────────────────────────────────────────
