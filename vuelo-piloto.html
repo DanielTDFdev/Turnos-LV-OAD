@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.24 · 2026-08-24
+  Mismo cambio que vuelo.html v5.43 — ver ese changelog para el detalle
+  completo. Acá solo 3 pestañas (sin "Pendientes", exclusiva del
+  instructor): Vuelo=cyan, Libro=verde, Reporte=azul (nueva var --blue).
+
   v4.23 · 2026-08-24
   Mismos dos pedidos que vuelo.html v5.42 — ver ese changelog para el
   detalle completo. (1) max-width:640px + margin:0 auto en .screen,
@@ -627,6 +632,7 @@
   --amber:  #f0a500;
   --green:  #22c55e;
   --red:    #ef4444;
+  --blue:   #4d9fff;
   --white:  #e8f4fd;
   --gray:   #4a6a8a;
   --gray2:  #2a4a6a;
@@ -757,15 +763,16 @@ select:disabled{opacity:.55}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* Tab bar */
-.tab-bar{display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none}
-.tab-btn{
-  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:13px;
-  letter-spacing:.08em;color:var(--gray);cursor:pointer;border:none;background:transparent;
-  text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
-  display:flex;align-items:center;justify-content:center;gap:5px;
-}
-.tab-btn svg{width:15px;height:15px;flex:none;stroke:currentColor}
-.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+/* v4.24: pedido de Daniel — mismo cambio que vuelo.html v5.43 (ver ese
+   changelog para el detalle completo). Acá solo 3 pestañas (sin
+   "Pendientes", que es exclusiva del instructor): Vuelo=cyan, Libro=verde,
+   Reporte=azul. */
+.tab-bar{display:flex;gap:8px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none}
+.tab-btn{color:#4a5a6a;}
+.tab-btn svg{width:16px;height:16px;flex:none;stroke:currentColor}
+.tab-btn.active[data-tab="vuelo"]{color:var(--cyan);text-shadow:0 0 8px rgba(0,200,212,.9);}
+.tab-btn.active[data-tab="libro"]{color:var(--green);text-shadow:0 0 8px rgba(34,197,94,.9);}
+.tab-btn.active[data-tab="reporte"]{color:var(--blue);text-shadow:0 0 8px rgba(77,159,255,.9);}
 
 /* v3.2: links a fpl.html/peso-balance.html — mismo agregado que vuelo.html v5.18,
    pedido de Daniel: gestionar todo (vuelo + plan de vuelo + peso y balance) sin
@@ -1011,9 +1018,11 @@ select:disabled{opacity:.55}
   </div>
 
   <div class="tab-bar">
-    <button class="tab-btn active" data-tab="vuelo"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>Vuelo</button>
-    <button class="tab-btn" data-tab="libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>Libro</button>
-    <button class="tab-btn" data-tab="reporte"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Reporte</button>
+    <span class="avnc-panel">
+    <button class="tab-btn avnc-btn active" data-tab="vuelo"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg><span>Vuelo</span></button>
+    <button class="tab-btn avnc-btn" data-tab="libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg><span>Libro</span></button>
+    <button class="tab-btn avnc-btn" data-tab="reporte"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Reporte</span></button>
+    </span>
   </div>
 
   <div id="tab-vuelo" class="tab-content active">
@@ -1260,7 +1269,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.23';
+const APP_VERSION = '4.24';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────

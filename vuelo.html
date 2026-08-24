@@ -2,6 +2,25 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.43 · 2026-08-24
+  Pedido de Daniel: no le gustaba que la barra de pestañas (Vuelo/
+  Pendientes/Libro/Reporte, rediseñada en v5.41 con íconos SVG) tuviera un
+  estilo distinto al de los botones de link de arriba (Plan de Vuelo/Peso y
+  Balance, "panel button lights" desde v5.18/turnos.html) — pidió unificar
+  todo bajo esa misma estética. .tab-bar pasa a envolver un
+  <span class="avnc-panel"> (el mismo panel oscuro con relieve que ya usan
+  los links) y cada .tab-btn suma la clase .avnc-btn (mismo 3D — gradiente,
+  border-top claro, box-shadow "tecla", press-down al tocar). La pestaña
+  activa se "enciende" en un color propio (texto + ícono, que hereda color
+  vía stroke=currentColor + text-shadow glow) y las demás quedan apagadas
+  (gris) — como un panel de anunciadores real donde solo la luz
+  correspondiente está prendida: Vuelo=cyan, Pendientes=ámbar, Libro=verde,
+  Reporte=azul (nueva var --blue, mismo valor que ya usa turnos.html).
+  Contenido reordenado ícono-arriba/label-abajo (antes icono-izquierda-de-
+  texto) para calzar con el layout column que ya usa .avnc-btn — no hizo
+  falta tocar el JS de cambiarATab(), sigue togglando .active por
+  data-tab igual que siempre.
+
   v5.42 · 2026-08-24
   Dos pedidos de Daniel:
   (1) En PC/Mac (ventana ancha) la app se veía estirada de punta a punta,
@@ -792,6 +811,7 @@
   --amber:  #f0a500;
   --green:  #22c55e;
   --red:    #ef4444;
+  --blue:   #4d9fff;
   --white:  #e8f4fd;
   --gray:   #4a6a8a;
   --gray2:  #2a4a6a;
@@ -851,17 +871,22 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 .btn-sm:active{background:rgba(255,255,255,.06)}
 
 /* Tab bar */
-.tab-bar{
-  display:flex;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;
-}
-.tab-btn{
-  flex:1;padding:14px 8px;text-align:center;font-family:var(--mono);font-size:13px;
-  letter-spacing:.08em;color:var(--gray);cursor:pointer;border:none;background:transparent;
-  text-transform:uppercase;border-bottom:2px solid transparent;transition:all .15s;
-  display:flex;align-items:center;justify-content:center;gap:5px;
-}
-.tab-btn svg{width:15px;height:15px;flex:none;stroke:currentColor}
-.tab-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+/* v5.43: pedido de Daniel — unificar el estilo de la barra de pestañas
+   (Vuelo/Pendientes/Libro/Reporte) con el de los botones de link de arriba
+   (Plan de Vuelo/Peso y Balance) — mismo "panel button lights". Reusa
+   .avnc-panel para el contenedor (ver más abajo) y .avnc-btn para cada
+   botón — la diferencia con los links de arriba es que acá el color no es
+   fijo por botón: se "enciende" en el color de la pestaña activa y las
+   demás quedan apagadas (gris), como un panel de anunciadores real donde
+   solo la luz correspondiente está prendida.
+*/
+.tab-bar{display:flex;gap:8px;padding:10px 20px;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.12);flex:none;}
+.tab-btn{color:#4a5a6a;} /* apagado por defecto — el resto de la forma (3D, gradiente, etc) lo hereda de .avnc-btn */
+.tab-btn svg{width:16px;height:16px;flex:none;stroke:currentColor}
+.tab-btn.active[data-tab="vuelo"]{color:var(--cyan);text-shadow:0 0 8px rgba(0,200,212,.9);}
+.tab-btn.active[data-tab="pendientes"]{color:var(--amber);text-shadow:0 0 8px rgba(240,165,0,.9);}
+.tab-btn.active[data-tab="libro"]{color:var(--green);text-shadow:0 0 8px rgba(34,197,94,.9);}
+.tab-btn.active[data-tab="reporte"]{color:var(--blue);text-shadow:0 0 8px rgba(77,159,255,.9);}
 
 /* v5.18: links a fpl.html/peso-balance.html — pedido de Daniel: poder gestionar todo
    (vuelo + plan de vuelo + peso y balance) sin salir de esta app. Mismo nombre de
@@ -1196,10 +1221,12 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
   <!-- Tab bar -->
   <div class="tab-bar">
-    <button class="tab-btn active" data-tab="vuelo"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>Vuelo</button>
-    <button class="tab-btn" data-tab="pendientes"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41a2 2 0 0 0-.59 1.42V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></svg>Pendientes</button>
-    <button class="tab-btn" data-tab="libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>Libro</button>
-    <button class="tab-btn" data-tab="reporte"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>Reporte</button>
+    <span class="avnc-panel">
+    <button class="tab-btn avnc-btn active" data-tab="vuelo"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg><span>Vuelo</span></button>
+    <button class="tab-btn avnc-btn" data-tab="pendientes"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41a2 2 0 0 0-.59 1.42V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></svg><span>Pendientes</span></button>
+    <button class="tab-btn avnc-btn" data-tab="libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg><span>Libro</span></button>
+    <button class="tab-btn avnc-btn" data-tab="reporte"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Reporte</span></button>
+    </span>
   </div>
 
   <!-- Tab: VUELO -->
@@ -1413,7 +1440,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.42'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.43'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
