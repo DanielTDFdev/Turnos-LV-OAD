@@ -1,7 +1,7 @@
 # Documentación técnica — Sistema de Turnos (turnos.html)
 
 **Aeroclub Río Grande (SAWE) — Tierra del Fuego, Argentina**
-Versión documentada: **turnos.html v7.57** · **fpl.html v3.29** · **portal-alumno.html v1.24** · **peso-balance.html v1.8** · **reporte.html v1.4** · **vuelo.html v5.31** · **vuelo-piloto.html v4.9** · **vor-trainer.html v4.37** · **index.html v3.5** · Fecha: 2026-08-21
+Versión documentada: **turnos.html v7.57** · **fpl.html v3.29** · **portal-alumno.html v1.24** · **peso-balance.html v1.8** · **reporte.html v1.4** · **vuelo.html v5.41** · **vuelo-piloto.html v4.20** · **vor-trainer.html v4.37** · **index.html v3.5** · Fecha: 2026-08-24
 
 > Documento de referencia: describe qué hace cada parte del sistema. Mantener actualizado cuando se agreguen funciones.
 > Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una calculadora de peso y balance (`peso-balance.html`, §24), un **reporte de actividad** (`reporte.html`, §25), una **app de registro de vuelo para instructores** (`vuelo.html`, §26), su equivalente **para pilotos** (`vuelo-piloto.html`, §27) y un **simulador VOR/HSI** con Modo Libre y motor de vuelo simulado (`vor-trainer.html`, §29), soporte **PWA** en los archivos principales (instalables como app en el celular), y la **página de inicio pública** (`index.html`, §30). Los **procesos server-side** en GitHub Actions se describen en §20 y §21.
@@ -894,14 +894,14 @@ Botón **⬇ EXCEL** (verde) y **⬇ PDF** (ámbar) en cada sección. Excel usa 
 
 ## 26. App de Registro de Vuelo para Instructores (`vuelo.html`)
 
-Archivo independiente, versión **v5.23**. Diseñada para uso en celular del instructor, **mobile-first extremo**: fuentes grandes (v2.9), botones táctiles, sin zoom. Soporte **PWA** propio desde v2.1 (manifest/íconos propios, nombre de instalación "Instructores" desde v2.5). Ver también §27 para el equivalente pensado para pilotos volando solos (`vuelo-piloto.html`), incluido su modo alumno (§27, "Modo alumno — tracking GPS independiente") con el que este archivo coordina el candado `gps_tracker_activo`.
+Archivo independiente, versión **v5.41**. Diseñada para uso en celular del instructor, **mobile-first extremo**: fuentes grandes (v2.9), botones táctiles, sin zoom. Soporte **PWA** propio desde v2.1 (manifest/íconos propios, nombre de instalación "Instructores" desde v2.5). Ver también §27 para el equivalente pensado para pilotos volando solos (`vuelo-piloto.html`), incluido su modo alumno (§27, "Modo alumno — tracking GPS independiente") con el que este archivo coordina el candado `gps_tracker_activo`.
 
 > **Nota de origen:** el changelog detallado de v3.6→v4.1 (tracking GPS, wake lock, visor de mapa) se hizo en una sesión distinta a la que mantiene este documento — confirmado funcionalmente contra el repo en vivo, sin el detalle línea-por-línea de esos bumps intermedios. De v4.2 en adelante el changelog es completo.
 
 ### Acceso
 Login con las mismas credenciales de instructor (lee `/instructores` en Firebase). Si ya hay sesión activa de `turnos.html` en `sessionStorage 'lvoad-session'`, entra directo sin pedir credenciales. Versión de la app siempre visible (top-bar y pantalla de login, v2.4) — chequeo automático de versión vieja con banner + botón ACTUALIZAR, mismo mecanismo que `turnos.html` (§17), cada 5 min y al volver a primer plano (v3.3).
 
-### Tres pestañas: ✈ Vuelo · ⏳ Pendientes · 📋 Libro (v2.7)
+### Cuatro pestañas: Vuelo · Pendientes · Libro · Reporte (v2.7, Reporte agregada v5.40)
 
 **✈ Vuelo** — el turno que corresponde volar *ahora*:
 - Calcula, entre los turnos `aprobado` (o `vencido` con `aprobado_por`) del instructor logueado para hoy sin tiempo cargado todavía, el que tiene **menor diferencia absoluta** respecto a la hora actual, y entra directo a ese — no hay selección manual en el caso normal (v2.6, reemplazó una lógica anterior de ventana ±horas que podía ofrecer turnos de otro horario del día mezclados). Solo arma una lista si hay un empate exacto de horario (caso anómalo, indicaría un fallo aguas arriba en `turnos.html`) o si se fuerza con "Cambiar turno".
@@ -1007,11 +1007,22 @@ Caso real reportado por Daniel: vuelo LV-OAD/Marvin Mizrahi con un corte de **18
 - **v7.57 (mismo día, corrección de diseño):** Daniel notó que el track viejo de Marvin (sin el campo `huecos`, grabado antes de v5.29) no mostraba el punteado — el campo solo lo generan las versiones nuevas de captura, nada retroactivo. `_segmentarPorHuecos()` reescrita para **no depender de `vuelo_tracks/{key}.huecos`**: detecta el corte directamente por el salto de tiempo entre puntos consecutivos del track (>45s, `HUECO_UMBRAL_MS`). Más simple, y funciona igual en logs viejos y nuevos, sea cual sea la causa del corte (background, watchdog que no llegó a tiempo, señal GPS perdida, etc.) — cualquier hueco real de más de 45s entre dos puntos se marca igual, sin importar si `huecos` existe.
 - **v5.31 (mismo criterio, pero acá — el bug de la implementación triplicada, ver nota arriba):** el fix de v7.57 en `turnos.html` no alcanzaba a `vuelo.html`/`vuelo-piloto.html` porque cada uno tiene su **propio** `abrirMapa`/`exportarTrazaGPX`, no reusan el de `turnos.html`. Detectado cuando Daniel preguntó "¿esas dos apps tienen visualizador?" — sí, y se habían quedado sin el fix. Misma `_segmentarPorHuecos()` (por salto de tiempo, no por campo `huecos`) duplicada en este archivo, mismo criterio de `<trkseg>` separado en el GPX. Mismo cambio en `vuelo-piloto.html` v4.9.
 
+### Links a fpl.html/peso-balance.html — unificados con turnos.html (v5.39, 2026-08-24)
+Pedido de Daniel: los links "Plan de Vuelo"/"Peso y Balance" (agregados en v5.18) tenían estilo de pill sólida (`.fpl-link`/`.wb-link`, fondo ámbar/verde macizo, texto oscuro) — distinto al panel de accesos tipo "annunciator" (`.avnc-panel`/`.avnc-btn`, fondo negro con gradiente/relieve 3D) que ya usa `turnos.html` para el mismo propósito. Rehechos con las clases `.avnc-panel`/`.avnc-btn` de `turnos.html`: panel oscuro, texto de dos líneas ("PLAN DE"/"vuelo", "PESO Y"/"balance") con glow de color (`.fpl-link`/`.wb-link` ahora solo aportan el color del texto — ámbar y verde respectivamente — no el fondo). Mismo cambio en `vuelo-piloto.html` v4.18.
+
+### Pestaña Reporte — rango de fechas descargable a Excel (v5.40, 2026-08-24)
+Pedido de Daniel: reporte de horas de vuelo con columnas Fecha/Matrícula/Hora desde/Hora hasta/Tiempo/Aterrizajes, totalizado al final, descargable a Excel. Nueva 4ª pestaña "📊 Reporte" (icono unificado en v5.41, ver abajo): inputs de fecha Desde/Hasta (default al entrar por primera vez: 1° del mes actual → hoy) + botón "Generar". Mismo criterio de "mis vuelos" que usa **Libro** (instructor/aprobado_por === sesión actual, estado aprobado/vencido, `obs_privada_tiempo_vuelo` cargado — ver §26 arriba) pero sobre un **rango** de fechas en vez de un solo día — función `_repFilasDe()` nueva, comparte filtro con `cargarReporte()`. Tabla HTML con fila `<tfoot>` de totales (suma de tiempo redondeada a 1 decimal, suma de aterrizajes). Resultado de la última corrida cacheado en `_repRows` (variable de módulo) para que "Descargar Excel" no tenga que re-consultar Firebase.
+
+**Excel real, no CSV:** botón "⬇ Descargar Excel" usa **SheetJS** (`xlsx.full.min.js` vía cdnjs, mismo patrón de librería externa que ya usa Leaflet en este archivo) — `XLSX.utils.aoa_to_sheet()` arma la hoja a partir de un array de arrays (header + filas + fila TOTAL), `XLSX.writeFile()` dispara la descarga como `.xlsx` real (no un CSV disfrazado). Nombre de archivo `horas_vuelo_{nombre del instructor}_{desde}_{hasta}.xlsx`. Mismo agregado, mismo criterio de filtro pero adaptado a `session.email` + `piloto_tiempo_vuelo ?? obs_privada_tiempo_vuelo` (mismo patrón que el Libro de esa app, ver §27), en `vuelo-piloto.html` v4.19.
+
+### Íconos de pestañas unificados a SVG minimalista (v5.41, 2026-08-24)
+Pedido de Daniel con captura de pantalla: los 4 íconos de pestañas tenían estilo visualmente inconsistente — "✈ Vuelo" (glifo Unicode de texto, monocromo, hereda el color gris/cian de `.tab-btn`) contra "⏳ Pendientes"/"📋 Libro"/"📊 Reporte" (emoji a todo color, sin variante de texto disponible en esos code points — no se puede forzar a monocromo con el selector de variación U+FE0E como sí se podría con ✈). Los 4 reemplazados por SVG inline `stroke="currentColor"` (estilo outline/línea fina, ~15px, sin `fill`), así los cuatro heredan el color de `.tab-btn`/`.tab-btn.active` exactamente igual que el texto de al lado, en vez de que 3 de los 4 queden fijos a color de emoji del sistema operativo. Mismo cambio, mismos 3 SVG (Vuelo/Libro/Reporte, sin Pendientes que no existe en esa app) en `vuelo-piloto.html` v4.20.
+
 
 
 ## 27. App de Registro de Vuelo para Pilotos (`vuelo-piloto.html`)
 
-Archivo nuevo, creado 2026-08-04, versión **v4.5**. Equivalente de `vuelo.html` (§26) pero pensado para **pilotos volando solos**, sin nadie supervisando en vivo — reusa gran parte de su infraestructura (timer, GPS, wake lock, PWA, chequeo de versión, cola de sincronización) pero con reglas de negocio distintas y un flujo mucho más simple, sin pantalla de selección de turno. Desde v3.0 también recibe alumnos, en un modo separado y mucho más chico (ver "Modo alumno — tracking GPS independiente" más abajo).
+Archivo nuevo, creado 2026-08-04, versión **v4.20**. Equivalente de `vuelo.html` (§26) pero pensado para **pilotos volando solos**, sin nadie supervisando en vivo — reusa gran parte de su infraestructura (timer, GPS, wake lock, PWA, chequeo de versión, cola de sincronización) pero con reglas de negocio distintas y un flujo mucho más simple, sin pantalla de selección de turno. Desde v3.0 también recibe alumnos, en un modo separado y mucho más chico (ver "Modo alumno — tracking GPS independiente" más abajo).
 
 ### Diferencias de fondo respecto a `vuelo.html`
 - **Sin selección de turno:** el piloto entra, elige avión, e inicia directo. Todo el "¿a qué reserva corresponde esto?" se resuelve recién al guardar (ver más abajo) — no hay pantallas de "Vuelo/Pendientes" como en `vuelo.html`.
@@ -1022,8 +1033,8 @@ Archivo nuevo, creado 2026-08-04, versión **v4.5**. Equivalente de `vuelo.html`
 - **Auditoría:** `accion:'alta_turno'` (NO `'alta_turno_manual'`, que es específico de carga por staff) — mismo `accion` que usa el autoservicio normal de `confirmarTurno()` en `turnos.html`, solo en el caso de inserción nueva (no al actualizar una reserva ya existente, que ya tiene su propio rastro de auditoría de cuando se pidió).
 - **Login:** mismas credenciales que `turnos.html` (`/alumnos`, contraseña plana — mismo patrón simple que ya usa `vuelo.html` con instructores; **no** replica el flujo de Firebase Auth más nuevo que ya tiene `turnos.html` para alumnos — funciona hoy porque las contraseñas planas siguen vivas, la Fase 6 de la migración de Auth "eliminarlas" sigue pendiente, ver §18). Desde v3.0 acepta `rol==='piloto'` **y** `rol==='alumno'` (antes solo piloto) — el rol determina qué pantalla se abre después de loguear, ver "Modo alumno" más abajo. Comparte la misma `sessionStorage 'lvoad-session'` que `turnos.html`: si ya estás logueado ahí, entra directo; y al loguearte acá, `turnos.html` también te reconoce.
 
-### Pestañas: ✈ Vuelo · 📋 Libro
-Dos pestañas (v1.1) — no hay "Pendientes" porque no hay concepto de turno a elegir.
+### Tres pestañas: Vuelo · Libro · Reporte (Reporte agregada v4.19, iconos unificados v4.20 — ver §26 para el detalle completo de ambos cambios, idéntico criterio adaptado a `session.email`/`piloto_*`)
+No hay "Pendientes" porque no hay concepto de turno a elegir (v1.1).
 
 **✈ Vuelo** — selector de avión (bloqueado una vez iniciado el timer) + el mismo timer INICIAR/FINALIZAR/Cancelar/GPS/wake-lock/cierre que `vuelo.html`.
 
