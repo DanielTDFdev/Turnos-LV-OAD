@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.64
+  FECHA   : 2026-08-24
+  CAMBIOS : Pedido de Daniel: reporte.html (reporte de actividad, admin/
+            administrador only) existía standalone hace semanas pero sin
+            ningún link desde turnos.html — solo accesible tipeando la URL a
+            mano. Nuevo botón "REPORTE actividad" en el annunciator panel de
+            instructor-screen (junto a Portal/Plan de Vuelo/Peso y
+            Balance/VOR Trainer), oculto por defecto en el HTML
+            (style="display:none") y mostrado solo si session.user es
+            'admin' o 'administrador' — nueva función actualizarLinkReporte(),
+            llamada en los dos puntos donde se activa instructor-screen
+            (login e restoreSession). No se agrega en alumno-screen: ningún
+            alumno puede ser admin/administrador.
   VERSION : 7.63
   FECHA   : 2026-08-22
   CAMBIOS : Pedido de Daniel, directo tras v7.62: "turnos lee de una tabla que
@@ -2515,6 +2528,7 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .wb-link,.wb-link .avnc-sub{color:#5be888;text-shadow:0 0 8px rgba(91,232,136,.9);}
 .vor-link,.vor-link .avnc-sub{color:#e88fee;text-shadow:0 0 8px rgba(232,143,238,.9);}
 .portal-link,.portal-link .avnc-sub{color:#3fd0dc;text-shadow:0 0 8px rgba(63,208,220,.9);}
+.reporte-link,.reporte-link .avnc-sub{color:#ff6b6b;text-shadow:0 0 8px rgba(255,107,107,.9);}
 
 /* SELECTOR DE AVIÓN */
 .avion-selector{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1.25rem;}
@@ -2819,7 +2833,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.63</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.64</div>
   </div>
 
 </div>
@@ -3066,6 +3080,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <a href="fpl.html?volver=turnos.html" class="avnc-btn fpl-link"><span>PLAN DE</span><span class="avnc-sub">vuelo</span></a>
     <a href="peso-balance.html?volver=turnos.html" class="avnc-btn wb-link"><span>PESO Y</span><span class="avnc-sub">balance</span></a>
     <a href="vor-trainer.html" class="avnc-btn vor-link"><span>VOR</span><span class="avnc-sub">trainer</span></a>
+    <a href="reporte.html" class="avnc-btn reporte-link" id="inst-reporte-link" style="display:none"><span>REPORTE</span><span class="avnc-sub">actividad</span></a>
     </span>
   </div>
   <div class="tab-bar">
@@ -4928,6 +4943,7 @@ window.loginInstructor=async function(){
     await loadConfig();
     buildCalAvionTabs();
     showScreen('instructor-screen');
+    actualizarLinkReporte();
     if(soloUsuarios){showInstTab('config');showCfgTab('usuarios');}
     else{showInstTab('reservas');suscribirReservas();}
     suscribirPendientes();
@@ -4939,6 +4955,16 @@ window.loginInstructor=async function(){
   }catch(e){showErr('login-err2','Error al iniciar sesión.');console.error(e);}
   finally{setLoading('btn-login-inst',false);}
 };
+
+// v7.64: pedido de Daniel — link a reporte.html (reporte de actividad admin,
+// existía standalone sin link desde ningún lado) en el annunciator panel de
+// instructor-screen, visible SOLO admin/administrador — arranca oculto en el
+// HTML (style="display:none") para que un instructor común ni lo vea
+// parpadear un instante antes de que esto corra.
+function actualizarLinkReporte(){
+  const link=document.getElementById('inst-reporte-link');
+  if(link) link.style.display=(session?.user==='admin'||session?.user==='administrador')?'':'none';
+}
 
 function setNavUser(nombre,tipo){
   document.getElementById('nav-brand').textContent='◈ AEROCLUB RÍO GRANDE';
@@ -9471,6 +9497,7 @@ async function restoreSession(){
       await loadConfig();
       buildCalAvionTabs();
       showScreen('instructor-screen');
+      actualizarLinkReporte();
       if(s.soloUsuarios){showInstTab('config');showCfgTab('usuarios');}
       else{showInstTab('reservas');suscribirReservas();}
       suscribirPendientes();
