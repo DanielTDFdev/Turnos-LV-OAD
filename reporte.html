@@ -2,6 +2,9 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
+  v1.5 · FIX: fmtHoras() (totales acumulados) redondeaba y mostraba con hasta
+         2 decimales (ej: 69.90 hs) — debía ser 1 decimal, consistente con el
+         resto del sistema. Ahora Math.round(h*10)/10 + toFixed(1).
   v1.4 · Exportación a Excel (.xlsx) en ambas secciones. Botón verde "⬇ EXCEL"
          al lado del PDF. Genera dos hojas: "Detalle" (todos los registros
          filtrados) y "Resumen por aeronave"/"Resumen por instructor" (totales).
@@ -276,7 +279,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.4</span>
+      <span class="ver">v1.5</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -508,10 +511,10 @@ function rawHoras(s) {
 }
 
 function fmtHoras(h) {
-  // Para totales acumulados (suma de decimales): muestra con hasta 2 decimales
+  // Para totales acumulados (suma de decimales): muestra con hasta 1 decimal
   if (!h || h === 0) return '—';
-  const r = Math.round(h * 100) / 100;
-  return r % 1 === 0 ? r + ' hs' : r.toFixed(2) + ' hs';
+  const r = Math.round(h * 10) / 10;
+  return r % 1 === 0 ? r + ' hs' : r.toFixed(1) + ' hs';
 }
 
 // ── Generar reporte ──────────────────────────────────────────
