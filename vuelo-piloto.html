@@ -2,6 +2,41 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.25 · 2026-08-24
+  Pedido de Daniel: un piloto instaló la app y quedó en la pantalla de modo
+  alumno ("No tenés un turno de instrucción para hoy", sin nada más) — la
+  cuenta tenía rol 'alumno' en Firebase, no 'piloto' (dato, no bug). Pero
+  Daniel confirmó: los alumnos DEBERÍAN poder ver Libro/Reporte y los links
+  igual que un piloto, solo restringido en "elegir avión e iniciar vuelo sin
+  turno". Se retira #app-shell-alumno (shell separado desde v3.0, sin tabs
+  ni links a propósito) — el rol alumno pasa a compartir el mismo #app-shell
+  que piloto:
+  - Nueva actualizarModoVuelo(): togglea el ícono del top-bar (piloto_icon/
+    alumno_icon.png) y cuál de los dos bloques de la pestaña Vuelo se ve —
+    #vuelo-modo-piloto (flujo completo: elegir avión, iniciar vuelo,
+    autorreporte de tiempo/aterrizajes/obs) vs #vuelo-modo-alumno (SOLO
+    detección de turno de hoy + iniciar/detener tracking GPS — contenido
+    migrado tal cual del viejo #app-shell-alumno, mismos ids sha-*, sin
+    tocar su lógica interna ni el candado gps_tracker_activo).
+  - Libro y Reporte NO se tocaron — Daniel tenía razón en cuestionar que
+    hiciera falta un criterio distinto: cargarLibro()/cargarReporte() ya
+    filtran por r.email===session.email sin mirar rol, así que un vuelo de
+    instrucción que el instructor cargó contra la reserva del alumno
+    (obs_privada_tiempo_vuelo) ya aparecía con el mismo query que usa
+    piloto. Solo hacía falta que el alumno LLEGUE a esas pestañas — antes
+    ni existían en su shell.
+  - _abrirAppInner() unificado: initSection de Libro (fecha + mini-
+    calendario) se movió a ANTES de separar por rol, para que corra en los
+    dos casos.
+  - Logout unificado en un solo handler (btn-logout) que chequea tsInicio
+    (piloto) o shaTrackeando (alumno) según session.rol — se elimina el
+    botón/handler duplicado btn-logout-alumno.
+  - _hayPantallaActiva() y el catch de abrirApp() (v4.13) actualizados —
+    ya no referencian el shell borrado.
+  - visibilitychange (v4.4/v4.7) y el chequeo de versión nueva NO
+    necesitaron cambios — ya estaban escritos para cubrir ambos flujos
+    (tsInicio/shaTrackeando) sin depender de qué shell estuviera activo.
+
   v4.24 · 2026-08-24
   Mismo cambio que vuelo.html v5.43 — ver ese changelog para el detalle
   completo. Acá solo 3 pestañas (sin "Pendientes", exclusiva del
@@ -653,15 +688,13 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
    estirada de punta a punta, sin ningún límite. max-width + margin:0 auto
    centra en pantallas anchas sin afectar mobile (no hace nada cuando el
    viewport ya es más angosto que el límite). Reborde sutil a los costados
-   para que se lea como columna contenida. Mismo criterio en los 3
-   contenedores de pantalla completa (screen, app-shell, app-shell-alumno).
-   El visor de mapa GPS (.map-modal-overlay) queda afuera a propósito — un
-   mapa se beneficia de más espacio. */
+   para que se lea como columna contenida. El visor de mapa GPS
+   (.map-modal-overlay) queda afuera a propósito — un mapa se beneficia de
+   más espacio.
+   v4.25: se saca #app-shell-alumno — el rol alumno pasa a compartir este
+   mismo #app-shell (ver actualizarModoVuelo() en el JS). */
 #app-shell{display:none;flex-direction:column;min-height:100dvh;max-width:640px;margin:0 auto;width:100%;box-sizing:border-box;border-left:1px solid rgba(0,200,212,.12);border-right:1px solid rgba(0,200,212,.12)}
 #app-shell.active{display:flex}
-
-#app-shell-alumno{display:none;flex-direction:column;min-height:100dvh;max-width:640px;margin:0 auto;width:100%;box-sizing:border-box;border-left:1px solid rgba(0,200,212,.12);border-right:1px solid rgba(0,200,212,.12)}
-#app-shell-alumno.active{display:flex}
 
 .top-bar{
   display:flex;align-items:center;padding:16px 20px 12px;
@@ -1002,7 +1035,7 @@ select:disabled{opacity:.55}
     </div>
     <div class="top-actions">
       <div class="top-actions-row">
-        <img src="repo_fotos/piloto_icon.png" alt="" class="user-icon">
+        <img src="repo_fotos/piloto_icon.png" alt="" class="user-icon" id="top-user-icon">
         <button class="btn-sm" id="btn-logout">⏻ Salir</button>
       </div>
       <div class="ver" id="app-ver">—</div>
@@ -1027,6 +1060,15 @@ select:disabled{opacity:.55}
 
   <div id="tab-vuelo" class="tab-content active">
   <div class="contenido">
+
+    <!-- v4.25: pedido de Daniel — el rol alumno pasa a compartir este MISMO
+         shell/tabs (antes tenía #app-shell-alumno aparte, sin Libro/Reporte).
+         Solo la pestaña Vuelo cambia de contenido según el rol; Libro/Reporte
+         y los links de arriba quedan compartidos tal cual (su criterio de
+         consulta ya era por email, sin importar rol — ver cargarLibro()).
+         Los dos bloques de abajo son mutuamente excluyentes, alternados por
+         actualizarModoVuelo() según session.rol al loguearse. -->
+    <div id="vuelo-modo-piloto">
 
     <!-- v4.0: turno propio detectado al loguearse — reemplaza al selector -->
     <div id="turno-vinculado-banner" class="card" style="display:none;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.35);margin-bottom:14px">
@@ -1118,6 +1160,50 @@ select:disabled{opacity:.55}
       <button class="btn btn-cyan" id="btn-otro-vuelo">Volar de nuevo</button>
     </div>
 
+    </div><!-- /vuelo-modo-piloto -->
+
+    <!-- v4.25: modo ALUMNO — solo tracking GPS, sin autoreporte de tiempo/
+         aterrizajes/obs (eso lo sigue cargando el instructor desde vuelo.html,
+         mismo criterio de siempre — ver comentario largo en cancelarTurnoPorConflicto
+         y en la explicación que le di a Daniel sobre por qué no chocan datos).
+         Contenido migrado tal cual del viejo #app-shell-alumno (v3.0-v4.24),
+         mismos ids sha-* para no tocar el JS que ya los maneja. -->
+    <div id="vuelo-modo-alumno" style="display:none">
+
+      <div id="sha-sin-turno" class="empty-libro" style="display:none">
+        No tenés un turno de instrucción para hoy.
+      </div>
+
+      <div class="card" id="sha-turno-card" style="display:none">
+        <div class="card-title">Turno de hoy</div>
+        <div style="font-family:var(--mono);font-size:13px;color:var(--white);line-height:2">
+          <div>✈ Avión: <b id="sha-avion">—</b></div>
+          <div>🕐 Horario: <b id="sha-horario">—</b></div>
+          <div>👨‍✈️ Instructor: <b id="sha-instructor">—</b></div>
+        </div>
+      </div>
+
+      <div class="estado-vuelo" id="sha-estado" style="display:none">
+        <div class="estado-label" id="sha-ev-label">Tracking detenido</div>
+        <div class="ts-display" id="sha-ev-ts">—</div>
+        <div class="ts-sub" id="sha-ev-sub"></div>
+      </div>
+
+      <div id="sha-gps-warning" style="display:none;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:12px;padding:12px 14px;margin-bottom:14px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:700;letter-spacing:.06em;margin-bottom:6px">⚠ MANTENÉ LA PANTALLA ENCENDIDA</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--amber);opacity:.85;line-height:1.6">
+          Si la pantalla se bloquea, el GPS deja de registrar.<br>
+          <span style="color:var(--white);opacity:.7">Samsung: Ajustes → Apps → Chrome → Batería → Sin restricciones</span>
+        </div>
+      </div>
+
+      <div class="err" id="sha-err" style="margin-bottom:10px"></div>
+
+      <button class="btn btn-cyan" id="sha-btn-iniciar">🛰 INICIAR TRACKING GPS</button>
+      <button class="btn btn-ghost" id="sha-btn-detener" style="display:none;border-color:var(--red);color:var(--red)">⏹ DETENER TRACKING</button>
+
+    </div><!-- /vuelo-modo-alumno -->
+
   </div>
   </div><!-- /tab-vuelo -->
 
@@ -1160,62 +1246,6 @@ select:disabled{opacity:.55}
   </div><!-- /tab-reporte -->
 
 </div><!-- /app-shell -->
-
-<!-- ── Shell modo ALUMNO — solo tracking GPS, sin autoreporte de vuelo.
-     El instructor sigue siendo quien carga tiempo/aterrizajes/obs desde
-     vuelo.html; esta pantalla solo arranca/para el GPS y lo asocia al
-     turno de hoy ya reservado (mismo key de /reservas). v3.0. ── -->
-<div id="app-shell-alumno">
-  <div class="top-bar">
-    <div class="inst-info">
-      <div class="nombre" id="sha-nombre">—</div>
-      <div class="sub" id="sha-fecha">—</div>
-    </div>
-    <div class="top-actions">
-      <div class="top-actions-row">
-        <img src="repo_fotos/alumno_icon.png" alt="" class="user-icon">
-        <button class="btn-sm" id="btn-logout-alumno">⏻ Salir</button>
-      </div>
-      <div class="ver" id="app-ver-alumno">—</div>
-    </div>
-  </div>
-
-  <div class="contenido">
-
-    <div id="sha-sin-turno" class="empty-libro" style="display:none">
-      No tenés un turno de instrucción para hoy.
-    </div>
-
-    <div class="card" id="sha-turno-card" style="display:none">
-      <div class="card-title">Turno de hoy</div>
-      <div style="font-family:var(--mono);font-size:13px;color:var(--white);line-height:2">
-        <div>✈ Avión: <b id="sha-avion">—</b></div>
-        <div>🕐 Horario: <b id="sha-horario">—</b></div>
-        <div>👨‍✈️ Instructor: <b id="sha-instructor">—</b></div>
-      </div>
-    </div>
-
-    <div class="estado-vuelo" id="sha-estado" style="display:none">
-      <div class="estado-label" id="sha-ev-label">Tracking detenido</div>
-      <div class="ts-display" id="sha-ev-ts">—</div>
-      <div class="ts-sub" id="sha-ev-sub"></div>
-    </div>
-
-    <div id="sha-gps-warning" style="display:none;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:12px;padding:12px 14px;margin-bottom:14px">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--amber);font-weight:700;letter-spacing:.06em;margin-bottom:6px">⚠ MANTENÉ LA PANTALLA ENCENDIDA</div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--amber);opacity:.85;line-height:1.6">
-        Si la pantalla se bloquea, el GPS deja de registrar.<br>
-        <span style="color:var(--white);opacity:.7">Samsung: Ajustes → Apps → Chrome → Batería → Sin restricciones</span>
-      </div>
-    </div>
-
-    <div class="err" id="sha-err" style="margin-bottom:10px"></div>
-
-    <button class="btn btn-cyan" id="sha-btn-iniciar">🛰 INICIAR TRACKING GPS</button>
-    <button class="btn btn-ghost" id="sha-btn-detener" style="display:none;border-color:var(--red);color:var(--red)">⏹ DETENER TRACKING</button>
-
-  </div>
-</div><!-- /app-shell-alumno -->
 
 <div class="toast" id="toast"></div>
 
@@ -1269,7 +1299,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.24';
+const APP_VERSION = '4.25';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1326,8 +1356,8 @@ init();
 // primero); esto es solo el último resorte.
 function _hayPantallaActiva(){
   return document.querySelector('.screen.active')
-      || $('app-shell').classList.contains('active')
-      || $('app-shell-alumno').classList.contains('active');
+      || $('app-shell').classList.contains('active');
+      // v4.25: app-shell-alumno se retiró — alumno ahora comparte #app-shell
 }
 function _forzarLoginSiPantallaNegra(origen,detalle){
   console.error('Error no atrapado ('+origen+'):',detalle);
@@ -1455,7 +1485,6 @@ async function abrirApp(){
   }catch(e){
     console.error('abrirApp() falló:',e);
     $('app-shell').classList.remove('active');
-    $('app-shell-alumno').classList.remove('active');
     $('screen-conflicto').classList.remove('active');
     $('screen-confirmar-turno').classList.remove('active');
     $('screen-login').classList.add('active');
@@ -1464,17 +1493,19 @@ async function abrirApp(){
 }
 async function _abrirAppInner(){
   $('screen-login').classList.remove('active');
+  $('sh-nombre').textContent=session.nombre.split(' ')[0];
+  $('sh-fecha').textContent=fmtFecha(hoy());
+  actualizarModoVuelo(); // v4.25: ícono + qué bloque de la pestaña Vuelo se muestra, según rol
+  // v4.25: Libro/Reporte son compartidos entre piloto y alumno (mismo criterio de
+  // consulta, por email, sin importar rol — ver cargarLibro()) — este init corre
+  // para los dos, antes de separar por rol más abajo.
+  $('libro-fecha').value=hoy();
+  { const [y,m]=hoy().split('-').map(Number); _libroCalYear=y; _libroCalMes=m-1; _libroCalSel=hoy(); }
   if(session.rol==='alumno'){
-    $('app-shell-alumno').classList.add('active');
-    $('sha-nombre').textContent=session.nombre.split(' ')[0];
-    $('sha-fecha').textContent=fmtFecha(hoy());
+    $('app-shell').classList.add('active');
     await abrirAppAlumno();
     return;
   }
-  $('sh-nombre').textContent=session.nombre.split(' ')[0];
-  $('sh-fecha').textContent=fmtFecha(hoy());
-  $('libro-fecha').value=hoy();
-  { const [y,m]=hoy().split('-').map(Number); _libroCalYear=y; _libroCalMes=m-1; _libroCalSel=hoy(); }
 
   // v4.1: si ya hay un vuelo en curso restaurado (recarga a mitad de vuelo),
   // NO se re-corre la detección de turno — el avión ya quedó fijado al
@@ -1907,6 +1938,24 @@ let shaTurno=null;       // {key,...datos de /reservas} del turno de hoy
 let shaTrackeando=false;
 let shaTsInicio=null;
 
+// v4.25: pedido de Daniel — el rol alumno pasa a compartir el mismo shell/
+// tabs que piloto (antes tenía #app-shell-alumno aparte, sin Libro/Reporte
+// ni links). Esta función es el único lugar que decide, según session.rol,
+// (a) qué ícono mostrar junto a Salir (piloto_icon.png / alumno_icon.png) y
+// (b) cuál de los dos bloques de la pestaña Vuelo se ve (#vuelo-modo-piloto
+// completo — elegir avión, iniciar vuelo, autorreporte — vs
+// #vuelo-modo-alumno, que SOLO detecta el turno de hoy y trackea GPS, sin
+// autorreporte de tiempo/aterrizajes/obs — eso lo sigue cargando el
+// instructor desde vuelo.html). Libro/Reporte y los links de arriba NO se
+// tocan acá: son compartidos tal cual, su criterio de consulta ya es por
+// email sin importar rol.
+function actualizarModoVuelo(){
+  const esAlumno=session.rol==='alumno';
+  $('top-user-icon').src='repo_fotos/'+(esAlumno?'alumno_icon.png':'piloto_icon.png');
+  $('vuelo-modo-piloto').style.display=esAlumno?'none':'';
+  $('vuelo-modo-alumno').style.display=esAlumno?'':'none';
+}
+
 async function abrirAppAlumno(){
   $('sha-err').textContent='';
   $('sha-turno-card').style.display='none';
@@ -2029,13 +2078,8 @@ $('sha-btn-detener').addEventListener('click', async ()=>{
   actualizarEstadoAlumno();
 });
 
-$('btn-logout-alumno').addEventListener('click',()=>{
-  if(shaTrackeando){ if(!confirm('Hay un tracking GPS en curso. ¿Salir igual? (el candado va a quedar tomado hasta que expire solo o lo sueltes desde acá)')) return; }
-  session=null;sessionStorage.removeItem('lvoad-session');
-  $('app-shell-alumno').classList.remove('active');
-  $('screen-login').classList.add('active');
-  $('l-pass').value='';$('l-err').textContent='';
-});
+// v4.25: el logout de alumno se unificó con el del piloto (btn-logout — ver
+// más abajo, único botón compartido ahora), ya cubre shaTrackeando también.
 
 // v4.21: pedido de Daniel — antes de iniciar un vuelo, avisar si el avión
 // elegido ya tiene un turno de OTRA persona reservado justo en ese horario.
@@ -2521,8 +2565,15 @@ function persistir(){
 }
 
 // ── LOGOUT ────────────────────────────────────────────────
+// v4.25: único botón, cubre los dos roles — antes había un btn-logout-alumno
+// aparte con su propio chequeo (shaTrackeando); ahora es un solo handler que
+// mira cuál de los dos flujos está activo según session.rol.
 $('btn-logout').addEventListener('click',()=>{
-  if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
+  if(session?.rol==='alumno'){
+    if(shaTrackeando){ if(!confirm('Hay un tracking GPS en curso. ¿Salir igual? (el candado va a quedar tomado hasta que expire solo o lo sueltes desde acá)')) return; }
+  } else {
+    if(tsInicio&&!tsFin){if(!confirm('Hay un vuelo iniciado. ¿Salir igual?'))return;}
+  }
   const pendientesAlSalir=leerPendientes().length;
   session=null;sessionStorage.removeItem('lvoad-session');
   if(!tsInicio) localStorage.removeItem(LS);
