@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
+  v1.6 · FIX: el PDF (window.print()) imprimía juntas la sección de aeronaves y
+         la de instructor si ambas habían sido generadas en la misma sesión —
+         el CSS @media print forzaba display:block!important en #reporte Y
+         #reporte-inst sin distinguir qué botón PDF se apretó. Nueva función
+         imprimirPDF(seccion) marca <body class="print-aviones|print-instructor">
+         antes de imprimir; el CSS oculta la sección que no corresponde. Excel
+         ya exportaba cada sección por separado (sin cambios ahí).
   v1.5 · FIX: fmtHoras() (totales acumulados) redondeaba y mostraba con hasta
          2 decimales (ej: 69.90 hs) — debía ser 1 decimal, consistente con el
          resto del sistema. Ahora Math.round(h*10)/10 + toFixed(1).
@@ -232,6 +239,12 @@ table.det tbody td.gray{color:var(--text3)}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body{background:#fff!important;color:#111!important}
   header.bar,#gate,#spinner,#spinner-inst,.filtros-card,.btn-pdf,.btn-pdf-inst,.btn-back,.btn-gen,hr{display:none!important}
+  /* v1.6: imprimirPDF() marca <body> con print-aviones o print-instructor antes de
+     window.print() — evita que ambas secciones salgan juntas en el PDF cuando las
+     dos fueron generadas en la misma sesión (antes se forzaba display:block en
+     #reporte Y #reporte-inst sin importar cuál botón PDF se apretó). */
+  body.print-aviones #reporte-inst{display:none!important}
+  body.print-instructor #reporte{display:none!important}
   #reporte,#reporte-inst{display:block!important}
   :root{
     --navy:#fff;--blue:#f0f4f8;--blue2:#e8eff7;
@@ -279,7 +292,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.5</span>
+      <span class="ver">v1.6</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -319,7 +332,7 @@ table.det tbody td.gray{color:var(--text3)}
         </div>
         <div class="field-g">
           <label>&nbsp;</label>
-          <button class="btn-pdf" id="btn-pdf" style="display:none" onclick="window.print()">⬇ PDF</button>
+          <button class="btn-pdf" id="btn-pdf" style="display:none" onclick="imprimirPDF('aviones')">⬇ PDF</button>
           <button class="btn-xls" id="btn-xls" style="display:none" onclick="exportarExcelAeronaves()">⬇ EXCEL</button>
         </div>
       </div>
@@ -370,7 +383,7 @@ table.det tbody td.gray{color:var(--text3)}
         </div>
         <div class="field-g">
           <label>&nbsp;</label>
-          <button class="btn-pdf" id="btn-pdf-inst" style="display:none" onclick="window.print()">⬇ PDF</button>
+          <button class="btn-pdf" id="btn-pdf-inst" style="display:none" onclick="imprimirPDF('instructor')">⬇ PDF</button>
           <button class="btn-xls" id="btn-xls-inst" style="display:none" onclick="exportarExcelInstructor()">⬇ EXCEL</button>
         </div>
       </div>
@@ -944,6 +957,19 @@ async function generarReporteInstructor() {
 }
 
 // ── EXPORTACIÓN EXCEL ─────────────────────────────────────────
+
+// v1.6 — pedido de Daniel: el PDF (window.print()) imprimía las dos secciones
+// (aeronaves + instructor) juntas si ambas habían sido generadas en la sesión,
+// sin importar qué botón "⬇ PDF" se apretara. Marca <body> con una clase que
+// el CSS @media print usa para ocultar la sección que no corresponde, imprime,
+// y limpia la clase al volver (afterprint cubre cancelar el diálogo también).
+window.imprimirPDF = function(seccion) {
+  const cls = seccion === 'aviones' ? 'print-aviones' : 'print-instructor';
+  document.body.classList.add(cls);
+  const limpiar = () => { document.body.classList.remove(cls); window.removeEventListener('afterprint', limpiar); };
+  window.addEventListener('afterprint', limpiar);
+  window.print();
+};
 
 window.exportarExcelAeronaves = function() {
   if (!_datosAeronaves.length) return;
