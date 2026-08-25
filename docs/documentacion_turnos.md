@@ -1,7 +1,7 @@
 # Documentación técnica — Sistema de Turnos (turnos.html)
 
 **Aeroclub Río Grande (SAWE) — Tierra del Fuego, Argentina**
-Versión documentada: **turnos.html v7.64** · **fpl.html v3.29** · **portal-alumno.html v1.24** · **peso-balance.html v1.8** · **reporte.html v1.4** · **vuelo.html v5.43** · **vuelo-piloto.html v4.25** · **vor-trainer.html v4.37** · **index.html v3.5** · Fecha: 2026-08-24
+Versión documentada: **turnos.html v7.64** · **fpl.html v3.29** · **portal-alumno.html v1.24** · **peso-balance.html v1.8** · **reporte.html v1.4** · **vuelo.html v5.44** · **vuelo-piloto.html v4.26** · **vor-trainer.html v4.37** · **index.html v3.5** · Fecha: 2026-08-25
 
 > Documento de referencia: describe qué hace cada parte del sistema. Mantener actualizado cuando se agreguen funciones.
 > Además de la app web (`turnos.html`) hay un generador de planes de vuelo (`fpl.html`, §22), un **portal de alumno** (`portal-alumno.html`, §23), una calculadora de peso y balance (`peso-balance.html`, §24), un **reporte de actividad** (`reporte.html`, §25), una **app de registro de vuelo para instructores** (`vuelo.html`, §26), su equivalente **para pilotos** (`vuelo-piloto.html`, §27) y un **simulador VOR/HSI** con Modo Libre y motor de vuelo simulado (`vor-trainer.html`, §29), soporte **PWA** en los archivos principales (instalables como app en el celular), y la **página de inicio pública** (`index.html`, §30). Los **procesos server-side** en GitHub Actions se describen en §20 y §21.

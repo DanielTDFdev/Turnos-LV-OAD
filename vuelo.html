@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.44 · 2026-08-25
+  Pedido de Daniel: el ícono de usuario (.user-icon) al lado del botón Salir
+  queda un 10% más grande — de 32px a 35px (ancho y alto).
+
   v5.43 · 2026-08-24
   Pedido de Daniel: no le gustaba que la barra de pestañas (Vuelo/
   Pendientes/Libro/Reporte, rediseñada en v5.41 con íconos SVG) tuviera un
@@ -862,7 +866,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
    Circular, tamaño en sintonía con .btn-sm. object-fit:cover porque el PNG
    fuente es cuadrado 1254×1254 con la ilustración ya centrada. */
 .top-actions-row{display:flex;align-items:center;gap:8px}
-.user-icon{width:32px;height:32px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,200,212,.35);flex:none}
+.user-icon{width:35px;height:35px;border-radius:50%;object-fit:cover;border:1px solid rgba(0,200,212,.35);flex:none}
 .btn-sm{
   background:transparent;border:1px solid var(--gray2);border-radius:8px;
   color:var(--gray);font-family:var(--mono);font-size:12px;padding:8px 12px;
@@ -1440,7 +1444,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.43'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.44'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
