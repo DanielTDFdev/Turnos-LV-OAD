@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.65
+  FECHA   : 2026-08-25
+  CAMBIOS : Pedido de Daniel: ABM de usuarios estaba incompleto — había
+            edición (EDITAR) y baja (QUITAR) pero no alta. Nuevo botón
+            "+ NUEVO USUARIO" en Config > Usuarios, modal modal-nuevo-usuario
+            con nombre/usuario/email/tel/fecha nac/rol/contraseña inicial,
+            función guardarNuevoUsuario() — mismas validaciones que el
+            autorregistro (username 4-10 alfanumérico, pass mín. 6, email/
+            username únicos) pero crea directo con estado:'aprobado' (lo da
+            de alta un admin/instructor, no necesita pasar por aprobación) y
+            pass_temporal:true (fuerza cambio de clave en primer ingreso).
+            Llama authMigrarAlumno() igual que el registro normal y
+            registrarAuditoria('alta_usuario_manual',...).
   VERSION : 7.64
   FECHA   : 2026-08-24
   CAMBIOS : Pedido de Daniel: reporte.html (reporte de actividad, admin/
@@ -2833,7 +2846,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.64</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.65</div>
   </div>
 
 </div>
@@ -3543,7 +3556,10 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <!-- USUARIOS (antes "Alumnos", ahora muestra todos con su rol) -->
     <div id="cfg-usuarios" class="cfg-panel" style="display:none">
       <div class="card">
-        <h3>Usuarios Registrados</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">Usuarios Registrados</h3>
+          <button class="primary" onclick="abrirModalNuevoUsuario()" style="font-size:12px;padding:6px 14px">+ NUEVO USUARIO</button>
+        </div>
         <!-- FILTROS -->
         <div id="usuarios-filtros" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:1rem;align-items:center">
           <input type="text" id="fil-texto" placeholder="&#128269; Nombre o email&hellip;"
@@ -3719,6 +3735,51 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <div class="modal-actions" id="eal-actions">
           <button class="primary" onclick="guardarAlumno()">GUARDAR</button>
           <button onclick="cerrarModalAlumno()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL NUEVO USUARIO (alta manual por admin/instructor) -->
+    <div class="modal-overlay" id="modal-nuevo-usuario">
+      <div class="modal">
+        <button class="modal-close" onclick="cerrarModalNuevoUsuario()">✕</button>
+        <div class="modal-title">◈ Nuevo Usuario</div>
+        <div class="field">
+          <label>Nombre completo</label>
+          <input type="text" id="nu-nombre" placeholder="Nombre completo">
+        </div>
+        <div class="field">
+          <label>Usuario</label>
+          <input type="text" id="nu-username" placeholder="4-10 caracteres, letras y números" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="nu-email" placeholder="nombre@mail.com">
+        </div>
+        <div class="field">
+          <label>Teléfono</label>
+          <input type="tel" id="nu-tel" placeholder="Ej: +54 9 2964 000000">
+        </div>
+        <div class="field">
+          <label>Fecha de nacimiento</label>
+          <input type="date" id="nu-fecha-nac">
+        </div>
+        <div class="field">
+          <label>Categoría</label>
+          <select id="nu-rol">
+            <option value="alumno">Alumno — solo LV-OAD</option>
+            <option value="piloto">Piloto — todos los aviones</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Contraseña inicial <span style="font-size:10px;color:var(--text3)">(mín. 6 — se pedirá cambiarla al ingresar)</span></label>
+          <input type="text" id="nu-pass" placeholder="clave temporal" autocomplete="off">
+        </div>
+        <div id="nu-err" class="error"></div>
+        <div id="nu-ok" class="success-msg"></div>
+        <div class="modal-actions">
+          <button class="primary" onclick="guardarNuevoUsuario()">CREAR USUARIO</button>
+          <button onclick="cerrarModalNuevoUsuario()">Cancelar</button>
         </div>
       </div>
     </div>
@@ -8380,6 +8441,43 @@ window.guardarAlumno=async function(){
 };
 
 document.addEventListener('click',e=>{if(e.target.id==='modal-alumno')cerrarModalAlumno();});
+
+// ── NUEVO USUARIO (alta manual por admin/instructor) ────────────
+window.abrirModalNuevoUsuario=function(){
+  clearVal('nu-nombre','nu-username','nu-email','nu-tel','nu-fecha-nac','nu-pass');
+  document.getElementById('nu-rol').value='alumno';
+  hideEl('nu-err');hideEl('nu-ok');
+  document.getElementById('modal-nuevo-usuario').classList.add('open');
+};
+
+window.cerrarModalNuevoUsuario=function(){document.getElementById('modal-nuevo-usuario').classList.remove('open');};
+
+let _creandoUsuario=false;
+window.guardarNuevoUsuario=async function(){
+  if(_creandoUsuario)return;
+  hideEl('nu-err');hideEl('nu-ok');
+  const nombre=val('nu-nombre'),username=val('nu-username').toLowerCase(),email=val('nu-email').toLowerCase(),tel=val('nu-tel'),fechaNac=val('nu-fecha-nac'),rol=document.getElementById('nu-rol').value,pass=val('nu-pass');
+  if(!nombre||!username||!email||!pass){showErr('nu-err','Completá nombre, usuario, email y contraseña.');return;}
+  if(!/^[a-z0-9]{4,10}$/.test(username)){showErr('nu-err','El usuario debe tener entre 4 y 10 caracteres, solo letras y números.');return;}
+  if(!email.includes('@')){showErr('nu-err','Email inválido.');return;}
+  if(pass.length<6){showErr('nu-err','La contraseña debe tener al menos 6 caracteres.');return;}
+  _creandoUsuario=true;
+  try{
+    const k=ek(email);
+    if(await fbGet('alumnos/'+k)){showErr('nu-err','Ya existe una cuenta con ese email.');return;}
+    const todos=await fbGet('alumnos')||{};
+    if(Object.values(todos).some(a=>(a.username||'').toLowerCase()===username)){showErr('nu-err','Ese nombre de usuario ya está en uso.');return;}
+    await fbSet('alumnos/'+k,{nombre,username,email,tel:tel||null,fecha_nac:fechaNac||null,pass,rol,estado:'aprobado',pass_temporal:true,ts:new Date().toISOString()});
+    authMigrarAlumno(k,email,pass);
+    registrarAuditoria('alta_usuario_manual',session.rol||'instructor','exito',nombre+' ('+email+' / '+username+') — rol: '+rol);
+    showOk('nu-ok','// USUARIO CREADO');
+    renderAlumnosList();
+    setTimeout(()=>cerrarModalNuevoUsuario(),1200);
+  }catch(e){showErr('nu-err','Error al crear el usuario.');console.error(e);}
+  finally{_creandoUsuario=false;}
+};
+
+document.addEventListener('click',e=>{if(e.target.id==='modal-nuevo-usuario')cerrarModalNuevoUsuario();});
 
 /* ============================ CARGAR TURNO MANUAL (instructor/admin) ============================
    v6.08. Herramienta para que instructor o admin (NO administrador, que es solo-lectura en
