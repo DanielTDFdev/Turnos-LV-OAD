@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.66
+  FECHA   : 2026-08-25
+  CAMBIOS : Pedido de Daniel: guardarTurnoManual() (Carga Turno, uso de
+            instructor/admin) no chequeaba documentación vencida del
+            alumno — un instructor podía cargarle un turno a un alumno con
+            CMA/PSA vencido, algo que el autoservicio (confirmarTurno) ya
+            bloquea. Se agrega el mismo chequeo con chequearHabilitacionAlumno()
+            (releyendo el alumno fresco de Firebase por si el modal quedó
+            abierto un rato), mismo mensaje de error que usa el alumno en
+            autoservicio. No afecta piloto (la función ya da ok:true para
+            ese rol).
   VERSION : 7.65
   FECHA   : 2026-08-25
   CAMBIOS : Pedido de Daniel: ABM de usuarios estaba incompleto — había
@@ -2846,7 +2857,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.65</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.66</div>
   </div>
 
 </div>
@@ -8785,6 +8796,19 @@ window.guardarTurnoManual=async function(){
   if(!key){showErr('ct-err','Seleccioná un alumno o piloto.');return;}
   const alumno=(sel._datos||{})[key];
   if(!alumno){showErr('ct-err','No se pudo leer los datos del usuario seleccionado. Volvé a abrir el modal.');return;}
+  // v7.65 — pedido de Daniel: la carga manual por instructor no aplicaba las mismas
+  // reglas de documentación vencida que rigen el autoservicio (confirmarTurno). Se
+  // relee el alumno fresco de Firebase (el modal pudo quedar abierto un rato) y se
+  // aplica chequearHabilitacionAlumno(), misma fuente de verdad única que ya usa
+  // confirmarTurno y el badge ⚠ VENCIDO de Config>Usuarios. No aplica a rol piloto
+  // (la función ya devuelve ok:true para ese caso).
+  const alumnoFresco=await fbGet('alumnos/'+key)||alumno;
+  const chkDoc=chequearHabilitacionAlumno(alumnoFresco);
+  if(!chkDoc.ok){
+    const detalle=chkDoc.vencidos.map(v=>v.fecha?`${v.tipo} vencido el ${fmtFechaCorta(v.fecha)}`:`${v.tipo} sin fecha cargada`).join(' — ');
+    showErr('ct-err','⚠ No se puede cargar el turno: '+detalle+'. Regularizar documentación antes de cargar.');
+    return;
+  }
   const avion=document.getElementById('ct-avion').value;
   const fecha=document.getElementById('ct-fecha').value;
   const hora=document.getElementById('ct-hora').value;
