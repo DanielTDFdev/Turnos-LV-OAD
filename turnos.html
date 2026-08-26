@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.68
+  FECHA   : 2026-08-26
+  CAMBIOS : Pedido de Daniel: tabs del login (Ingresar/Registrarme/Inst-Admin)
+            ahora muestran ícono + texto en vez de solo texto. Se reusan
+            repo_fotos/piloto_icon.png (Ingresar), repo_fotos/registro_icon.png
+            (Registrarme, ícono nuevo) y repo_fotos/instructor_icon.png
+            (Inst/Admin) — misma carpeta ya servida en producción que usan
+            vuelo.html y vuelo-piloto.html para sus user-icon. Nueva clase CSS
+            .nav-btn-icon (variante de .nav-btn con <img> de 18px, gris/
+            desaturado cuando inactivo, color+glow cyan cuando activo, mismo
+            patrón visual que .nav-btn.active). switchLoginTab() no se tocó —
+            sigue togglenado .active por id, ahora sobre los nuevos botones.
   VERSION : 7.67
   FECHA   : 2026-08-25
   CAMBIOS : Pedido de Daniel: reporte.html pasó a ser accesible para todos los
@@ -2550,6 +2562,13 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .nav-btn{font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;padding:5px 14px;border:1px solid transparent;border-radius:var(--radius);cursor:pointer;background:transparent;color:var(--text3);text-transform:uppercase;}
 .nav-btn:hover{color:var(--text2);border-color:var(--border)}
 .nav-btn.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.08);text-shadow:0 0 10px rgba(0,200,212,.4);}
+/* v7.68: tabs de login con ícono (pedido de Daniel) */
+.nav-btn-icon{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;padding:7px 10px 7px 8px;border:1px solid transparent;border-radius:var(--radius);cursor:pointer;background:transparent;color:var(--text3);text-transform:uppercase;display:flex;align-items:center;gap:6px;flex:1;justify-content:center;transition:all .15s;}
+.nav-btn-icon img{width:18px;height:18px;object-fit:contain;opacity:.55;filter:grayscale(1);transition:all .15s;flex-shrink:0;}
+.nav-btn-icon:hover{color:var(--text2);border-color:var(--border)}
+.nav-btn-icon:hover img{opacity:.8;filter:grayscale(.3);}
+.nav-btn-icon.active{color:var(--cyan);border-color:var(--cyan);background:rgba(0,200,212,.08);text-shadow:0 0 10px rgba(0,200,212,.4);}
+.nav-btn-icon.active img{opacity:1;filter:grayscale(0) drop-shadow(0 0 4px rgba(0,200,212,.5));}
 .tab-bar{display:flex;gap:8px;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;padding:.75rem 0;border-bottom:1px solid var(--border);}
 .links-row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:.85rem;flex-wrap:wrap;}
 .avnc-panel{display:inline-flex;gap:6px;background:#050505;padding:8px;border-radius:6px;box-shadow:inset 0 2px 6px rgba(0,0,0,.8);flex-wrap:wrap;}
@@ -2866,7 +2885,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.67</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.68</div>
   </div>
 
 </div>
@@ -2892,9 +2911,9 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="login-wrap">
     <div class="login-card">
       <div style="display:flex;gap:6px;margin-bottom:1.25rem">
-        <button class="nav-btn active" id="tab-btn-alumno"     onclick="switchLoginTab('alumno')">Ingresar</button>
-        <button class="nav-btn"        id="tab-btn-registro"   onclick="switchLoginTab('registro')">Registrarme</button>
-        <button class="nav-btn"        id="tab-btn-instructor" onclick="switchLoginTab('instructor')">Inst / Admin</button>
+        <button class="nav-btn-icon active" id="tab-btn-alumno"     onclick="switchLoginTab('alumno')"><img src="repo_fotos/piloto_icon.png" alt="">Ingresar</button>
+        <button class="nav-btn-icon"        id="tab-btn-registro"   onclick="switchLoginTab('registro')"><img src="repo_fotos/registro_icon.png" alt="">Registrarme</button>
+        <button class="nav-btn-icon"        id="tab-btn-instructor" onclick="switchLoginTab('instructor')"><img src="repo_fotos/instructor_icon.png" alt="">Inst / Admin</button>
       </div>
       <div id="tab-alumno">
         <div class="field"><label>Email o usuario</label><input type="text" id="al-login-email" placeholder="tu@email.com o tu usuario" autocapitalize="off" autocomplete="username"></div>
