@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.39 · Pedido de Daniel tras un reporte real: en Modo Inverso confundió la
+         bandera FROM del instrumento objetivo (que queda FROM/centrada
+         SIEMPRE, sea cual sea la acción pedida — es solo la técnica de
+         lectura del radial) con la pista de qué maniobra hacer. Dos cambios:
+         (1) se saca la bandera TO/FROM del instrumento objetivo — tanto el
+         indicador dentro del SVG (rect+texto+triángulo en VOR, triángulo
+         blanco solidario a la flecha en HSI, nuevo ov.hideFlag en
+         renderVOR()/renderHSI()) como el readout de texto aparte que había
+         debajo (id obj-flag-readout, eliminado del HTML); (2) la acción
+         objetivo pasa de un <b> inline dentro del párrafo a un badge propio
+         (.objetivo-accion) grande, en cyan con glow, para que no se pueda
+         pasar por alto. El instrumento del alumno (VOR/HSI en vivo) no se
+         toca — sigue mostrando TO/FROM normalmente, es información real ahí.
   v4.38 · Pedido de Daniel: nuevo Modo Inverso — al revés del Ejercicio normal
          (que da heading+radial y hay que identificar la acción), acá se
          muestra un radial objetivo + una acción a lograr (Alejándose/
@@ -754,6 +767,12 @@ button{touch-action:manipulation}
 .flag-readout{font-family:var(--font-mono);font-size:13px;letter-spacing:.1em;padding:4px 10px;border-radius:var(--radius);border:1px solid var(--border)}
 .flag-readout.to{color:var(--green);border-color:var(--green);background:rgba(57,211,83,.08)}
 .flag-readout.from{color:var(--amber);border-color:var(--amber);background:rgba(240,165,0,.08)}
+/* v4.39 — pedido de Daniel: la acción objetivo del Modo Inverso pasaba
+   desapercibida (era solo un <b> dentro del párrafo de instrucciones, al
+   lado de la bandera FROM/centrada que el alumno confundía con la pista de
+   la maniobra). Badge grande y propio, mismo estilo que .flag-readout pero
+   más grande y siempre en cyan (no es TO/FROM, es la meta a lograr). */
+.objetivo-accion{font-family:var(--font-mono);font-size:20px;font-weight:700;letter-spacing:.12em;text-align:center;padding:10px 14px;border-radius:var(--radius);border:2px solid var(--cyan);background:rgba(0,200,212,.1);color:var(--cyan);text-shadow:0 0 10px rgba(0,200,212,.5);margin:10px 0}
 .answer-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px}
 @media(max-width:760px){.answer-grid{grid-template-columns:1fr}}
 .field label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px}
@@ -831,7 +850,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.38</span>
+      <span class="ver">v4.39</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -864,11 +883,11 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       <div id="hsi-svg-obj" style="display:none"></div>
     </div>
     <div class="obs-readout" id="obj-radial-readout">RADIAL 000°</div>
-    <div class="flag-readout" id="obj-flag-readout">— </div>
     <p class="hint" style="text-align:left;margin-top:10px">
       Ubicá el avión en el radial que muestra el instrumento (arrastrándolo en el mapa, más abajo)
-      y poné rumbo, con los botones HEADING, para: <b id="obj-accion-label">ALEJARTE</b>.
+      y poné rumbo, con los botones HEADING, para:
     </p>
+    <div class="objetivo-accion" id="obj-accion-label">ALEJARTE</div>
     <button class="primary" id="btn-validar-inverso" onclick="validarInverso()">VALIDAR</button>
     <button class="primary" id="btn-nuevo-inverso" onclick="nuevoEjercicioInverso()" style="margin-top:8px;display:none">NUEVO EJERCICIO</button>
     <div class="feedback" id="feedback-inverso"></div>
@@ -1190,9 +1209,9 @@ function renderObjetivo(){
   document.getElementById('vor-svg-obj').style.display = modo==='vor' ? 'block' : 'none';
   document.getElementById('hsi-svg-obj').style.display = modo==='hsi' ? 'block' : 'none';
   if(modo==='vor'){
-    renderVOR({obs:radialObjetivo, radial:radialObjetivo, svgId:'vor-svg-obj', instrId:'vor-instrument-obj', obsElId:'obj-radial-readout', flagElId:'obj-flag-readout', obsLabel:'RADIAL', freeze:true});
+    renderVOR({obs:radialObjetivo, radial:radialObjetivo, svgId:'vor-svg-obj', instrId:'vor-instrument-obj', obsElId:'obj-radial-readout', obsLabel:'RADIAL', hideFlag:true, freeze:true});
   } else {
-    renderHSI({obs:radialObjetivo, radial:radialObjetivo, heading:0, svgId:'hsi-svg-obj', instrId:'hsi-instrument-obj', crsElId:'obj-radial-readout', flagElId:'obj-flag-readout', obsLabel:'RADIAL', freeze:true});
+    renderHSI({obs:radialObjetivo, radial:radialObjetivo, heading:0, svgId:'hsi-svg-obj', instrId:'hsi-instrument-obj', crsElId:'obj-radial-readout', obsLabel:'RADIAL', hideFlag:true, freeze:true});
   }
 }
 
@@ -1466,10 +1485,10 @@ function renderVOR(ov){
     <line x1="${cx}" y1="${cy-45}" x2="${cx}" y2="${cy+45}" stroke="white" stroke-width="1" stroke-dasharray="2,4"/>
     <circle cx="${cx}" cy="${cy}" r="5" fill="none" stroke="white" stroke-width="1.5"/>
     <line x1="${needleX}" y1="${cy-48}" x2="${needleX}" y2="${cy+48}" stroke="white" stroke-width="5"/>
-    <rect x="${cx+46}" y="${cy-12}" width="62" height="24" rx="3" fill="#0a0c0f" stroke="${cdi.flag==='TO'?'#39d353':'#f0a500'}" stroke-width="1.5"/>
+    ${ov.hideFlag?'':`<rect x="${cx+46}" y="${cy-12}" width="62" height="24" rx="3" fill="#0a0c0f" stroke="${cdi.flag==='TO'?'#39d353':'#f0a500'}" stroke-width="1.5"/>
     <text x="${cx+52}" y="${cy}" text-anchor="start" dominant-baseline="middle" font-family="Share Tech Mono" font-size="13" font-weight="bold" fill="${cdi.flag==='TO'?'#39d353':'#f0a500'}">${cdi.flag}</text>
     ${cdi.flag==='TO'?`<polygon points="${cx+92},${cy+5} ${cx+104},${cy+5} ${cx+98},${cy-6}" fill="#39d353"/>`:''}
-    ${cdi.flag==='FROM'?`<polygon points="${cx+92},${cy-5} ${cx+104},${cy-5} ${cx+98},${cy+6}" fill="#f0a500"/>`:''}
+    ${cdi.flag==='FROM'?`<polygon points="${cx+92},${cy-5} ${cx+104},${cy-5} ${cx+98},${cy+6}" fill="#f0a500"/>`:''}`}
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
   document.getElementById(ov.svgId||'vor-svg').innerHTML=svg;
@@ -1596,8 +1615,7 @@ function renderHSI(ov){
     ${headShaft}${tailShaft}${headArrow}
     ${cdiScale(cx,cy,courseA+90,courseA)}
     <line x1="${bx1}" y1="${by1}" x2="${bx2}" y2="${by2}" stroke="#5be38a" stroke-width="6" stroke-linecap="round"/>
-    ${cdi.flag==='TO'?toTri:''}
-    ${cdi.flag==='FROM'?fromTri:''}
+    ${ov.hideFlag?'':(cdi.flag==='TO'?toTri:fromTri)}
     ${rmiNeedle}
     <g stroke="#f85149" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
       <line x1="${cx}" y1="${cy-15}" x2="${cx}" y2="${cy+12}"/>
