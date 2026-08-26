@@ -2,6 +2,29 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.38 · Pedido de Daniel: nuevo Modo Inverso — al revés del Ejercicio normal
+         (que da heading+radial y hay que identificar la acción), acá se
+         muestra un radial objetivo + una acción a lograr (Alejándose/
+         Ingresando/Cortando) en una tarjeta "// OBJETIVO" con una foto fija
+         del instrumento VOR/HSI (radialObjetivo, CDI centrado FROM — misma
+         técnica real de "girar el OBS hasta centrar y leer el radial", solo
+         que acá ya viene centrado). El alumno arrastra el avión en el mapa
+         (mismo drag de Modo Libre, gateado ahora por mapaArrastrable() en
+         vez de comparar contra 'libre' a mano) hasta ese radial, fija el
+         rumbo con los botones HEADING (mismos de Libre) para lograr la
+         acción pedida, y toca VALIDAR — compara radial (±TOL_RADIAL) y
+         explicarAccion(heading,radial) contra el objetivo, mismo criterio
+         y mismo texto de motivo que usa VERIFICAR en Ejercicio.
+         El CDI (VOR/OBS o HSI completo) se oculta en este modo — si
+         reaccionara en vivo al arrastre alcanzaría con mirar la aguja
+         centrarse, sin pensar la posición — pero el Giro Direccional queda
+         SIEMPRE visible (sin importar el tab VOR/HSI activo) para calibrar
+         los botones de HEADING.
+         Refactor de soporte: renderVOR()/renderHSI() ahora aceptan un
+         objeto de overrides opcional (obs/radial/heading/svgId/instrId/
+         freeze) — sin argumentos se comportan exactamente igual que antes
+         (instrumento en vivo, con drag y DME); con freeze:true dibujan una
+         instantánea estática en IDs propios, usada por renderObjetivo().
   v4.37 · Pedido de Daniel: mismo efecto radar de fondo que index.html
          (círculos concéntricos pulsando + barrido cónico), fijo en la
          esquina inferior derecha del viewport, detrás de .wrap (z-index).
@@ -808,7 +831,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.37</span>
+      <span class="ver">v4.38</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>
@@ -819,6 +842,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       <div class="mode-tabs">
         <button id="tab-modo-ejercicio" onclick="setModoJuego('ejercicio')">▸ EJERCICIO</button>
         <button id="tab-modo-libre" onclick="setModoJuego('libre')">🎮 LIBRE</button>
+        <button id="tab-modo-inverso" onclick="setModoJuego('inverso')">↺ INVERSO</button>
       </div>
     </div>
     <div class="hint" id="modo-libre-desc" style="display:none;text-align:left">
@@ -826,6 +850,28 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
       para cambiar el rumbo. Los instrumentos VOR/HSI reaccionan en vivo — sin ejercicio,
       sin corrección, para explorar cómo se relacionan entre sí.
     </div>
+    <div class="hint" id="modo-inverso-desc" style="display:none;text-align:left">
+      Al revés del Ejercicio: acá el instrumento (en // OBJETIVO) te muestra un radial fijo
+      y una acción a lograr. Arrastrá el avión en el mapa hasta ese radial y usá los botones
+      HEADING para fijar el rumbo. Tocá VALIDAR cuando estés listo.
+    </div>
+  </div>
+
+  <div class="card" id="card-objetivo" style="display:none">
+    <h2>// OBJETIVO</h2>
+    <div class="instr-svg-row" style="justify-content:center">
+      <div id="vor-svg-obj"></div>
+      <div id="hsi-svg-obj" style="display:none"></div>
+    </div>
+    <div class="obs-readout" id="obj-radial-readout">RADIAL 000°</div>
+    <div class="flag-readout" id="obj-flag-readout">— </div>
+    <p class="hint" style="text-align:left;margin-top:10px">
+      Ubicá el avión en el radial que muestra el instrumento (arrastrándolo en el mapa, más abajo)
+      y poné rumbo, con los botones HEADING, para: <b id="obj-accion-label">ALEJARTE</b>.
+    </p>
+    <button class="primary" id="btn-validar-inverso" onclick="validarInverso()">VALIDAR</button>
+    <button class="primary" id="btn-nuevo-inverso" onclick="nuevoEjercicioInverso()" style="margin-top:8px;display:none">NUEVO EJERCICIO</button>
+    <div class="feedback" id="feedback-inverso"></div>
   </div>
 
   <div class="card">
@@ -844,7 +890,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
         <div class="instr-label">Giro Direccional (heading del avión)</div>
         <div id="hdg-svg"></div>
       </div>
-      <div class="instr-box">
+      <div class="instr-box" id="cdi-box-vor">
         <div class="instr-label">VOR / OBS — girá para centrar la aguja</div>
         <div class="instr-svg-row">
           <div id="vor-svg"></div>
@@ -942,6 +988,16 @@ let radialReal=0, headingReal=0, distNM=6, obs=0, aciertos=0, intentos=0, accion
 // sin scoring, el mapa queda visible y arrastrable todo el tiempo, no hay
 // ejercicio ni corrección.
 let modoJuego='ejercicio';
+// v4.38 — Modo Inverso: objetivo a alcanzar (radial + acción). radialReal/
+// headingReal/posX/posY siguen siendo la posición/rumbo que el ALUMNO va
+// fijando (mismo mecanismo de drag+botones que Libre); estas dos son solo
+// el target contra el que se compara en validarInverso().
+let radialObjetivo=0, accionObjetivo='out';
+// v4.38 — Modo Inverso también necesita arrastrar el avión en el mapa (igual
+// que Libre), así que los gates de drag del mapa usan este helper en vez de
+// comparar contra 'libre' a mano. iniciarVuelo()/motor de vuelo siguen
+// exclusivos de Libre — no se tocan.
+function mapaArrastrable(){ return modoJuego==='libre'||modoJuego==='inverso'; }
 
 // v4.24 — motor de vuelo recto de Modo Libre (prerrequisito para el futuro Nivel 4
 // de "opuesto y paralelo": esa maniobra necesita que el radial real vaya cambiando
@@ -1000,11 +1056,27 @@ function renderInstrumentos(){
 function setModo(m){
   modo=m;
   try{ localStorage.setItem('vor-trainer-modo', m); }catch(_){}
-  document.getElementById('instrumentos-vor').style.display = m==='vor' ? 'grid' : 'none';
-  document.getElementById('instrumentos-hsi').style.display = m==='hsi' ? 'flex' : 'none';
+  actualizarVisibilidadInstrumentos();
   document.getElementById('tab-vor').classList.toggle('active', m==='vor');
   document.getElementById('tab-hsi').classList.toggle('active', m==='hsi');
   renderInstrumentos();
+  if(modoJuego==='inverso') renderObjetivo();
+}
+
+// v4.38 — en Modo Inverso el CDI (VOR/OBS o HSI completo) queda oculto: si
+// reaccionara en vivo al arrastre del alumno, alcanzaría con mirar la aguja
+// centrarse para acertar, sin pensar la posición. Se deja SOLO el Giro
+// Direccional (heading del avión) visible siempre, sin importar el tab VOR/
+// HSI elegido, porque el alumno lo necesita para calibrar los botones de
+// HEADING. En HSI el heading vive fusionado en el propio instrumento (no hay
+// giro direccional separado), así que en Inverso se fuerza igual el grid de
+// VOR (que sí tiene el giro suelto) y se oculta su caja de CDI.
+function actualizarVisibilidadInstrumentos(){
+  const inv=modoJuego==='inverso';
+  document.getElementById('instrumentos-vor').style.display = (inv||modo==='vor') ? 'grid' : 'none';
+  document.getElementById('instrumentos-hsi').style.display = (!inv&&modo==='hsi') ? 'flex' : 'none';
+  const cdiBox=document.getElementById('cdi-box-vor');
+  if(cdiBox) cdiBox.style.display = inv ? 'none' : '';
 }
 
 // v4.29 — toggle de la aguja RMI (bearing hacia la estación) en el HSI. Solo cambia
@@ -1043,35 +1115,112 @@ function selectAccion(a){
 
 function turnOBS(delta){ obs=Math.round(norm360(obs+delta)); renderInstrumentos(); }
 
-// v4.22 — modo libre. Cambia entre el ejercicio de siempre (con corrección y
-// puntaje) y un sandbox sin scoring donde el mapa queda visible y arrastrable
-// todo el tiempo. No toca la física ni el resto del ejercicio, solo qué tarjetas
-// se muestran y quién controla radialReal/headingReal.
+// v4.22 — modo libre. v4.38 — modo inverso. Los tres modos deciden qué
+// tarjetas se muestran y quién controla radialReal/headingReal; la física no
+// cambia entre ellos.
 function setModoJuego(m){
   modoJuego=m;
   document.getElementById('tab-modo-ejercicio').classList.toggle('active', m==='ejercicio');
   document.getElementById('tab-modo-libre').classList.toggle('active', m==='libre');
+  document.getElementById('tab-modo-inverso').classList.toggle('active', m==='inverso');
   document.getElementById('modo-libre-desc').style.display = m==='libre' ? 'block' : 'none';
-  document.getElementById('card-respuesta').style.display = m==='libre' ? 'none' : 'block';
-  document.getElementById('map-heading-controls').style.display = m==='libre' ? 'flex' : 'none';
+  document.getElementById('modo-inverso-desc').style.display = m==='inverso' ? 'block' : 'none';
+  document.getElementById('card-respuesta').style.display = m==='ejercicio' ? 'block' : 'none';
+  document.getElementById('card-objetivo').style.display = m==='inverso' ? 'block' : 'none';
+  document.getElementById('map-heading-controls').style.display = (m==='libre'||m==='inverso') ? 'flex' : 'none';
   document.getElementById('vuelo-controls').style.display = m==='libre' ? 'flex' : 'none';
   document.getElementById('vuelo-hint').style.display = m==='libre' ? 'block' : 'none';
   // v4.31.1: ya no fuerza 'block' para modo ejercicio — nuevoEjercicio() (que se
   // llama más abajo al entrar a ejercicio) y verificar() son quienes deciden la
   // visibilidad ahora (solo aparece después de tocar VERIFICAR).
   document.getElementById('btn-nuevo-ejercicio').style.display = 'none';
-  document.getElementById('map-panel-title').textContent = m==='libre' ? '// POSICIÓN (arrastrá el avión)' : '// POSICIÓN REAL';
+  actualizarVisibilidadInstrumentos();
+  document.getElementById('map-panel-title').textContent = m==='libre' ? '// POSICIÓN (arrastrá el avión)' : (m==='inverso' ? '// TU POSICIÓN' : '// POSICIÓN REAL');
   document.getElementById('map-hint').textContent = m==='libre'
     ? 'Arrastrá el avión (o cualquier punto del mapa) para cambiar el radial.'
-    : 'Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste';
+    : (m==='inverso'
+        ? 'Arrastrá el avión hasta el radial del objetivo (arriba) y ajustá el rumbo con los botones HEADING.'
+        : 'Línea ámbar = radial real del avión · Línea cian punteada = curso OBS que seleccionaste');
   if(m==='libre'){
     sincronizarPosDesdeRadial(); // por si nuevoEjercicio() cambió distNM mientras estábamos en ejercicio
     document.getElementById('map-panel').style.display='block';
     renderMap();
+  } else if(m==='inverso'){
+    detenerVuelo(); // no puede quedar el motor de vuelo de Libre corriendo de fondo
+    nuevoEjercicioInverso();
   } else {
     detenerVuelo(); // v4.33 — antes solo pausarVuelo(); ahora, al salir de Libre, reset completo (no puede quedar un setInterval corriendo en modo ejercicio, y así una vuelta futura a Libre arranca limpia, no resume desde una distancia vieja)
     nuevoEjercicio(); // vuelve todo al estado de siempre (map oculto hasta VERIFICAR)
   }
+}
+
+// ── MODO INVERSO ────────────────────────────────────────────────────
+// v4.38 — pedido de Daniel: al revés del Ejercicio normal (que da heading+
+// radial y hay que identificar la acción), acá se da un radial objetivo +
+// una acción a lograr, y el alumno tiene que ARRASTRAR el avión al radial
+// correcto y fijar el rumbo con los botones HEADING para lograr esa acción.
+// El instrumento de "// OBJETIVO" es una FOTO fija (renderVOR/HSI con
+// freeze:true) — no reacciona al drag del alumno, para que no alcance con
+// mirar la aguja moverse en vivo.
+function nuevoEjercicioInverso(){
+  radialObjetivo=Math.floor(Math.random()*360);
+  accionObjetivo=['out','in','cross'][Math.floor(Math.random()*3)];
+  // arranque: heading al azar y el avión en un radial DISTINTO al objetivo
+  // (60°-180° de diferencia), para que haya que moverlo de verdad.
+  headingReal=Math.floor(Math.random()*360);
+  distNM=6+Math.floor(Math.random()*10);
+  const desvio=60+Math.floor(Math.random()*121); // 60..180
+  radialReal=Math.round(norm360(radialObjetivo+(Math.random()<0.5?1:-1)*desvio));
+  sincronizarPosDesdeRadial();
+  const fb=document.getElementById('feedback-inverso');
+  fb.style.display='none';
+  document.getElementById('btn-nuevo-inverso').style.display='none';
+  document.getElementById('btn-validar-inverso').disabled=false;
+  renderObjetivo();
+  document.getElementById('map-panel').style.display='block';
+  renderMap();
+  renderInstrumentos();
+  updateScore();
+}
+
+function renderObjetivo(){
+  const map={in:'INGRESANDO',out:'ALEJÁNDOTE',cross:'CORTANDO'};
+  const lbl=document.getElementById('obj-accion-label');
+  if(lbl) lbl.textContent=map[accionObjetivo];
+  document.getElementById('vor-svg-obj').style.display = modo==='vor' ? 'block' : 'none';
+  document.getElementById('hsi-svg-obj').style.display = modo==='hsi' ? 'block' : 'none';
+  if(modo==='vor'){
+    renderVOR({obs:radialObjetivo, radial:radialObjetivo, svgId:'vor-svg-obj', instrId:'vor-instrument-obj', obsElId:'obj-radial-readout', flagElId:'obj-flag-readout', obsLabel:'RADIAL', freeze:true});
+  } else {
+    renderHSI({obs:radialObjetivo, radial:radialObjetivo, heading:0, svgId:'hsi-svg-obj', instrId:'hsi-instrument-obj', crsElId:'obj-radial-readout', flagElId:'obj-flag-readout', obsLabel:'RADIAL', freeze:true});
+  }
+}
+
+function validarInverso(){
+  intentos++;
+  const errRadial=Math.abs(norm180(radialReal-radialObjetivo));
+  const okRadial=errRadial<=TOL_RADIAL;
+  const exp=explicarAccion(headingReal,radialReal);
+  const accionLograda=exp.resultado;
+  const okAccion=accionLograda===accionObjetivo;
+  const ok=okRadial&&okAccion;
+  if(ok) aciertos++;
+  updateScore();
+  const map={in:'Ingresando',out:'Alejándose',cross:'Cortando'};
+  const p3=n=>String(Math.round(norm360(n))).padStart(3,'0');
+  const fb=document.getElementById('feedback-inverso');
+  fb.className='feedback '+(ok?'ok':'bad');
+  fb.style.display='block';
+  fb.innerHTML='<b>'+(ok?'✓ CORRECTO':'✗ INCORRECTO')+'</b>'+
+    'Objetivo: radial '+p3(radialObjetivo)+'°, '+map[accionObjetivo]+'.<br>'+
+    'Ubicaste el avión en el radial '+p3(radialReal)+'° (diferencia '+errRadial.toFixed(0)+'°'+(okRadial?', dentro de tolerancia ±'+TOL_RADIAL+'°':', fuera de tolerancia ±'+TOL_RADIAL+'°')+').<br>'+
+    'Rumbo elegido '+p3(headingReal)+'° → '+map[accionLograda]+(okAccion?' (correcto).':' — debía ser '+map[accionObjetivo]+'.');
+  const explain=document.createElement('div');
+  explain.className='explain';
+  explain.innerHTML='<div class="paso"><b>◈ Cómo se clasifica tu rumbo</b>'+exp.motivo+'</div>';
+  fb.appendChild(explain);
+  document.getElementById('btn-validar-inverso').disabled=true;
+  document.getElementById('btn-nuevo-inverso').style.display='block';
 }
 
 function turnHeadingReal(delta){
@@ -1290,14 +1439,26 @@ function cdiScale(cx,cy,spreadDeg,tickDeg){
 }
 
 // ── SVG: VOR / OBS ───────────────────────────────────────────────
-function renderVOR(){
-  const cdi=computeCDI(obs,radialReal);
+// v4.38 — pedido de Daniel: Modo Inverso necesita renderizar una "foto" del
+// instrumento con valores objetivo, separada del instrumento en vivo (que
+// sigue atado a `obs`/`radialReal`). En vez de duplicar el SVG, renderVOR()
+// ahora acepta un objeto `ov` opcional de overrides: si no se pasa nada, se
+// comporta exactamente igual que antes (usa las globales, engancha drag,
+// actualiza DME). Con `ov.freeze:true` (usado por renderObjetivo()) dibuja
+// con los valores dados, en IDs propios, SIN enganchar drag ni tocar DME —
+// es una instantánea estática, no el instrumento operable.
+function renderVOR(ov){
+  ov=ov||{};
+  const _obs=ov.obs!==undefined?ov.obs:obs;
+  const _radial=ov.radial!==undefined?ov.radial:radialReal;
+  const cdi=computeCDI(_obs,_radial);
   const cx=130,cy=130,r=115;
-  const {ticks,labels}=compassRing(cx,cy,r,-obs,d=>
+  const {ticks,labels}=compassRing(cx,cy,r,-_obs,d=>
     d===0?'N':d===90?'E':d===180?'S':d===270?'W':String(d/10).padStart(2,'0'));
   const needleX=cx+(cdi.defl/10)*45;
+  const instrId=ov.instrId||'vor-instrument';
   const svg=`
-  <svg width="260" height="260" viewBox="0 0 260 260" id="vor-instrument" style="cursor:grab;touch-action:none">
+  <svg width="260" height="260" viewBox="0 0 260 260" id="${instrId}" style="cursor:${ov.freeze?'default':'grab'};touch-action:none">
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
@@ -1311,11 +1472,15 @@ function renderVOR(){
     ${cdi.flag==='FROM'?`<polygon points="${cx+92},${cy-5} ${cx+104},${cy-5} ${cx+98},${cy+6}" fill="#f0a500"/>`:''}
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
-  document.getElementById('vor-svg').innerHTML=svg;
-  document.getElementById('obs-readout').textContent='OBS '+String(obs).padStart(3,'0')+'°';
-  const fl=document.getElementById('flag-readout');
-  fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
-  fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  document.getElementById(ov.svgId||'vor-svg').innerHTML=svg;
+  const obsEl=document.getElementById(ov.obsElId||'obs-readout');
+  if(obsEl) obsEl.textContent=(ov.obsLabel||'OBS')+' '+String(_obs).padStart(3,'0')+'°';
+  const fl=document.getElementById(ov.flagElId||'flag-readout');
+  if(fl){
+    fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
+    fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  }
+  if(ov.freeze) return;
   // v4.31.1 — DME afuera del instrumento (a la derecha), no adentro del SVG:
   // adentro se solapaba con el dial/números de la carta y quedaba ilegible.
   // v4.31.2 — box con label "DME" arriba y valor abajo (antes una sola línea
@@ -1323,7 +1488,7 @@ function renderVOR(){
   // fijo en el HTML y no se reescribe en cada render.
   document.getElementById('vor-dme-valor').textContent=distNM.toFixed(1)+' NM';
   document.getElementById('vor-dme-readout').classList.toggle('visible',volando);
-  attachDrag('vor-instrument');
+  attachDrag(instrId);
 }
 
 // ── SVG: HSI (Horizontal Situation Indicator) ─────────────────────
@@ -1335,12 +1500,16 @@ function renderVOR(){
 // "TO"; la cola (recíproco) es el extremo "FROM". La barra de desviación
 // se desliza perpendicular a la flecha, no en el eje vertical fijo como en
 // el VOR/OBS clásico (porque la flecha misma gira con el heading).
-function renderHSI(){
-  const cdi=computeCDI(obs,radialReal);
+function renderHSI(ov){
+  ov=ov||{};
+  const _obs=ov.obs!==undefined?ov.obs:obs;
+  const _radial=ov.radial!==undefined?ov.radial:radialReal;
+  const _heading=ov.heading!==undefined?ov.heading:headingReal;
+  const cdi=computeCDI(_obs,_radial);
   const cx=130,cy=130,r=115;
-  const {ticks,labels}=compassRing(cx,cy,r,-headingReal,d=>
+  const {ticks,labels}=compassRing(cx,cy,r,-_heading,d=>
     d===0?'N':d===90?'E':d===180?'S':d===270?'W':String(d/10).padStart(2,'0'));
-  const courseA=norm360(obs-headingReal); // ángulo de pantalla del curso seleccionado
+  const courseA=norm360(_obs-_heading); // ángulo de pantalla del curso seleccionado
   const rad=courseA*Math.PI/180, radRecip=(courseA+180)*Math.PI/180;
   const shaftLen=88;
   const hx=cx+Math.sin(rad)*shaftLen, hy=cy-Math.cos(rad)*shaftLen; // punta de la cabeza
@@ -1399,8 +1568,8 @@ function renderHSI(){
   // confundan a simple vista aunque compartan el dial.
   let rmiNeedle='';
   if(mostrarRMI){
-    const bearingEstacion=norm360(radialReal+180);
-    const rmiA=(norm360(bearingEstacion-headingReal))*Math.PI/180;
+    const bearingEstacion=norm360(_radial+180);
+    const rmiA=(norm360(bearingEstacion-_heading))*Math.PI/180;
     const rmiRecip=rmiA+Math.PI;
     const rGap=18, rTip=96, rBase=86, rTail=96;
     const perpRmi=rmiA+Math.PI/2, offRmi=2.2;
@@ -1420,7 +1589,7 @@ function renderHSI(){
   }
 
   const svg=`
-  <svg width="260" height="260" viewBox="0 0 260 260" id="hsi-instrument" style="cursor:grab;touch-action:none">
+  <svg width="260" height="260" viewBox="0 0 260 260" id="${ov.instrId||'hsi-instrument'}" style="cursor:${ov.freeze?'default':'grab'};touch-action:none">
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="#000"/>
     ${ticks}${labels}
     <polygon points="${cx-7},14 ${cx+7},14 ${cx},26" fill="#f0a500"/>
@@ -1437,14 +1606,18 @@ function renderHSI(){
     </g>
     <circle cx="${cx}" cy="${cy}" r="${r+14}" fill="none" stroke="#333" stroke-width="2"/>
   </svg>`;
-  document.getElementById('hsi-svg').innerHTML=svg;
-  document.getElementById('hsi-crs-readout').textContent='CRS '+String(obs).padStart(3,'0')+'°';
-  const fl=document.getElementById('hsi-flag-readout');
-  fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
-  fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  document.getElementById(ov.svgId||'hsi-svg').innerHTML=svg;
+  const crsEl=document.getElementById(ov.crsElId||'hsi-crs-readout');
+  if(crsEl) crsEl.textContent=(ov.obsLabel||'CRS')+' '+String(_obs).padStart(3,'0')+'°';
+  const fl=document.getElementById(ov.flagElId||'hsi-flag-readout');
+  if(fl){
+    fl.textContent=cdi.flag+(Math.abs(cdi.defl)<0.6?' · CENTRADA':'');
+    fl.className='flag-readout '+(cdi.flag==='TO'?'to':'from');
+  }
+  if(ov.freeze) return;
   document.getElementById('hsi-dme-valor').textContent=distNM.toFixed(1)+' NM';
   document.getElementById('hsi-dme-readout').classList.toggle('visible',volando);
-  attachDrag('hsi-instrument');
+  attachDrag(ov.instrId||'hsi-instrument');
 }
 
 // ── DRAG DEL OBS (estado y listeners de window a nivel módulo — se agregan
@@ -1514,7 +1687,7 @@ function _mapAngleFromCenter(svg,clientX,clientY){
   return norm360(Math.atan2(dx,-dy)*180/Math.PI);
 }
 function _mapDragDown(e){
-  if(modoJuego!=='libre') return;
+  if(!mapaArrastrable()) return;
   const svg=_mapLiveSvg();
   if(!svg) return;
   if(volando) pausarVuelo();
@@ -1542,7 +1715,7 @@ window.addEventListener('mouseup',_mapDragUp);
 window.addEventListener('touchmove',_mapDragMove,{passive:true});
 window.addEventListener('touchend',_mapDragUp);
 function attachMapDrag(){
-  if(modoJuego!=='libre') return;
+  if(!mapaArrastrable()) return;
   const svg=document.getElementById('map-instrument');
   if(!svg) return;
   svg.style.cursor='grab';
@@ -1592,7 +1765,7 @@ function renderMap(){
     hexPts.push((cx+Math.sin(a)*hexR)+','+(cy-Math.cos(a)*hexR));
   }
   const svg=`
-  <svg width="300" height="300" viewBox="0 0 300 300" id="map-instrument" style="${modoJuego==='libre'?'cursor:grab;touch-action:none':''}">
+  <svg width="300" height="300" viewBox="0 0 300 300" id="map-instrument" style="${mapaArrastrable()?'cursor:grab;touch-action:none':''}">
     <circle cx="${cx}" cy="${cy}" r="${rMax+10}" fill="#000"/>
     ${rings}
     ${quad}
