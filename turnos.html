@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.67
+  FECHA   : 2026-08-25
+  CAMBIOS : Pedido de Daniel: reporte.html pasó a ser accesible para todos los
+            instructores (antes solo admin/administrador — ver reporte.html
+            v1.7). actualizarLinkReporte() ya no oculta el botón "REPORTE
+            actividad" del annunciator panel según session.user==='admin'/
+            'administrador' — ahora se muestra siempre que se llama la
+            función, que ya solo corre en los dos puntos de login de
+            instructor (nunca alumno/piloto).
   VERSION : 7.66
   FECHA   : 2026-08-25
   CAMBIOS : Pedido de Daniel: guardarTurnoManual() (Carga Turno, uso de
@@ -2857,7 +2866,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.66</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.67</div>
   </div>
 
 </div>
@@ -5035,7 +5044,12 @@ window.loginInstructor=async function(){
 // parpadear un instante antes de que esto corra.
 function actualizarLinkReporte(){
   const link=document.getElementById('inst-reporte-link');
-  if(link) link.style.display=(session?.user==='admin'||session?.user==='administrador')?'':'none';
+  // v7.67 — pedido de Daniel: reporte.html ahora es accesible para todos los
+  // instructores (antes solo admin/administrador), así que el link deja de
+  // ocultarse. session.tipo==='instructor' ya es exclusivo de instructores/
+  // admin (nunca alumno/piloto), y esta función solo se llama tras confirmar
+  // ese tipo — se muestra siempre.
+  if(link) link.style.display='';
 }
 
 function setNavUser(nombre,tipo){

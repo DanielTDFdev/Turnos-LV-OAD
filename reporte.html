@@ -2,7 +2,12 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande
-  v1.6 · FIX: el PDF (window.print()) imprimía juntas la sección de aeronaves y 
+  v1.7 · Pedido de Daniel: acceso ampliado a todos los instructores (antes
+         exclusivo admin/administrador). checkAccess() ahora valida solo
+         session.tipo==='instructor' (turnos.html reserva ese tipo para
+         instructores/admin, nunca alumno/piloto). Mensaje de gate actualizado.
+         Ver también turnos.html v7.67 (botón del panel dejó de ocultarse).
+  v1.6 · FIX: el PDF (window.print()) imprimía juntas la sección de aeronaves y
          la de instructor si ambas habían sido generadas en la misma sesión —
          el CSS @media print forzaba display:block!important en #reporte Y
          #reporte-inst sin distinguir qué botón PDF se apretó. Nueva función
@@ -34,7 +39,7 @@
               vencido+aprobado_por+sin tiempo → 'aprobado_pasado_sin_obs'.
          También se eliminó la categoría 'vencido_confirmado' que ya no aplica.
   v1.0 · 2026-08-03
-  Acceso: solo admin / administrador (lee sessionStorage 'lvoad-session').
+  Acceso: todos los instructores (session.tipo==='instructor', lee sessionStorage 'lvoad-session').
   Datos: Firebase RTDB turnos-lv-oad-default-rtdb.
   Horas de vuelo: obs_privada_tiempo_vuelo (cargado por instructor post-vuelo).
   Vuelo "volado": aprobado+fecha_pasada+tiempo_vuelo cargado.
@@ -292,7 +297,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.6</span>
+      <span class="ver">v1.7</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -447,16 +452,12 @@ const FLOTA = {
 function checkAccess() {
   try {
     const s = JSON.parse(sessionStorage.getItem('lvoad-session') || '{}');
-    // Rol autorizado: admin o administrador (esAdminRO también puede)
-    const ok = s && (s.tipo === 'instructor' && (s.user === 'admin' || s.user === 'administrador'))
-                 || (s.tipo === 'administrador')
-                 || (s.user === 'admin' || s.user === 'administrador');
-    // Más robusto: verificar tipo y usuario
-    const esAdmin = s && (
-      s.user === 'admin' || s.user === 'administrador' ||
-      s.tipo === 'administrador'
-    );
-    return { ok: esAdmin, nombre: s.nombre || s.user || '' };
+    // v1.7 — pedido de Daniel: acceso ampliado a todos los instructores (antes
+    // solo admin/administrador). Cualquier login con session.tipo==='instructor'
+    // pasa (turnos.html ya reserva ese tipo para instructores/admin, nunca para
+    // alumno/piloto — ver session={tipo:'instructor',...} en turnos.html).
+    const esInstructor = s && s.tipo === 'instructor';
+    return { ok: esInstructor, nombre: s.nombre || s.user || '' };
   } catch { return { ok: false, nombre: '' }; }
 }
 
@@ -466,7 +467,7 @@ const gateMsg = document.getElementById('gate-msg');
 const mainContent = document.getElementById('main-content');
 
 if (!ok) {
-  gateMsg.innerHTML = '<h2>Acceso restringido</h2><p style="margin-top:8px">Este reporte es exclusivo para administradores.<br>Iniciá sesión como admin o administrador en <a href="turnos.html" style="color:var(--cyan)">turnos.html</a></p>';
+  gateMsg.innerHTML = '<h2>Acceso restringido</h2><p style="margin-top:8px">Este reporte es exclusivo para instructores.<br>Iniciá sesión como instructor en <a href="turnos.html" style="color:var(--cyan)">turnos.html</a></p>';
 } else {
   gate.style.display = 'none';
   mainContent.style.display = 'block';
