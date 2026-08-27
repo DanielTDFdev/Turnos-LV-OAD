@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.76
+  FECHA   : 2026-08-27
+  CAMBIOS : FIX reportado por Daniel: "en pedir turno, le doy CONFIRMAR y no
+            hace nada". Mismo bug recurrente ya documentado en este archivo
+            (v5.97/v6.09/v6.62/v6.69/v6.70) — los dos modales que agregué en
+            v7.74/v7.75 (#modal-confirmar-turno, #modal-confirm-simple)
+            quedaron anidados dentro de #instructor-screen en vez de ser
+            hermanos top-level. Como los usa el flujo de alumno/piloto, con
+            #instructor-screen oculta (el caso normal para ellos) el modal
+            se abría (clase 'open' aplicada bien) pero nunca se pintaba —
+            descendiente de ancestro display:none no se renderiza aunque su
+            propio display diga flex. Rescatados al <body> con el mismo
+            patrón ya usado para los otros cinco modales de este bug.
   VERSION : 7.75
   FECHA   : 2026-08-27
   CAMBIOS : Seguimiento de v7.74, pedido de Daniel: el botón "Cancelar Turno"
@@ -3022,7 +3035,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.75</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.76</div>
   </div>
 
 </div>
@@ -6196,6 +6209,25 @@ function puedeAlumnoCancelar(r){
 // que puede estar oculta con display:none. Se rescata al <body> por las dudas.
 (function rescatarModalLogAlumno(){
   const m=document.getElementById('modal-log-alumno');
+  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
+})();
+
+// FIX v7.76: mismo bug recurrente (v5.97/v6.09/v6.62/v6.69/v6.70), esta vez en dos
+// modales que agregué yo mismo en v7.74/v7.75 (#modal-confirmar-turno y
+// #modal-confirm-simple) sin darme cuenta de que quedaron anidados dentro de
+// #instructor-screen — los inserté justo antes de #instructor-disponibilidad,
+// que vive DENTRO de #instructor-screen, no como hermano top-level. Como ambos
+// los usa el flujo de ALUMNO/PILOTO (Solicitar Turno, Cancelar Turno en Mis
+// Turnos), con #instructor-screen oculta (display:none, que es el caso normal
+// para alumno/piloto) el modal se abría (clase 'open' se aplicaba bien) pero
+// nunca se pintaba en pantalla. Reportado por Daniel: "le doy CONFIRMAR y no
+// hace nada". Rescatados al <body> igual que los otros cinco.
+(function rescatarModalConfirmarTurno(){
+  const m=document.getElementById('modal-confirmar-turno');
+  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
+})();
+(function rescatarModalConfirmSimple(){
+  const m=document.getElementById('modal-confirm-simple');
   if(m&&m.parentElement!==document.body) document.body.appendChild(m);
 })();
 
