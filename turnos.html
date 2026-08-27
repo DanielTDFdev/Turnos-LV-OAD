@@ -1,5 +1,21 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.72
+  FECHA   : 2026-08-27
+  CAMBIOS : Pedido de Daniel: "siempre que ingreso a la página tiene zoom
+            aplicado, tengo que hacer zoom out". No era el viewport (ya
+            estaba bien: width=device-width, initial-scale=1.0) — es que
+            iOS Safari hace auto-zoom al enfocar cualquier input/select/
+            textarea con font-size menor a 16px, y el zoom queda pegado
+            hasta sacarlo a mano. Casi todos los campos del archivo están en
+            12px/13px (EMAIL O USUARIO y CONTRASEÑA del login incluidos).
+            Fix: dentro de @media(max-width:680px), regla
+            input,select,textarea{font-size:16px !important} — el
+            !important hace falta porque hay ~30 campos con font-size fijado
+            inline (style="") repartidos por todo el archivo, y la
+            especificidad inline gana sobre cualquier regla externa sin él.
+            Solo mobile: en desktop no existe este bug y los 13px elegidos
+            para los campos se mantienen igual.
   VERSION : 7.71
   FECHA   : 2026-08-27
   CAMBIOS : Pedido de Daniel con captura de celular: los 3 tabs del login
@@ -2915,6 +2931,18 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   .login-tabs{gap:4px}
   .nav-btn-icon{flex-direction:column;gap:4px;padding:8px 2px;font-size:9.5px;letter-spacing:.02em;white-space:nowrap}
   .nav-btn-icon img{width:18px;height:18px}
+
+  /* iOS Safari hace auto-zoom al enfocar cualquier input/select/textarea con font-size
+     menor a 16px — eso es lo que reportaba Daniel como "la página entra siempre con zoom":
+     no es una percepción, es Safari agrandando la vista en cuanto tocás el campo EMAIL O
+     USUARIO del login (o cualquier otro campo del resto del sistema, mismo bug), y el zoom
+     queda pegado hasta que se saca a mano. `!important` porque hay ~30 inputs/selects/
+     textareas con font-size fijado inline (12px/13px) repartidos por todo el archivo — la
+     especificidad de un style="" inline gana sobre cualquier regla externa sin !important,
+     así que forzarlo acá en un solo lugar es más simple y confiable que tocar cada style=""
+     a mano. Solo en mobile (v7.72): en desktop este bug no existe y el tamaño de campo
+     elegido (13px, algo más chico que el resto de la tipografía) se mantiene igual. */
+  input,select,textarea{font-size:16px !important}
 }
 </style>
 <script>if(localStorage.getItem('lvoad-theme')==='light')document.documentElement.classList.add('light');</script>
@@ -2935,7 +2963,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.71</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.72</div>
   </div>
 
 </div>
