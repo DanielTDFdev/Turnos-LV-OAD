@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.29 · 2026-08-27
+  Pedido de Daniel, seguimiento de v4.28: el confirm() nativo de "⚠
+  CONFLICTO DE AVIÓN... ¿Iniciar el vuelo igual?" también pasa a modal
+  propio (conflicto-modal-overlay, reusa estilo de cancelar-modal — borde
+  rojo, misma familia visual que cancelar vuelo).
+
   v4.28 · 2026-08-27
   Pedido de Daniel, a raíz de un caso de reserva duplicada: "¿Iniciar el
   vuelo ahora?" y "¿Finalizar el vuelo ahora?" dejan de usar confirm()
@@ -1336,7 +1342,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.28';
+const APP_VERSION = '4.29';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2209,6 +2215,25 @@ async function cancelarTurnoPorConflicto(conflicto,avion){
   }
 }
 
+// v4.29: modal propio no-bloqueante para "⚠ CONFLICTO DE AVIÓN... ¿Iniciar
+// el vuelo igual?" — mismo motivo que los otros confirm() nativos ya
+// reemplazados. detalle es el texto de qué turno se va a cancelar.
+function confirmarConflictoAvion(detalle){
+  return new Promise(resolve=>{
+    $('conflicto-modal-detalle').textContent=detalle;
+    $('conflicto-modal-overlay').classList.add('open');
+    function limpiar(){
+      $('conflicto-modal-overlay').classList.remove('open');
+      $('btn-conflicto-modal-si').removeEventListener('click',onSi);
+      $('btn-conflicto-modal-no').removeEventListener('click',onNo);
+    }
+    function onSi(){limpiar();resolve(true);}
+    function onNo(){limpiar();resolve(false);}
+    $('btn-conflicto-modal-si').addEventListener('click',onSi);
+    $('btn-conflicto-modal-no').addEventListener('click',onNo);
+  });
+}
+
 // v4.28: modal propio no-bloqueante para reemplazar confirm() nativo en
 // "¿Iniciar el vuelo ahora?" / "¿Finalizar el vuelo ahora?" — mismo motivo
 // que ya tenía el modal de cancelar (confirm() bloquea el hilo y corta
@@ -2243,12 +2268,8 @@ $('btn-start-stop').addEventListener('click',async()=>{
     const conflicto=await chequearConflictoAvion(avionElegido);
     if(conflicto){
       const horaTxt=conflicto.horaInicio&&conflicto.horaFin?conflicto.horaInicio+'–'+conflicto.horaFin:conflicto.hora;
-      const seguirIgual=confirm(
-        '⚠ CONFLICTO DE AVIÓN\n\n'+
-        avionElegido+' ya tiene un turno reservado hoy a las '+horaTxt+' hs, a nombre de '+conflicto.nombre+'.\n\n'+
-        'Si iniciás igual, ESE TURNO SE VA A CANCELAR automáticamente.\n\n'+
-        '¿Iniciar el vuelo igual?'
-      );
+      const detalle=avionElegido+' ya tiene un turno reservado hoy a las '+horaTxt+' hs, a nombre de '+conflicto.nombre+'. Si iniciás igual, ESE TURNO SE VA A CANCELAR automáticamente.';
+      const seguirIgual=await confirmarConflictoAvion(detalle);
       if(!seguirIgual) return;
       await cancelarTurnoPorConflicto(conflicto,avionElegido);
     }
@@ -3245,6 +3266,21 @@ if('serviceWorker' in navigator){
     <div class="accion-modal-btns">
       <button class="btn btn-cyan" id="btn-accion-modal-si"></button>
       <button class="btn btn-ghost" id="btn-accion-modal-no">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- v4.29: modal de confirmación de conflicto de avión, reemplaza el confirm()
+     nativo de "⚠ CONFLICTO DE AVIÓN... ¿Iniciar el vuelo igual?". Reusa las
+     clases cancelar-modal-* (borde rojo, misma familia visual que cancelar
+     vuelo — también es una acción que rompe algo de otra persona). -->
+<div class="cancelar-modal-overlay" id="conflicto-modal-overlay">
+  <div class="cancelar-modal">
+    <div class="cancelar-modal-title">⚠ Conflicto de avión</div>
+    <div class="cancelar-modal-sub" id="conflicto-modal-detalle"></div>
+    <div class="cancelar-modal-btns">
+      <button class="btn btn-ghost" id="btn-conflicto-modal-no">Cancelar</button>
+      <button class="btn" id="btn-conflicto-modal-si" style="background:var(--red);border-color:var(--red);color:#fff">Iniciar igual</button>
     </div>
   </div>
 </div>
