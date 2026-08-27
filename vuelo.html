@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.46 · 2026-08-27
+  Pedido de Daniel, mismo cambio que vuelo-piloto.html v4.28: "¿Iniciar el
+  vuelo ahora?" y "¿Finalizar el vuelo ahora?" dejan de usar confirm()
+  nativo del navegador y pasan a un modal propio (accion-modal-overlay),
+  mismo patrón no-bloqueante que ya tenía el modal de cancelar vuelo. No
+  cambia ninguna lógica de negocio, solo el mecanismo de la pregunta.
+
   v5.45 · 2026-08-27
   Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
   auto-zoom al enfocar #libro-fecha (14px, único campo del archivo por
@@ -1167,6 +1174,24 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .cancelar-modal-sub{font-family:var(--mono);font-size:12px;color:var(--gray);line-height:1.5;margin-bottom:18px}
 .cancelar-modal-btns{display:flex;gap:10px}
 .cancelar-modal-btns .btn{flex:1;margin:0;font-size:13px;padding:12px}
+
+/* v5.46: modal propio para "¿Iniciar/Finalizar el vuelo ahora?" — antes era
+   confirm() nativo (chico, poco visible, con tendencia a tocar "Cancelar" por
+   default). Mismo patrón no-bloqueante que cancelar-modal-overlay, en cyan
+   en vez de rojo (no es una acción destructiva). Pedido de Daniel, mismo
+   cambio que vuelo-piloto.html v4.28. */
+.accion-modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1100;
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.accion-modal-overlay.open{display:flex}
+.accion-modal{
+  background:var(--bg2);border:1px solid rgba(0,200,212,.35);border-radius:14px;
+  padding:22px 20px;max-width:340px;width:100%;text-align:center;
+}
+.accion-modal-title{font-family:var(--disp);font-size:16px;color:var(--white);letter-spacing:.03em;margin-bottom:18px}
+.accion-modal-btns{display:flex;flex-direction:column;gap:10px}
+.accion-modal-btns .btn{margin:0;font-size:14px;padding:13px}
 </style>
 </head>
 <body>
@@ -1450,7 +1475,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.45'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.46'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2085,11 +2110,33 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// v5.46: modal propio no-bloqueante para reemplazar confirm() nativo en
+// "¿Iniciar el vuelo ahora?" / "¿Finalizar el vuelo ahora?" — mismo motivo
+// que ya tenía el modal de cancelar (confirm() bloquea el hilo y corta
+// puntos GPS que lleguen mientras el instructor duda). textoSi es el label
+// del botón de confirmar (varía según la acción).
+function confirmarAccion(titulo,textoSi){
+  return new Promise(resolve=>{
+    $('accion-modal-title').textContent=titulo;
+    $('btn-accion-modal-si').textContent=textoSi;
+    $('accion-modal-overlay').classList.add('open');
+    function limpiar(){
+      $('accion-modal-overlay').classList.remove('open');
+      $('btn-accion-modal-si').removeEventListener('click',onSi);
+      $('btn-accion-modal-no').removeEventListener('click',onNo);
+    }
+    function onSi(){limpiar();resolve(true);}
+    function onNo(){limpiar();resolve(false);}
+    $('btn-accion-modal-si').addEventListener('click',onSi);
+    $('btn-accion-modal-no').addEventListener('click',onNo);
+  });
+}
+
 // START / STOP
 $('btn-start-stop').addEventListener('click', async ()=>{
   if(!tsInicio){
     // START — confirmar antes de grabar (evita un toque accidental)
-    if(!confirm('¿Iniciar el vuelo ahora?')) return;
+    if(!(await confirmarAccion('¿Iniciar el vuelo ahora?','▶ Sí, iniciar'))) return;
     tsInicio=new Date().toISOString();
     if(gpsHabilitado){
       // Chequear candado ANTES de arrancar el GPS propio — si el alumno ya
@@ -2128,7 +2175,7 @@ $('btn-start-stop').addEventListener('click', async ()=>{
     toast('Vuelo iniciado · '+fmtLocalFull(tsInicio));
   } else {
     // STOP — confirmar antes de grabar
-    if(!confirm('¿Finalizar el vuelo ahora?')) return;
+    if(!(await confirmarAccion('¿Finalizar el vuelo ahora?','⏹ Sí, finalizar'))) return;
     tsFin=new Date().toISOString();
     detenerTrackGPS();
     liberarWakeLock(); // liberar wake lock al aterrizar
@@ -3173,6 +3220,18 @@ if('serviceWorker' in navigator){
     <div class="cancelar-modal-btns">
       <button class="btn btn-ghost" id="btn-cancelar-modal-no">Volver</button>
       <button class="btn" id="btn-cancelar-modal-si" style="background:var(--red);border-color:var(--red);color:#fff">Sí, cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- v5.46: modal de confirmación genérico, reemplaza los confirm() nativos de
+     "¿Iniciar el vuelo ahora?" / "¿Finalizar el vuelo ahora?" -->
+<div class="accion-modal-overlay" id="accion-modal-overlay">
+  <div class="accion-modal">
+    <div class="accion-modal-title" id="accion-modal-title"></div>
+    <div class="accion-modal-btns">
+      <button class="btn btn-cyan" id="btn-accion-modal-si"></button>
+      <button class="btn btn-ghost" id="btn-accion-modal-no">Cancelar</button>
     </div>
   </div>
 </div>
