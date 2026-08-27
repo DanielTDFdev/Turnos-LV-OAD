@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.71
+  FECHA   : 2026-08-27
+  CAMBIOS : Pedido de Daniel con captura de celular: los 3 tabs del login
+            (Ingresar/Registrarme/Inst-Admin) con ícono al lado del texto
+            entraban justos en desktop pero se cortaban en mobile — "Inst /
+            Admin" desbordaba el botón, tapado por el borde del tab
+            siguiente. Nueva regla dentro de @media(max-width:680px): ícono
+            arriba del texto (flex-direction:column) en vez de al lado,
+            fuente 12px→9.5px, gap del contenedor 6px→4px, padding lateral
+            de .login-card 1.5rem→1.1rem — con esto entran los 3 en una fila
+            sin cortar nada. Desktop (>680px) no se toca, sigue con ícono al
+            lado del texto como en v7.68/v7.69.
   VERSION : 7.70
   FECHA   : 2026-08-27
   CAMBIOS : Pedido de Daniel con un caso real: sábado, único instructor con
@@ -2892,6 +2904,17 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
      mas compactas para que entre mas sin tener que deslizar tanto */
   .cal-table th,.cal-table td{font-size:10px;padding:3px;min-width:46px}
   .cal-table th:first-child{width:48px;min-width:48px}
+
+  /* login: los 3 tabs (Ingresar/Registrarme/Inst-Admin) lado a lado con ícono+texto en
+     línea se cortaban en celular — "Inst / Admin" desbordaba el botón y quedaba tapado
+     por el borde del tab siguiente (v7.71, reporte de Daniel con captura). Ícono arriba
+     del texto (flex-direction:column) en vez de al lado, fuente más chica, menos padding
+     lateral en la card para ganar ancho — con esto entran los 3 en una fila sin cortar
+     nada, ni en pantallas angostas. */
+  .login-card{padding:1.1rem}
+  .login-tabs{gap:4px}
+  .nav-btn-icon{flex-direction:column;gap:4px;padding:8px 2px;font-size:9.5px;letter-spacing:.02em;white-space:nowrap}
+  .nav-btn-icon img{width:18px;height:18px}
 }
 </style>
 <script>if(localStorage.getItem('lvoad-theme')==='light')document.documentElement.classList.add('light');</script>
@@ -2912,7 +2935,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.70</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.71</div>
   </div>
 
 </div>
