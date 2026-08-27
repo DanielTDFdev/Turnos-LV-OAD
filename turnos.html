@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.77
+  FECHA   : 2026-08-27
+  CAMBIOS : Pedido de Daniel tras el fix de v7.76: "no te podés dejar esto de
+            los modales como está, así en las próximas actualizaciones no
+            llegamos al mismo error". Las 7 funciones rescatarModalX()
+            puntuales (una por modal, escritas a mano cada vez que aparecía
+            el bug — v5.97/v6.09/v6.62/v6.69/v6.70/v7.76) se reemplazan por
+            UN solo rescate genérico: document.querySelectorAll('.modal-
+            overlay') + appendChild(body) para cada uno que no esté ya ahí.
+            Cubre los 7 modales que ya tenían rescate manual, más 5 que
+            nunca lo tuvieron y eran bugs latentes sin explotar todavía
+            (modal-aeronave, modal-cq-reserva, modal-alumno, modal-nuevo-
+            usuario, modal-inst), más cualquier modal que se agregue de acá
+            en más sin tener que volver a tocar este bloque.
   VERSION : 7.76
   FECHA   : 2026-08-27
   CAMBIOS : FIX reportado por Daniel: "en pedir turno, le doy CONFIRMAR y no
@@ -3035,7 +3049,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.76</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.77</div>
   </div>
 
 </div>
@@ -6164,71 +6178,26 @@ function puedeAlumnoCancelar(r){
   return (fechaTurno - (Date.now()+_serverOffsetMs)) >= PARAMS.cancelacion_alumno_horas*60*60*1000;
 }
 
-// FIX v5.97: el modal de motivo de cancelación estaba anidado dentro de
-// #instructor-screen en el HTML. Cuando lo dispara un ALUMNO (instructor-screen
-// oculta con display:none), el modal se abre (clase 'open') pero nunca se pinta
-// en pantalla porque un descendiente de un ancestro display:none no se renderiza,
-// aunque su propio computedStyle diga display:flex. Lo "rescatamos" al <body> una
-// sola vez para que siempre sea visible sin importar qué screen esté activa.
-(function rescatarModalMotivoCancel(){
-  const m=document.getElementById('modal-motivo-cancel');
-  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
-})();
-
-// FIX v6.09: mismo bug que el de arriba. #modal-cargar-turno quedó anidado en el HTML
-// dentro de instructor-config (la sub-pantalla de Configuración), que tiene display:none
-// salvo que esa sub-tab esté activa. El botón que lo abre vive en la tab Reservas, así
-// que con la Config oculta el modal nunca se veía aunque se le pusiera la clase 'open'.
-(function rescatarModalCargarTurno(){
-  const m=document.getElementById('modal-cargar-turno');
-  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
-})();
-
-// FIX v6.62: mismo bug recurrente. #modal-turno (modal de detalle del turno) estaba
-// anidado dentro de #instructor-seguimiento (la tab Seguimiento), que tiene display:none
-// cuando el instructor está en cualquier otra tab. Al clickear un bloque del calendario
-// en la tab Reservas el JS agregaba la clase 'open' correctamente, pero el modal nunca
-// se pintaba porque vivía dentro de un ancestro invisible. Rescatado al <body> igual
-// que modal-motivo-cancel (v5.97) y modal-cargar-turno (v6.09).
-(function rescatarModalTurno(){
-  const m=document.getElementById('modal-turno');
-  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
-})();
-
-// FIX preventivo v6.69: mismo patrón de bug recurrente (v5.97/v6.09/v6.62). El modal
-// del gráfico por alumno vive dentro de la tab Consultas, que puede estar oculta con
-// display:none según qué tab tenga activa el instructor. Se rescata al <body> por las
-// dudas, igual que los otros tres modales de arriba.
-(function rescatarModalAlumnoChart(){
-  const m=document.getElementById('modal-alumno-chart');
-  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
-})();
-
-// FIX preventivo v6.70: mismo patrón de bug recurrente (v5.97/v6.09/v6.62/v6.69).
-// #modal-log-alumno vive anidado junto a #modal-turno dentro de la tab Seguimiento,
-// que puede estar oculta con display:none. Se rescata al <body> por las dudas.
-(function rescatarModalLogAlumno(){
-  const m=document.getElementById('modal-log-alumno');
-  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
-})();
-
-// FIX v7.76: mismo bug recurrente (v5.97/v6.09/v6.62/v6.69/v6.70), esta vez en dos
-// modales que agregué yo mismo en v7.74/v7.75 (#modal-confirmar-turno y
-// #modal-confirm-simple) sin darme cuenta de que quedaron anidados dentro de
-// #instructor-screen — los inserté justo antes de #instructor-disponibilidad,
-// que vive DENTRO de #instructor-screen, no como hermano top-level. Como ambos
-// los usa el flujo de ALUMNO/PILOTO (Solicitar Turno, Cancelar Turno en Mis
-// Turnos), con #instructor-screen oculta (display:none, que es el caso normal
-// para alumno/piloto) el modal se abría (clase 'open' se aplicaba bien) pero
-// nunca se pintaba en pantalla. Reportado por Daniel: "le doy CONFIRMAR y no
-// hace nada". Rescatados al <body> igual que los otros cinco.
-(function rescatarModalConfirmarTurno(){
-  const m=document.getElementById('modal-confirmar-turno');
-  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
-})();
-(function rescatarModalConfirmSimple(){
-  const m=document.getElementById('modal-confirm-simple');
-  if(m&&m.parentElement!==document.body) document.body.appendChild(m);
+// FIX v7.77: este bug (modal anidado dentro de una sub-pantalla con
+// display:none, se abre con la clase 'open' pero nunca se pinta) se reparó a
+// mano SEIS veces en este archivo — v5.97 (modal-motivo-cancel), v6.09
+// (modal-cargar-turno), v6.62 (modal-turno), v6.69 (modal-alumno-chart), v6.70
+// (modal-log-alumno) y v7.76 (modal-confirmar-turno/modal-confirm-simple,
+// reportado por Daniel: "le doy CONFIRMAR y no hace nada"). Cada vez había que
+// acordarse de escribir una función de rescate nueva para el modal nuevo —
+// y cada vez alguien (yo) se olvidó, incluida la última. Pedido de Daniel:
+// que esto deje de depender de la memoria. Rescate GENÉRICO: cualquier
+// elemento con clase modal-overlay se cuelga de <body> al cargar, sin
+// importar dónde haya quedado anidado en el HTML — cubre los 7 modales de
+// arriba, los 5 que nunca habían tenido rescate y nadie notó (modal-aeronave,
+// modal-cq-reserva, modal-alumno, modal-nuevo-usuario, modal-inst — bugs
+// latentes, ninguno había explotado todavía por casualidad de uso), y
+// cualquier modal que se agregue de acá en más sin que haga falta tocar este
+// bloque de nuevo.
+(function rescatarTodosLosModales(){
+  document.querySelectorAll('.modal-overlay').forEach(m=>{
+    if(m.parentElement!==document.body) document.body.appendChild(m);
+  });
 })();
 
 function pedirMotivoCancelacion(obligatorio=false){
