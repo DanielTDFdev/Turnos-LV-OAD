@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.30 · 2026-08-27
+  Pedido de Daniel: un instructor puede loguearse acá y volar como piloto
+  (vuelo particular propio) sin que exista un rol separado. login() ahora
+  prueba /instructores como fallback si el usuario/email no está en
+  /alumnos (excluye admin/administrador). Requiere que el instructor tenga
+  el campo `email` cargado en /instructores — si no lo tiene, se rechaza
+  el login con mensaje explícito en vez de dejarlo entrar a medias (sin
+  email no hay forma de filtrar "mis vuelos" ni matchear turnos propios).
+  Password: mismo criterio ya usado en toda esta app — comparación en
+  texto plano, sin pasar por Firebase Auth (ver v1.0, "Login" en el header
+  de arriba).
+
   v4.29 · 2026-08-27
   Pedido de Daniel, seguimiento de v4.28: el confirm() nativo de "⚠
   CONFLICTO DE AVIÓN... ¿Iniciar el vuelo igual?" también pasa a modal
@@ -1342,7 +1354,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.29';
+const APP_VERSION = '4.30';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1478,6 +1490,43 @@ async function login(){
       for(const [key,a] of Object.entries(todos)){
         if((a.username||'').toLowerCase()===id){alumno=a;k=key;break;}
       }
+    }
+    // v4.30: si no está en /alumnos, probar /instructores — pedido de
+    // Daniel: un instructor tiene que poder loguearse acá y volar como
+    // piloto (vuelo particular propio), sin que exista un rol separado.
+    // Se lo trata como un piloto más: mismas reglas (particular, autoapro-
+    // bado, sin LV-OAD), la única diferencia es de dónde sale la cuenta.
+    // Requiere que el instructor tenga el campo `email` cargado en
+    // /instructores (Config→Instructores en turnos.html) — sin eso no hay
+    // forma de filtrar "mis vuelos" ni matchear turnos propios, así que se
+    // rechaza el login en vez de dejarlo entrar a medias.
+    // admin/administrador quedan afuera a propósito: no son instructores
+    // reales, no tiene sentido que "vuelen".
+    let instructor=null;
+    if(!alumno){
+      const todosInst=(await get(ref(db,'instructores'))).val()||{};
+      for(const [key,i] of Object.entries(todosInst)){
+        if(i.user==='admin'||i.user==='administrador') continue;
+        const matchId=id.includes('@')?(i.email||'').toLowerCase()===id:(i.user||'').toLowerCase()===id;
+        if(matchId){instructor={...i,key};break;}
+      }
+    }
+    if(instructor){
+      if(instructor.pass!==pass){
+        $('l-err').textContent='Usuario/email o contraseña incorrectos.';
+        return;
+      }
+      if(!instructor.email){
+        $('l-err').textContent='Tu usuario de instructor no tiene email cargado — pedile a Daniel que lo complete en Config→Instructores antes de usar esta app.';
+        return;
+      }
+      session={nombre:instructor.nombre,email:instructor.email,emailKey:ek(instructor.email),rol:'piloto'};
+      sessionStorage.setItem('lvoad-session',JSON.stringify({
+        tipo:'alumno',rol:'piloto',nombre:instructor.nombre,email:instructor.email,
+        emailKey:ek(instructor.email),username:instructor.user||''
+      }));
+      abrirApp();
+      return;
     }
     if(!alumno||alumno.pass!==pass){
       $('l-err').textContent='Usuario/email o contraseña incorrectos.';
