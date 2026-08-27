@@ -1,5 +1,30 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.75
+  FECHA   : 2026-08-27
+  CAMBIOS : Seguimiento de v7.74, pedido de Daniel: el botón "Cancelar Turno"
+            en Mis Turnos (alumno/piloto) usaba confirm('¿Cancelar este
+            turno?') nativo. Se agrega confirmModal(), helper genérico Sí/No
+            reusable (modal-confirm-simple), y se reemplaza ese confirm().
+            No se tocó pedirMotivoCancelacion() (ya era modal propio, no
+            nativo) ni los alert() de resultado de la misma función — no
+            pedidos esta vez.
+  VERSION : 7.74
+  FECHA   : 2026-08-27
+  CAMBIOS : Dos pedidos de Daniel en el autoservicio de alumno/piloto:
+            (1) "Solicitar Turno" grababa directo al tocar CONFIRMAR, sin
+            ninguna pregunta — riesgo de que un toque accidental o alguien
+            "probando" genere un turno real. Ahora CONFIRMAR abre un modal
+            propio (#modal-confirmar-turno, no confirm() nativo) con el
+            resumen del turno; solo al tocar "Sí, confirmar" se llama a la
+            función real de guardado (renombrada confirmarTurno →
+            _guardarTurnoConfirmado, misma lógica/validaciones sin tocar).
+            (2) En "Mis Turnos", el badge de estado (ej. "APROBADO") se
+            confundía visualmente con el botón CANCELAR de al lado — mismo
+            peso, pill con borde. Se reemplaza por un indicador de texto +
+            punto de color sin borde/fondo tipo botón (clase turno-status-*,
+            nueva, no toca .badge-* que sigue igual en pantallas de
+            instructor/admin). Botón CANCELAR ahora dice "Cancelar Turno".
   VERSION : 7.73
   FECHA   : 2026-08-27
   CAMBIOS : Pedido de Daniel: en las grillas de reservas (vistas LISTA y
@@ -2677,6 +2702,22 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .badge-alumno{background:rgba(0,200,212,.1);color:var(--cyan);border:1px solid rgba(0,200,212,.3)}
 .badge-piloto{background:rgba(240,165,0,.1);color:var(--amber);border:1px solid rgba(240,165,0,.3)}
 
+/* v7.74: indicador de estado en "Mis Turnos" — antes usaba .badge (pill con borde,
+   mismo peso visual que el botón CANCELAR de al lado, se confundían). Pedido de
+   Daniel. Sin borde/fondo tipo botón, solo texto + puntito de color — no clickeable
+   a la vista. Clase propia (turno-status-*), no toca .badge-* que sigue usándose
+   igual en las pantallas de instructor/admin (ahí no había queja). */
+.turno-status{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;}
+.turno-status-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
+.turno-status-pendiente{color:var(--amber)}
+.turno-status-pendiente .turno-status-dot{background:var(--amber)}
+.turno-status-aprobado{color:var(--green)}
+.turno-status-aprobado .turno-status-dot{background:var(--green)}
+.turno-status-cancelado{color:var(--red)}
+.turno-status-cancelado .turno-status-dot{background:var(--red)}
+.turno-status-vencido{color:#a07ef0}
+.turno-status-vencido .turno-status-dot{background:#a07ef0}
+
 .days-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:1rem}
 .day-btn{padding:10px 4px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:11px;background:var(--bg2);color:var(--text2);line-height:1.5;transition:all .15s;}
 .day-btn:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,200,212,.06)}
@@ -2981,7 +3022,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.73</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.75</div>
   </div>
 
 </div>
@@ -3139,7 +3180,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <div id="turno-err" class="error"></div>
         <div id="turno-ok" class="success-msg"></div>
         <div class="btn-row">
-          <button class="primary" onclick="confirmarTurno()">CONFIRMAR</button>
+          <button class="primary" onclick="abrirModalConfirmarTurno()">CONFIRMAR</button>
           <button onclick="cancelarSeleccion()">Cancelar</button>
         </div>
       </div>
@@ -3441,6 +3482,38 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div style="display:flex;gap:8px;margin-top:.85rem;justify-content:flex-end">
         <button id="motivo-cancel-btn-cancelar" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius);cursor:pointer">CANCELAR</button>
         <button id="motivo-cancel-btn-confirmar" class="danger" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px">CONFIRMAR</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v7.74: modal de confirmación antes de guardar un turno pedido por alumno/piloto
+       (autoservicio, "Solicitar Turno"). Antes CONFIRMAR grababa directo sin ninguna
+       pregunta — pedido de Daniel: evita que un toque accidental o "estar probando"
+       genere un turno real. Reusa el patrón .modal-overlay/.modal ya usado en todo el
+       archivo, no confirm() nativo. -->
+  <div class="modal-overlay" id="modal-confirmar-turno" style="z-index:1100">
+    <div class="modal" style="max-width:380px">
+      <div class="modal-title">◈ Confirmar Turno</div>
+      <div class="info-box" id="ct-confirm-resumen" style="margin-bottom:1rem"></div>
+      <div id="ct-confirm-obs" style="font-family:var(--font-mono);font-size:12px;color:var(--text3);margin-bottom:.85rem;letter-spacing:.03em;display:none"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="ct-confirm-btn-no" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius);cursor:pointer">Volver</button>
+        <button id="ct-confirm-btn-si" class="primary" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px">Sí, confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v7.75: modal genérico de confirmación simple (Sí/No), reemplaza confirm()
+       nativo puntuales — primer uso: "¿Cancelar este turno?" en el autoservicio
+       de alumno/piloto (Mis Turnos → Cancelar Turno). Reusable vía confirmModal()
+       para futuros casos sin duplicar HTML. -->
+  <div class="modal-overlay" id="modal-confirm-simple" style="z-index:1100">
+    <div class="modal" style="max-width:360px">
+      <div class="modal-title" id="confirm-simple-title">◈ Confirmar</div>
+      <div id="confirm-simple-msg" style="font-family:var(--font-mono);font-size:13px;color:var(--text2);margin-bottom:1rem;letter-spacing:.03em;line-height:1.5"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="confirm-simple-btn-no" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius);cursor:pointer">Volver</button>
+        <button id="confirm-simple-btn-si" class="danger" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px">Sí</button>
       </div>
     </div>
   </div>
@@ -5876,7 +5949,7 @@ window.cancelarSeleccion=function(){
   get(ref(db,'reservas')).then(s=>renderSlots(selectedDay,s.val()));
 };
 
-window.confirmarTurno=async function(){
+window._guardarTurnoConfirmado=async function(){
   hideEl('turno-err');hideEl('turno-ok');
   if(!selectedAvion){showErr('turno-err','Seleccioná un avión.');return;}
   // v6.97: defensa en profundidad — el calendario de días ya queda bloqueado hasta elegir
@@ -5988,6 +6061,30 @@ window.confirmarTurno=async function(){
   clearVal('al-obs');
 };
 
+// v7.74: modal de confirmación previo a guardar (pedido de Daniel — antes CONFIRMAR
+// grababa directo). abrirModalConfirmarTurno() NO revalida nada — el botón CONFIRMAR
+// solo es visible con avión+día+horario ya elegidos (ver #slot-confirm), y el resto de
+// las validaciones (anticipación, cuota semanal, documentación, slot tomado por otro)
+// las sigue haciendo _guardarTurnoConfirmado() como siempre, mostrando el error en
+// #turno-err si algo falla — el modal ya se cerró para ese momento.
+window.abrirModalConfirmarTurno=function(){
+  hideEl('turno-err');hideEl('turno-ok');
+  const resumen=document.getElementById('confirm-label').textContent;
+  document.getElementById('ct-confirm-resumen').textContent='▸ Turno seleccionado: '+resumen;
+  const obs=val('al-obs');
+  const obsEl=document.getElementById('ct-confirm-obs');
+  if(obs){obsEl.textContent='Observaciones: '+obs;obsEl.style.display='';}
+  else{obsEl.style.display='none';}
+  document.getElementById('modal-confirmar-turno').classList.add('open');
+};
+document.getElementById('ct-confirm-btn-no').addEventListener('click',()=>{
+  document.getElementById('modal-confirmar-turno').classList.remove('open');
+});
+document.getElementById('ct-confirm-btn-si').addEventListener('click',async()=>{
+  document.getElementById('modal-confirmar-turno').classList.remove('open');
+  await window._guardarTurnoConfirmado();
+});
+
 // ── MIS TURNOS ─────────────────────────────────────────────────
 function fmtFechaLinda(fechaStr){
   const DIAS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -6038,8 +6135,8 @@ function renderMisTurnos(data){
         ${r.obs_cancelacion?`<div class="reserva-obs-cancel">↳ ${r.obs_cancelacion}</div>`:''}
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span class="badge badge-${r.estado}">${r.estado}</span>
-        ${(r.estado==='pendiente'||r.estado==='aprobado')&&puedeAlumnoCancelar(r)?`<button class="danger" onclick="cancelarTurnoAlumno('${r.key}')" style="font-size:11px;padding:4px 10px">CANCELAR</button>`:''}
+        <span class="turno-status turno-status-${r.estado}"><span class="turno-status-dot"></span>${r.estado}</span>
+        ${(r.estado==='pendiente'||r.estado==='aprobado')&&puedeAlumnoCancelar(r)?`<button class="danger" onclick="cancelarTurnoAlumno('${r.key}')" style="font-size:11px;padding:4px 10px">Cancelar Turno</button>`:''}
       </div>
     </div>`).join('');
 }
@@ -6183,8 +6280,30 @@ function pedirMotivoCancelacion(obligatorio=false){
   });
 }
 
+// v7.75: modal genérico Sí/No, reemplaza confirm() nativo (Daniel no lo quiere en
+// ningún lado del autoservicio de alumno/piloto). textoSi permite personalizar el
+// label del botón afirmativo (default 'Sí').
+function confirmModal(mensaje,textoSi='Sí'){
+  return new Promise(resolve=>{
+    document.getElementById('confirm-simple-msg').textContent=mensaje;
+    document.getElementById('confirm-simple-btn-si').textContent=textoSi;
+    document.getElementById('modal-confirm-simple').classList.add('open');
+    const btnSi=document.getElementById('confirm-simple-btn-si');
+    const btnNo=document.getElementById('confirm-simple-btn-no');
+    function limpiar(){
+      document.getElementById('modal-confirm-simple').classList.remove('open');
+      btnSi.removeEventListener('click',onSi);
+      btnNo.removeEventListener('click',onNo);
+    }
+    function onSi(){limpiar();resolve(true);}
+    function onNo(){limpiar();resolve(false);}
+    btnSi.addEventListener('click',onSi);
+    btnNo.addEventListener('click',onNo);
+  });
+}
+
 window.cancelarTurnoAlumno=async function(key){
-  if(!confirm('¿Cancelar este turno?'))return;
+  if(!(await confirmModal('¿Cancelar este turno?','Sí, cancelar')))return;
   // FIX v6.01: el motivo es OPCIONAL para el alumno (pedirMotivoCancelacion(false)).
   // Antes, si cerraba el modal de motivo (botón CANCELAR, Escape o sin escribir nada),
   // pedirMotivoCancelacion devolvía null y el 'return' de abajo abortaba TODA la
