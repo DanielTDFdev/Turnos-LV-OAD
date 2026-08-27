@@ -1,5 +1,28 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.70
+  FECHA   : 2026-08-27
+  CAMBIOS : Pedido de Daniel con un caso real: sábado, único instructor con
+            disponibilidad cargada, toma un turno APROBADO para sí en LV-ART
+            a las 9:00; la app seguía ofreciendo LV-OAD 9:00 como "con
+            instructor disponible" porque slotsConInstructorParaDia() solo
+            miraba quién había CARGADO disponibilidad ese horario
+            (/disponibilidad/{ds}/{instructor}), nunca si ese instructor ya
+            estaba comprometido en un turno aprobado a esa misma hora — en
+            CUALQUIER avión, no solo el que se está por reservar. Nueva
+            función instructoresOcupadosParaDia(ds,reservasData): recorre
+            /reservas del día con estado==='aprobado' && r.instructor seteado
+            (se setea recién al aprobar, nunca en pendiente), expande rangos
+            horaInicio/horaFin igual que slotsTomados(), arma un Map
+            hora→Set(nombre de instructor ocupado). slotsConInstructorParaDia()
+            ahora cruza esto contra la disponibilidad cargada — un instructor
+            que figura disponible pero ya está ocupado esa hora no cuenta.
+            Basta con que UNO de los N instructores disponibles esa hora esté
+            libre (mismo criterio que pidió Daniel). El call site de
+            renderSlots() pasa el `data` de /reservas que ya tenía cargado
+            (sin fetch extra); el call site dentro de confirmarTurno() (que
+            recalcula fresco al momento de guardar) sigue sin pasar
+            reservasData — la función lo autofetchea igual que antes.
   VERSION : 7.69
   FECHA   : 2026-08-26
   CAMBIOS : Pedido de Daniel tras v7.68: íconos de los tabs de login casi no
@@ -2889,7 +2912,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.69</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.70</div>
   </div>
 
 </div>
@@ -5626,15 +5649,51 @@ function turnosRestantesSemana(ds,data,email){
 // disponible (excluyendo instructores de vacaciones). Solo aplica a LV-OAD.
 let _slotsConInstructorDia=new Set();   // cache del último día renderizado
 let _slotsConInstructorFecha=null;
-async function slotsConInstructorParaDia(ds){
+// v7.70 — pedido de Daniel con un caso real: sábado, único instructor con disponibilidad
+// cargada, toma un turno APROBADO para sí mismo en LV-ART a las 9:00; la app seguía
+// ofreciendo LV-OAD 9:00 como "con instructor disponible" porque solo miraba quién había
+// CARGADO disponibilidad ese horario (`/disponibilidad/{ds}/{instructor}`), nunca si ese
+// instructor ya estaba comprometido en un turno aprobado a esa misma hora — en cualquier
+// avión, no solo el que se está por reservar. Nueva función auxiliar: cruza esa
+// disponibilidad contra ocupación real (mismo criterio de "instructor libre" que pidió
+// Daniel: alcanza con que UNO de los N disponibles esa hora no esté tomado).
+// `reservasData`: objeto crudo de `/reservas` (mismo shape que devuelve fbGet/onValue). Si
+// no se pasa, se fetchea acá — así el único call site que no lo tiene a mano (dentro de
+// confirmarTurno(), justo antes de guardar) sigue recalculando fresco, como ya hacía antes
+// de este cambio.
+function instructoresOcupadosParaDia(ds,reservasData){
+  const map=new Map(); // hora(HH:MM) -> Set(nombre de instructor con turno aprobado esa hora)
+  rArr(reservasData).filter(r=>r.fecha===ds&&r.estado==='aprobado'&&r.instructor).forEach(r=>{
+    let horas;
+    if(r.horaInicio&&r.horaFin){
+      const grid=horasParaDia(ds,r.avion||'LV-OAD');
+      const idxIni=grid.indexOf(r.horaInicio), idxFin=grid.indexOf(r.horaFin);
+      horas=(idxIni>=0&&idxFin>idxIni)?grid.slice(idxIni,idxFin):[r.horaInicio];
+    } else {
+      horas=r.hora?[r.hora]:[];
+    }
+    horas.forEach(h=>{
+      if(!map.has(h))map.set(h,new Set());
+      map.get(h).add(r.instructor);
+    });
+  });
+  return map;
+}
+async function slotsConInstructorParaDia(ds,reservasData){
   const dispData=await fbGet('disponibilidad/'+ds);
   const instData=await fbGet('instructores');
   const set=new Set();
   if(dispData&&instData){
+    const resData=reservasData!==undefined?reservasData:await fbGet('reservas');
+    const ocupados=instructoresOcupadosParaDia(ds,resData);
     Object.entries(dispData).forEach(([instKey,arr])=>{
       const instObj=Object.values(instData).find(i=>(i.user||'')===instKey);
       if(instObj?.vacaciones===true) return; // ignorar de vacaciones
-      if(Array.isArray(arr)) arr.forEach(h=>set.add(h));
+      if(!Array.isArray(arr))return;
+      arr.forEach(h=>{
+        if(ocupados.get(h)?.has(instObj?.nombre))return; // este instructor ya tiene turno aprobado a esta hora — no cuenta como disponible
+        set.add(h);
+      });
     });
   } else if(dispData){
     Object.values(dispData).forEach(arr=>{ if(Array.isArray(arr)) arr.forEach(h=>set.add(h)); });
@@ -5655,7 +5714,7 @@ async function renderSlots(ds,data){
   // requiereInstructor generaliza esa condición. LV-OAD sigue siendo siempre 'instruccion'
   // (forzado en seleccionarAvion, sin dropdown).
   const requiereInstructor=esOAD||(esPiloto&&selectedTipoVuelo==='instruccion');
-  const slotsConInstructor=requiereInstructor?await slotsConInstructorParaDia(ds):new Set();
+  const slotsConInstructor=requiereInstructor?await slotsConInstructorParaDia(ds,data):new Set();
   _slotsConInstructorDia=slotsConInstructor;
   _slotsConInstructorFecha=ds;
   // PILOTO en modo instrucción (LV-OAD, o cualquier avión con 'instruccion' elegida en el
