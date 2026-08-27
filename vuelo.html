@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.45 · 2026-08-27
+  Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
+  auto-zoom al enfocar #libro-fecha (14px, único campo del archivo por
+  debajo del umbral de 16px de Safari — el resto ya estaba en 17px desde
+  el diseño original). Subido a 16px.
+
   v5.44 · 2026-08-25
   Pedido de Daniel: el ícono de usuario (.user-icon) al lado del botón Salir
   queda un 10% más grande — de 32px a 35px (ancho y alto).
@@ -1360,7 +1366,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
   <div id="tab-libro" class="tab-content">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
       <span class="label" style="margin:0;flex:none">Fecha</span>
-      <input id="libro-fecha" type="date" style="flex:1;font-size:14px;padding:10px 12px">
+      <input id="libro-fecha" type="date" style="flex:1;font-size:16px;padding:10px 12px">
     </div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:16px">
       Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande
@@ -1444,7 +1450,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.44'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.45'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)

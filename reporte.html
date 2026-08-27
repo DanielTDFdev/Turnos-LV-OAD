@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.8 · Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
+         auto-zoom al enfocar cualquier filtro de fecha/avión/instructor (12px,
+         debajo del umbral de 16px de Safari), y el zoom quedaba pegado hasta
+         sacarlo a mano. .field-g input/select pasa a 16px.
   v1.7 · Pedido de Daniel: acceso ampliado a todos los instructores (antes
          exclusivo admin/administrador). checkAccess() ahora valida solo
          session.tipo==='instructor' (turnos.html reserva ese tipo para
@@ -121,6 +125,11 @@ header.bar .ver{font-family:var(--font-mono);font-size:11px;color:var(--text3);
   color:var(--text);font-family:var(--font-mono);font-size:12px;
   padding:7px 10px;outline:none;transition:border .2s}
 .field-g input:focus,.field-g select:focus{border-color:var(--cyan)}
+/* v1.8 — mismo fix que turnos.html v7.72: iOS Safari hace auto-zoom al enfocar
+   cualquier input/select con font-size menor a 16px (acá 12px). Sin !important —
+   no hay estilos inline pisando esta regla. Sin gate de @media(max-width) porque
+   este archivo no tenía ninguno para mobile todavía y 16px en desktop no molesta. */
+.field-g input,.field-g select{font-size:16px}
 .btn-gen{
   background:var(--cyan);color:var(--navy);border:none;border-radius:var(--radius);
   font-family:var(--font-mono);font-size:12px;font-weight:700;letter-spacing:.08em;
@@ -297,7 +306,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.7</span>
+      <span class="ver">v1.8</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>

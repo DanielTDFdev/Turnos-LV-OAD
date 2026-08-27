@@ -1,5 +1,12 @@
 <!--
   ARCHIVO : contacto.html
+  VERSION : 1.8
+  FECHA   : 2026-08-27
+  CAMBIOS : Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari
+            hacía auto-zoom al enfocar cualquier campo del formulario
+            (Nombre/Apellido/Email/Asunto/Mensaje, 15px, debajo del umbral
+            de 16px de Safari), y el zoom quedaba pegado hasta sacarlo a
+            mano. .field input/select/textarea pasa a 16px.
   VERSION : 1.7
   FECHA   : 2026-05-22
   CAMBIOS : Logo nav: tamaño 46px y link a index.html
@@ -58,7 +65,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .form-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border2),transparent);}
 .field{margin-bottom:1.1rem;}
 .field label{display:block;font-family:var(--font-mono);font-size:11px;color:var(--text3);letter-spacing:.18em;text-transform:uppercase;margin-bottom:.4rem;}
-.field input,.field select,.field textarea{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-ui);font-size:15px;padding:.6rem .85rem;transition:border-color .2s,box-shadow .2s;outline:none;resize:none;}
+.field input,.field select,.field textarea{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--font-ui);font-size:16px;padding:.6rem .85rem;transition:border-color .2s,box-shadow .2s;outline:none;resize:none;}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(0,200,212,.08);}
 .field input::placeholder,.field textarea::placeholder{color:var(--text3);}
 .field select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%233d5a72' d='M6 8L0 0h12z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .85rem center;}
@@ -177,7 +184,7 @@ footer{border-top:1px solid var(--border);padding:1.5rem 2rem;display:flex;align
   <span class="footer-brand">◈ AEROCLUB RÍO GRANDE — © 2026</span>
   <span class="footer-coords">53°46'S 67°45'O · SAWE · RÍO GRANDE, TIERRA DEL FUEGO</span>
 
-  <!-- footer-ver --><span style="font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.06em;opacity:.6">v1.7</span>
+  <!-- footer-ver --><span style="font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.06em;opacity:.6">v1.8</span>
 </footer>
 <script>
 (function(){

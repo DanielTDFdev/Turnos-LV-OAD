@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.25 ·  Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
+           auto-zoom al enfocar cualquier campo con font-size menor a 16px, y el
+           zoom quedaba pegado hasta sacarlo a mano. Regla nueva dentro de
+           @media(max-width:680px): input,select,textarea{font-size:16px !important}.
   v1.24 ·  Daniel subió el manual real que usan con el LV-ART (PA-28-181-Archer-
            II-Handbook.md, conversión a texto del POH Piper VB-760 — el mismo
            documento que ya había encontrado y usado en v1.23 buscando en la
@@ -394,6 +398,12 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
   .fc-card,.fc-card-inner{min-height:200px}
 
   button{padding:7px 14px}
+
+  /* v1.25 — mismo fix que turnos.html v7.72: iOS Safari hace auto-zoom al enfocar
+     cualquier input/select/textarea con font-size menor a 16px, y el zoom queda pegado
+     hasta sacarlo a mano. !important porque hay campos con font-size fijado inline en
+     el archivo. Solo mobile: en desktop no existe este bug. */
+  input,select,textarea{font-size:16px !important}
 }
 </style>
 </head>
@@ -414,7 +424,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.24</span>
+      <span class="ver">v1.25</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>

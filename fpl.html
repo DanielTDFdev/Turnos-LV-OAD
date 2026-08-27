@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   PLAN DE VUELO (FPL) — Prototipo standalone
+  v3.30 ·  Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
+           auto-zoom al enfocar cualquier campo con font-size menor a 16px (varios
+           inputs/selects/textareas del formulario están en 12-13px), y el zoom
+           quedaba pegado hasta sacarlo a mano. Regla nueva dentro de
+           @media(max-width:680px): input,select,textarea{font-size:16px !important}.
   v3.29 ·  Pedido de Daniel: logo del club + leyenda "Aeroclub Río Grande ·
            Tierra del Fuego" en el header, junto al título.
   v3.28 ·  Pedido de Daniel: el botón "← TURNERO" siempre volvía a turnos.html sin
@@ -563,6 +568,12 @@
   .cdato{flex-wrap:wrap}
 
   button{padding:8px 14px}
+
+  /* v3.30 — mismo fix que turnos.html v7.72: iOS Safari hace auto-zoom al enfocar
+     cualquier input/select/textarea con font-size menor a 16px, y el zoom queda pegado
+     hasta sacarlo a mano. !important porque hay varios campos con font-size fijado
+     inline en el archivo. Solo mobile: en desktop no existe este bug. */
+  input,select,textarea{font-size:16px !important}
 }
 </style>
 </head>
@@ -583,7 +594,7 @@
       <h1>Plan de Vuelo <small>/ FPL</small></h1>
       <div class="header-sub">Aeroclub Río Grande · Tierra del Fuego</div>
     </div>
-    <span class="ver">v3.29</span>
+    <span class="ver">v3.30</span>
     <a href="turnos.html" id="btn-volver" title="Volver (sin cerrar sesión)" style="font-family:var(--mono);font-size:12px;color:var(--cyan);text-decoration:none;border:1px solid var(--line-hot);border-radius:5px;padding:5px 11px;letter-spacing:1px;transition:.15s" onmouseover="this.style.background='var(--cyan)';this.style.color='#04141a'" onmouseout="this.style.background='transparent';this.style.color='var(--cyan)'">← VOLVER</a>
     <div class="clk">
       <div id="clkUTC">--:-- Z</div>

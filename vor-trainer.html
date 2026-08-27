@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VOR TRAINER — Aeroclub Río Grande
+  v4.40 · Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
+         auto-zoom al enfocar el campo "Radial en el que está el avión"
+         (15px, debajo del umbral de 16px de Safari), y el zoom quedaba
+         pegado hasta sacarlo a mano. .field input/select pasa a 16px.
   v4.39 · Pedido de Daniel tras un reporte real: en Modo Inverso confundió la
          bandera FROM del instrumento objetivo (que queda FROM/centrada
          SIEMPRE, sea cual sea la acción pedida — es solo la técnica de
@@ -777,7 +781,7 @@ button{touch-action:manipulation}
 @media(max-width:760px){.answer-grid{grid-template-columns:1fr}}
 .field label{font-family:var(--font-mono);font-size:11px;color:var(--text2);letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:6px}
 .field input,.field select{width:100%;background:var(--bg4);border:1px solid var(--border);border-radius:var(--radius);
-  color:var(--text);padding:10px 10px;font-family:var(--font-ui);font-size:15px}
+  color:var(--text);padding:10px 10px;font-family:var(--font-ui);font-size:16px}
 .field input:focus,.field select:focus{outline:none;border-color:var(--cyan)}
 .action-btns{display:flex;gap:8px;flex-wrap:wrap}
 .action-btns button{flex:1;min-width:140px;font-family:var(--font-mono);font-size:12px;letter-spacing:.05em;
@@ -850,7 +854,7 @@ button.primary.flying{background:linear-gradient(135deg,rgba(240,165,0,.22),rgba
     </div>
     <div class="sp">
       <span class="score" id="score-label"></span>
-      <span class="ver">v4.39</span>
+      <span class="ver">v4.40</span>
       <a class="back" href="turnos.html" id="btn-volver" style="display:none">← VOLVER</a>
     </div>
   </header>

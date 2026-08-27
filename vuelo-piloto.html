@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.27 · 2026-08-27
+  Pedido de Daniel: mismo fix que turnos.html v7.72 / vuelo.html v5.45 — iOS
+  Safari hacía auto-zoom al enfocar #libro-fecha (14px, único campo del
+  archivo por debajo del umbral de 16px de Safari — el resto ya estaba en
+  17px desde el diseño original). Subido a 16px.
+
   v4.26 · 2026-08-25
   Pedido de Daniel: el ícono de usuario (.user-icon) al lado del botón Salir
   queda un 10% más grande — de 32px a 35px (ancho y alto). Mismo cambio en
@@ -1217,7 +1223,7 @@ select:disabled{opacity:.55}
   <div class="contenido">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
       <span class="label" style="margin:0;flex:none">Fecha</span>
-      <input id="libro-fecha" type="date" style="flex:1;font-size:14px;padding:10px 12px">
+      <input id="libro-fecha" type="date" style="flex:1;font-size:16px;padding:10px 12px">
     </div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:16px">
       Horas en UTC (Zulu) — restar 3 hs para hora local Río Grande
@@ -1304,7 +1310,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.26';
+const APP_VERSION = '4.27';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
