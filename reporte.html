@@ -2,6 +2,25 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.9 · Pedido de Daniel: un turno vencido+aprobado sin tiempo/aterrizajes
+         cargados se mostraba como "REALIZ. S/OBS" en verde, como si se
+         hubiera volado y solo faltara el papeleo. Daniel: eso es incorrecto
+         — un turno vencido sin datos cargados significa que NO SE VOLÓ (no
+         hay forma de distinguir "se voló, falta cargar" de "no se
+         presentó" con los datos actuales, así que se asume lo más simple y
+         verificable). Cambios: clasificar() renombra esa categoría de
+         'aprobado_pasado_sin_obs' a 'no_realizado'; deja de contar como
+         vuelo en TODOS los totales (stats globales del reporte por
+         instructor, stat "Vuelos volados"/"Vuelos supervisados" por
+         instructor y por avión); badge nuevo gris "NO VOLADO" (antes verde
+         "REALIZ. S/OBS"/"S/OBS"); labels actualizados ("Sin obs." → "No
+         volados", "Vuelos c/obs" → "Vuelos volados", "Total vuelos" →
+         "Total turnos"). Sigue apareciendo en las listas/tablas (para que
+         el instructor vea sus ausencias/no-shows), solo que ya no cuenta
+         como vuelo realizado. De paso: el resumen Excel (ambas hojas,
+         por avión y por instructor) filtraba por el texto literal viejo
+         'Realizado s/obs' — con el label nuevo esos filtros quedaban rotos
+         (0 siempre); corregidos a 'No volado'.
   v1.8 · Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
          auto-zoom al enfocar cualquier filtro de fecha/avión/instructor (12px,
          debajo del umbral de 16px de Safari), y el zoom quedaba pegado hasta
@@ -238,6 +257,7 @@ table.det tbody td.gray{color:var(--text3)}
 .badge.can{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.4)}
 .badge.ven{background:rgba(168,85,247,.15);color:var(--purple);border:1px solid rgba(168,85,247,.4)}
 .badge.pen{background:rgba(240,165,0,.15);color:var(--amber);border:1px solid rgba(240,165,0,.4)}
+.badge.nvo{background:rgba(148,163,184,.14);color:var(--text3);border:1px solid rgba(148,163,184,.35)}
 
 /* Separador de sección */
 .section-div{height:1px;background:var(--border);margin:8px 0}
@@ -306,7 +326,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.8</span>
+      <span class="ver">v1.9</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -497,7 +517,7 @@ function clasificar(r) {
   if (r.cargado_por && r.estado === 'cancelado') return 'cancelado_instructor';
   // estado 'aprobado' pasado — poco frecuente (barrido lazy del cliente puede no haberlo vencido aún)
   if (r.estado === 'aprobado' && esPasado) {
-    return r.obs_privada_tiempo_vuelo ? 'volado' : 'aprobado_pasado_sin_obs';
+    return r.obs_privada_tiempo_vuelo ? 'volado' : 'no_realizado';
   }
   if (r.estado === 'aprobado' && !esPasado) return 'aprobado_futuro';
   if (r.estado === 'cancelado') {
@@ -506,8 +526,11 @@ function clasificar(r) {
   if (r.estado === 'vencido') {
     if (r.aprobado_por) {
       // vencido CON aprobado_por = vuelo que se realizó (el avión salió y el turno venció por hora)
-      // Si el instructor cargó obs con tiempo = 'volado'; si no, quedó sin obs todavía
-      return r.obs_privada_tiempo_vuelo ? 'volado' : 'aprobado_pasado_sin_obs';
+      // Si el instructor cargó obs con tiempo = 'volado'; si no, se considera que NO se voló
+      // (pedido de Daniel: un turno vencido sin tiempo/aterrizajes cargados es un no-show, no
+      // un "vuelo pendiente de papeleo" — no hay forma de distinguir ambos casos con los datos
+      // actuales, así que se asume lo más simple y verificable: sin datos = no se voló).
+      return r.obs_privada_tiempo_vuelo ? 'volado' : 'no_realizado';
     }
     // vencido SIN aprobado_por = pendiente que nadie aprobó, se venció automáticamente
     return 'vencido_sin_aprobar';
@@ -631,7 +654,7 @@ async function generarReporte() {
     rs.forEach(r => {
       const cls = clasificar(r);
       if (cls === 'volado')               { avVol++; avHoras+=parseHoras(r.obs_privada_tiempo_vuelo); avAterr+=parseInt(r.obs_privada_aterrizajes||0); }
-      if (cls === 'aprobado_pasado_sin_obs') avSinObs++;
+      if (cls === 'no_realizado') avSinObs++;
       if (cls === 'cancelado_alumno')      avCanAlumno++;
       if (cls === 'cancelado_instructor')  avCanInst++;
       if (cls === 'vencido_sin_aprobar')   avVenSin++;
@@ -646,7 +669,7 @@ async function generarReporte() {
       const cls = clasificar(r);
       const estado_txt = {
         'volado':                '<span class="badge vol">VOLADO</span>',
-        'aprobado_pasado_sin_obs':'<span class="badge apr">REALIZ. S/OBS</span>',
+        'no_realizado':          '<span class="badge nvo">NO VOLADO</span>',
         'aprobado_futuro':       '<span class="badge apr">APROBADO</span>',
         'cancelado_alumno':      '<span class="badge can">CANC. ALUMNO</span>',
         'cancelado_instructor':  '<span class="badge can">CANC. INST.</span>',
@@ -689,7 +712,7 @@ async function generarReporte() {
           <div class="avion-stat c-green"><span class="n">${avVol}</span><span class="l">Vuelos realizados</span></div>
           <div class="avion-stat c-cyan"><span class="n" style="color:var(--cyan)">${fmtHoras(avHoras)}</span><span class="l">Horas de vuelo</span></div>
           <div class="avion-stat"><span class="n" style="color:#60a5fa">${avAterr||'—'}</span><span class="l">Aterrizajes</span></div>
-          <div class="avion-stat c-amber"><span class="n">${avSinObs}</span><span class="l">Realiz. s/obs</span></div>
+          <div class="avion-stat c-gray"><span class="n">${avSinObs}</span><span class="l">No volados</span></div>
           <div class="avion-stat c-red"><span class="n">${avCanAlumno}</span><span class="l">Canc. alumno</span></div>
           <div class="avion-stat c-red"><span class="n">${avCanInst}</span><span class="l">Canc. instructor</span></div>
           <div class="avion-stat c-gray"><span class="n">${avVenSin}</span><span class="l">Ven. s/aprobar</span></div>
@@ -726,7 +749,7 @@ async function generarReporte() {
   _datosAeronaves = filtradas.map(r => {
     const cls = clasificar(r);
     const estadoLabel = {
-      'volado':'Volado','aprobado_pasado_sin_obs':'Realizado s/obs',
+      'volado':'Volado','no_realizado':'No volado',
       'aprobado_futuro':'Aprobado','cancelado_alumno':'Cancelado por alumno',
       'cancelado_instructor':'Cancelado por instructor',
       'vencido_sin_aprobar':'Vencido s/aprobar','pendiente':'Pendiente','otro':'Otro',
@@ -739,7 +762,7 @@ async function generarReporte() {
       'Alumno/Piloto': r.nombre || '',
       'Tipo de vuelo': (r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción',
       'Estado': estadoLabel,
-      'Horas de vuelo': (cls==='volado'||cls==='aprobado_pasado_sin_obs') ? (r.obs_privada_tiempo_vuelo||'') : '',
+      'Horas de vuelo': cls==='volado' ? (r.obs_privada_tiempo_vuelo||'') : '',
       'Aterrizajes': cls==='volado' ? (r.obs_privada_aterrizajes||'') : '',
       'Instructor': r.instructor || r.aprobado_por || '',
       'Cancelado por': r.cancelado_por || '',
@@ -816,9 +839,10 @@ async function generarReporteInstructor() {
   const volados = reservas.filter(r => {
     if (!r.fecha) return false;
     if (r.fecha < desde || r.fecha > hasta) return false;
-    // Solo vuelos realizados: necesita aprobado_por (instructor que aprobó)
+    // Solo vuelos realizados o no-realizados con turno aprobado (para que el instructor
+    // también vea sus ausencias/no-shows, no solo lo que sí voló)
     const cls = clasificar(r);
-    return cls === 'volado' || cls === 'aprobado_pasado_sin_obs';
+    return cls === 'volado' || cls === 'no_realizado';
   });
 
   // Determinar nombre del instructor para cada reserva
@@ -846,16 +870,18 @@ async function generarReporteInstructor() {
   });
 
   // ── Totales globales ────────────────────────────────────────
-  const totVol   = filtrados.length;
+  // totVol solo cuenta 'volado' — filtrados también incluye 'no_realizado' (para
+  // que aparezcan en la lista/detalle), pero eso no debe sumar como vuelo supervisado.
+  const totVol   = filtrados.filter(r => clasificar(r) === 'volado').length;
   const totHoras = filtrados.reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
   const totAterr = filtrados.reduce((s,r) => s + parseInt(r.obs_privada_aterrizajes||0), 0);
-  const totSinObs = filtrados.filter(r => clasificar(r) === 'aprobado_pasado_sin_obs').length;
+  const totNoRealizados = filtrados.filter(r => clasificar(r) === 'no_realizado').length;
 
   document.getElementById('inst-stats-globales').innerHTML = `
     <div class="stat-box green"><span class="num">${totVol}</span><span class="lbl">Vuelos supervisados</span></div>
     <div class="stat-box" style="--cyan:#00c8d4"><span class="num" style="color:var(--cyan)">${fmtHoras(totHoras)}</span><span class="lbl">Horas totales</span></div>
     <div class="stat-box"><span class="num" style="color:#60a5fa">${totAterr||'—'}</span><span class="lbl">Aterrizajes</span></div>
-    <div class="stat-box amber"><span class="num">${totSinObs}</span><span class="lbl">Sin obs. cargada</span></div>
+    <div class="stat-box"><span class="num" style="color:var(--text3)">${totNoRealizados}</span><span class="lbl">No volados</span></div>
     <div class="stat-box"><span class="num" style="color:var(--text2)">${Object.keys(porInst).length}</span><span class="lbl">Instructores</span></div>
   `;
 
@@ -870,7 +896,7 @@ async function generarReporteInstructor() {
   instOrdenados.forEach(([instNombre, rs]) => {
     const iHoras  = rs.reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
     const iAterr  = rs.reduce((s,r) => s + parseInt(r.obs_privada_aterrizajes||0), 0);
-    const iSinObs = rs.filter(r => clasificar(r) === 'aprobado_pasado_sin_obs').length;
+    const iNoRealizados = rs.filter(r => clasificar(r) === 'no_realizado').length;
     const iVol    = rs.filter(r => clasificar(r) === 'volado').length;
 
     // Aviones distintos que voló
@@ -889,7 +915,7 @@ async function generarReporteInstructor() {
         : '<span class="muted">—</span>';
       const estadoBadge = cls==='volado'
         ? '<span class="badge vol">VOLADO</span>'
-        : '<span class="badge apr">S/OBS</span>';
+        : '<span class="badge nvo">NO VOLADO</span>';
       const alumno = esc((r.nombre||'—').split(' ').slice(0,2).join(' '));
       const avion  = esc(r.avion||'LV-OAD');
       const tipo   = (r.tipo_vuelo||'instruccion')==='particular' ? 'Particular' : 'Instrucción';
@@ -915,11 +941,11 @@ async function generarReporteInstructor() {
           <div class="horas-badge">⏱ ${fmtHoras(iHoras)}</div>
         </div>
         <div class="inst-stats">
-          <div class="inst-stat"><span class="n" style="color:var(--green)">${iVol}</span><span class="l">Vuelos c/obs</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--green)">${iVol}</span><span class="l">Vuelos volados</span></div>
           <div class="inst-stat"><span class="n" style="color:var(--cyan)">${fmtHoras(iHoras)}</span><span class="l">Horas de vuelo</span></div>
           <div class="inst-stat"><span class="n" style="color:#60a5fa">${iAterr||'—'}</span><span class="l">Aterrizajes</span></div>
-          <div class="inst-stat"><span class="n" style="color:var(--amber)">${iSinObs}</span><span class="l">Sin obs.</span></div>
-          <div class="inst-stat"><span class="n" style="color:var(--text3)">${rs.length}</span><span class="l">Total vuelos</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--text3)">${iNoRealizados}</span><span class="l">No volados</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--text3)">${rs.length}</span><span class="l">Total turnos</span></div>
         </div>
         <div class="tabla-wrap">
           <table class="det">
@@ -951,7 +977,7 @@ async function generarReporteInstructor() {
       'Alumno/Piloto': r.nombre || '',
       'Avión': r.avion || 'LV-OAD',
       'Tipo de vuelo': (r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción',
-      'Estado': cls==='volado'?'Volado':'Realizado s/obs',
+      'Estado': cls==='volado'?'Volado':'No volado',
       'Horas de vuelo': r.obs_privada_tiempo_vuelo || '',
       'Aterrizajes': r.obs_privada_aterrizajes || '',
       'Instructor': instDe(r),
@@ -1008,7 +1034,7 @@ window.exportarExcelAeronaves = function() {
       'Vuelos realizados': volados.length,
       'Horas de vuelo': horas ? Math.round(horas*100)/100 : '',
       'Aterrizajes': aterr || '',
-      'Realiz. s/obs': rs.filter(r=>r['Estado']==='Realizado s/obs').length,
+      'No volados': rs.filter(r=>r['Estado']==='No volado').length,
       'Cancelados alumno': rs.filter(r=>r['Estado']==='Cancelado por alumno').length,
       'Cancelados instructor': rs.filter(r=>r['Estado']==='Cancelado por instructor').length,
       'Vencidos s/aprobar': rs.filter(r=>r['Estado']==='Vencido s/aprobar').length,
@@ -1047,11 +1073,11 @@ window.exportarExcelInstructor = function() {
       const aterr = rs.reduce((s,r) => s + parseInt(r['Aterrizajes']||0), 0);
       return {
         'Instructor': instNombre,
-        'Vuelos c/obs': rs.filter(r=>r['Estado']==='Volado').length,
+        'Vuelos volados': rs.filter(r=>r['Estado']==='Volado').length,
         'Horas de vuelo': horas ? Math.round(horas*100)/100 : '',
         'Aterrizajes': aterr || '',
-        'Sin obs': rs.filter(r=>r['Estado']==='Realizado s/obs').length,
-        'Total vuelos': rs.length,
+        'No volados': rs.filter(r=>r['Estado']==='No volado').length,
+        'Total turnos': rs.length,
       };
     })
     .sort((a,b) => (b['Horas de vuelo']||0) - (a['Horas de vuelo']||0));
