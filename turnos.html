@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.78
+  FECHA   : 2026-08-28
+  CAMBIOS : Pedido de Daniel, mismo cambio en paralelo que vuelo.html v5.47 /
+            vuelo-piloto.html v4.31 (ver el comentario de vuelo.html para el
+            detalle completo): plugin leaflet-rotate 0.2.8, mapa del visor
+            GPS de "Mi Log de Vuelos" rotable con gesto de 2 dedos en touch
+            (además de zoom). Probando a pedido de Daniel — si no convence,
+            alcanza con sacar el <script> del plugin y las 2 opciones nuevas
+            del L.map(...).
   VERSION : 7.77
   FECHA   : 2026-08-27
   CAMBIOS : Pedido de Daniel tras el fix de v7.76: "no te podés dejar esto de
@@ -2566,6 +2575,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- v7.78: plugin de rotación, mismo cambio en paralelo que vuelo.html v5.47 — ver ese
+     comentario para el detalle completo. -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/charts/loader.js"></script>
 <style>
@@ -3049,7 +3061,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.77</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.78</div>
   </div>
 
 </div>
@@ -10519,7 +10531,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     const puntos = data.puntos;
     const coords = puntos.map(p => [p.lat, p.lng]);
 
-    _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false });
+    _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true });
 
     // Satélite ESRI + etiquetas
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 17 }).addTo(_mapaVueloLeaflet);

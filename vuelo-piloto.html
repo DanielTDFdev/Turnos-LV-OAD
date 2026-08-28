@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.31 · 2026-08-28
+  Pedido de Daniel, mismo cambio en paralelo que vuelo.html v5.47 (ver ese
+  comentario para el detalle completo): plugin leaflet-rotate 0.2.8, mapa del
+  visor GPS rotable con gesto de 2 dedos en touch (además de zoom).
+
   v4.30 · 2026-08-27
   Pedido de Daniel: un instructor puede loguearse acá y volar como piloto
   (vuelo particular propio) sin que exista un rol separado. login() ahora
@@ -693,6 +698,9 @@
 <title>Vuelo Piloto · ACRG</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- v4.31: plugin de rotación, mismo cambio en paralelo que vuelo.html v5.47 — ver ese
+     comentario para el detalle completo. -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
@@ -1354,7 +1362,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.30';
+const APP_VERSION = '4.31';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3127,7 +3135,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     const puntos = data.puntos;
     const coords = puntos.map(p => [p.lat, p.lng]);
 
-    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false });
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true });
 
     // maxNativeZoom:15 — mismo fix que vuelo.html v5.25: evita el error
     // "image not available" al hacer zoom manual más allá de la cobertura

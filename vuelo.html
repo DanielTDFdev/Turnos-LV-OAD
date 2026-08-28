@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.47 · 2026-08-28
+  Pedido de Daniel — probando: además de zoom, que el mapa del visor GPS se
+  pueda rotar con gesto (como Google Maps). Plugin nuevo `leaflet-rotate`
+  0.2.8 (jsdelivr), cargado justo después de leaflet.min.js — parchea clases
+  internas de Leaflet vía L.Class.include(), no es CSS aparte. L.map(...) del
+  visor suma `rotate:true, touchRotate:true` — el resto de las opciones
+  (rotateControl, shiftKeyRotate) quedan en su default (true), dando control
+  con mouse/Shift+scroll en desktop además del gesto de 2 dedos en touch. Si
+  no convence, alcanza con sacar el <script> del plugin y esas 2 opciones —
+  nada más del archivo depende de esto. Mismo cambio en paralelo en
+  vuelo-piloto.html v4.31 y turnos.html v7.78 (triplicado de siempre).
+
   v5.46 · 2026-08-27
   Pedido de Daniel, mismo cambio que vuelo-piloto.html v4.28: "¿Iniciar el
   vuelo ahora?" y "¿Finalizar el vuelo ahora?" dejan de usar confirm()
@@ -816,6 +828,16 @@
 <title>Vuelo · ACRG</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- v5.47: plugin de rotación (Daniel probando la idea) — parchea L.Map/L.GridLayer/etc.
+     vía L.Class.include(), por eso va DESPUÉS de leaflet.min.js y ANTES de cualquier
+     L.map(...). Sin CSS propio (el botón de rotar usa un SVG inline como data-URI). Da
+     gesto de 2 dedos en touch (rotate:true+touchRotate:true en L.map) y, en desktop,
+     Shift+scroll (shiftKeyRotate, prendido por default) + un botón brújula arriba a la
+     izquierda (rotateControl, prendido por default, se apila debajo del +/- de zoom) que
+     se puede arrastrar para rotar o tocar para volver a norte-arriba. Si no convence,
+     alcanza con sacar este <script> y las 2 opciones nuevas del L.map(...) de abajo —
+     nada más del archivo depende de este plugin. -->
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
@@ -1475,7 +1497,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.46'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.47'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2979,7 +3001,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     const coords = puntos.map(p => [p.lat, p.lng]);
 
     // Inicializar Leaflet
-    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false });
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true });
 
     // Capa satélite ESRI (aeronáuticamente más útil que calles)
     // maxNativeZoom:15 — v5.25: sin esto, al hacer zoom manual más allá de
