@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.49 · 2026-08-28
+  Fix del botón brújula en PC (rotación en mobile no se toca, sigue igual).
+  Causa real: `rotateControl` tiene por defecto `closeOnZeroBearing:true`,
+  que OCULTA el botón por completo mientras el mapa está en bearing 0°
+  (o sea siempre al abrir). Por eso arrastrar el botón no hacía nada — no
+  estaba ni visible/clickeable. Se agrega `rotateControl:{closeOnZeroBearing:
+  false}` al L.map(...) para que el botón esté siempre visible. Shift+scroll
+  queda sin tocar — a confirmar si el navegador se lo sigue quedando antes de
+  que llegue al plugin. Mismo cambio en paralelo en vuelo-piloto.html v4.33
+  y turnos.html v7.83.
+
   v5.48 · 2026-08-28
   Pedido de Daniel: v5.47 (plugin de rotación del mapa) no andaba — ni la
   brújula ni Shift+scroll respondían. Sin poder confirmar si era el CDN de
@@ -1510,7 +1521,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.48'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.49'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3014,7 +3025,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     const coords = puntos.map(p => [p.lat, p.lng]);
 
     // Inicializar Leaflet
-    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true });
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false } });
 
     // Capa satélite ESRI (aeronáuticamente más útil que calles)
     // maxNativeZoom:15 — v5.25: sin esto, al hacer zoom manual más allá de

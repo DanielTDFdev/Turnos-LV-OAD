@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.33 · 2026-08-28
+  Mismo cambio en paralelo que vuelo.html v5.49 (ver ese comentario para el
+  detalle completo): fix del botón brújula en PC con `rotateControl:
+  {closeOnZeroBearing:false}`. Rotación en mobile no se toca.
+
   v4.32 · 2026-08-28
   Pedido de Daniel, mismo cambio en paralelo que vuelo.html v5.48 (ver ese
   comentario para el detalle completo): `leaflet-rotate.js` pasa de CDN
@@ -1369,7 +1374,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.32';
+const APP_VERSION = '4.33';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3142,7 +3147,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     const puntos = data.puntos;
     const coords = puntos.map(p => [p.lat, p.lng]);
 
-    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true });
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false } });
 
     // maxNativeZoom:15 — mismo fix que vuelo.html v5.25: evita el error
     // "image not available" al hacer zoom manual más allá de la cobertura

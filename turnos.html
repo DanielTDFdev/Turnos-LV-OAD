@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.83
+  FECHA   : 2026-08-28
+  CAMBIOS : Mismo cambio en paralelo que vuelo.html v5.49 (ver ese comentario
+            para el detalle completo): fix del botón brújula del mapa en PC
+            — `rotateControl:{closeOnZeroBearing:false}` agregado al
+            L.map(...), porque el default ocultaba el botón mientras el
+            mapa estaba en bearing 0° (o sea siempre al abrir), dejándolo
+            inutilizable en desktop. Rotación en mobile no se toca.
   VERSION : 7.82
   FECHA   : 2026-08-28
   CAMBIOS : Pedido de Daniel: el botón flotante rojo de cerrar (recién
@@ -3139,7 +3147,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.82</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.83</div>
   </div>
 
 </div>
@@ -10609,7 +10617,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     const puntos = data.puntos;
     const coords = puntos.map(p => [p.lat, p.lng]);
 
-    _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true });
+    _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false } });
 
     // Satélite ESRI + etiquetas
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 17 }).addTo(_mapaVueloLeaflet);
