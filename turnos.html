@@ -1,5 +1,20 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.80
+  FECHA   : 2026-08-28
+  CAMBIOS : Debug del reporte de Daniel (rotación del mapa no hace nada, ni
+            gesto ni Shift+scroll, con leaflet-rotate.js confirmado cargado
+            y funcionando — L.Control.Rotate existe en consola). El intento
+            de probar `_mapaVueloLeaflet` directo desde la consola del
+            navegador dio "is not defined": esa variable vive dentro del
+            script principal (type=module), invisible desde afuera aunque
+            no haya ningún bug ahí. window._mapDebug = _mapaVueloLeaflet
+            agregado justo después de crear el mapa, temporal, para poder
+            correr window._mapDebug.setBearing(45) y ver si el motor de
+            rotación reacciona aunque sea sin gesto — descarta o confirma
+            si el problema está en la inicialización del mapa o en los
+            handlers de gesto (touch/Shift+scroll) específicamente. Sacar
+            este hook cuando se cierre el tema.
   VERSION : 7.79
   FECHA   : 2026-08-28
   CAMBIOS : Pedido de Daniel, mismo cambio en paralelo que vuelo.html v5.48 /
@@ -3069,7 +3084,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.79</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.80</div>
   </div>
 
 </div>
@@ -10540,6 +10555,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     const coords = puntos.map(p => [p.lat, p.lng]);
 
     _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true });
+    window._mapDebug = _mapaVueloLeaflet; // v7.80 — gancho temporal de debug: _mapaVueloLeaflet vive dentro del script principal (type=module), invisible desde la consola del navegador. window._mapDebug expone la MISMA instancia para poder inspeccionarla (_mapDebug.options.rotate, _mapDebug.setBearing(45), etc.) mientras se resuelve el reporte de Daniel de que la rotación no hace nada. Sacar cuando se cierre el tema.
 
     // Satélite ESRI + etiquetas
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 17 }).addTo(_mapaVueloLeaflet);
