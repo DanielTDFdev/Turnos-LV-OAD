@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.10 · Pedido de Daniel: turno de piloto PARTICULAR (autoaprobado, sin
+         aprobado_por por diseño — ver turnos.html) que venció caía siempre
+         en 'vencido_sin_aprobar' aunque tuviera datos de vuelo cargados,
+         porque clasificar() solo miraba aprobado_por para decidir si el
+         turno "se realizó". Caso real: Tony Garcia, LV-ART, 27/08 — voló
+         (1.0hs, 1 aterrizaje) pero figuraba como "VEN. S/APRO.". Fix:
+         clasificar() ahora también entra a la rama 'volado'/'no_realizado'
+         cuando r.tipo_vuelo==='particular', no solo cuando hay aprobado_por.
+         'vencido_sin_aprobar' queda reservado para turnos de INSTRUCCIÓN
+         que de verdad nadie aprobó.
+
   v1.9 · Pedido de Daniel: un turno vencido+aprobado sin tiempo/aterrizajes
          cargados se mostraba como "REALIZ. S/OBS" en verde, como si se
          hubiera volado y solo faltara el papeleo. Daniel: eso es incorrecto
@@ -326,7 +337,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.9</span>
+      <span class="ver">v1.10</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -524,7 +535,12 @@ function clasificar(r) {
     return r.cancelado_rol === 'instructor' ? 'cancelado_instructor' : 'cancelado_alumno';
   }
   if (r.estado === 'vencido') {
-    if (r.aprobado_por) {
+    // v1.10 fix: un turno de piloto PARTICULAR se autoaprueba sin escribir aprobado_por
+    // (ver turnos.html — nunca pasa por un instructor). Antes esto lo hacía caer siempre en
+    // 'vencido_sin_aprobar' aunque el vuelo se haya hecho y tenga datos cargados. Se trata
+    // igual que un vencido CON aprobado_por: 'volado' si tiene tiempo cargado, 'no_realizado'
+    // si no.
+    if (r.aprobado_por || (r.tipo_vuelo === 'particular')) {
       // vencido CON aprobado_por = vuelo que se realizó (el avión salió y el turno venció por hora)
       // Si el instructor cargó obs con tiempo = 'volado'; si no, se considera que NO se voló
       // (pedido de Daniel: un turno vencido sin tiempo/aterrizajes cargados es un no-show, no
@@ -532,7 +548,7 @@ function clasificar(r) {
       // actuales, así que se asume lo más simple y verificable: sin datos = no se voló).
       return r.obs_privada_tiempo_vuelo ? 'volado' : 'no_realizado';
     }
-    // vencido SIN aprobado_por = pendiente que nadie aprobó, se venció automáticamente
+    // vencido SIN aprobado_por Y de instrucción = pendiente que nadie aprobó, se venció automáticamente
     return 'vencido_sin_aprobar';
   }
   if (r.estado === 'pendiente') return 'pendiente';
