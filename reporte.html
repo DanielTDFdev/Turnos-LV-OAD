@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.11 · Pedido de Daniel tras probar v1.10: seguía mal para los particulares
+         autoservicio (vuelo-piloto.html) — se veían como "NO VOLADO" pese a
+         tener datos. Causa: esos vuelos NO escriben obs_privada_tiempo_vuelo/
+         obs_privada_aterrizajes (eso lo carga un instructor) — escriben
+         piloto_tiempo_vuelo/piloto_aterrizajes. clasificar() y TODAS las
+         sumas/tablas/exports de horas·aterrizajes miraban solo el primer par
+         de campos. Fix: helpers nuevos horasDe(r)/aterrDe(r) con el mismo
+         fallback que ya usa turnos.html (obs_privada_* si existe, si no
+         piloto_*) — reemplazan los ~17 usos directos de esos campos en todo
+         el archivo (clasificar, stats por avión/instructor, tablas, exports
+         Excel).
+
   v1.10 · Pedido de Daniel: turno de piloto PARTICULAR (autoaprobado, sin
          aprobado_por por diseño — ver turnos.html) que venció caía siempre
          en 'vencido_sin_aprobar' aunque tuviera datos de vuelo cargados,
@@ -337,7 +349,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.10</span>
+      <span class="ver">v1.11</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -518,6 +530,16 @@ if (!ok) {
   document.getElementById('f-hasta').value = fmtDate(ahora);
 }
 
+// ── Horas/aterrizajes de un turno, con fallback a piloto_* ──────
+// v1.11: los vuelos de piloto particular autoservicio (vuelo-piloto.html) NO escriben
+// obs_privada_tiempo_vuelo/obs_privada_aterrizajes (esos son campos que carga un
+// instructor) — escriben piloto_tiempo_vuelo/piloto_aterrizajes. Mismo fallback que ya
+// usa turnos.html en todos lados (ver r.obs_privada_tiempo_vuelo!=null?...:r.piloto_tiempo_vuelo).
+// Sin este helper, un vuelo particular autocargado por el piloto se veía "sin datos"
+// aunque los tuviera, y clasificar() lo mandaba a NO VOLADO.
+function horasDe(r) { return r.obs_privada_tiempo_vuelo != null ? r.obs_privada_tiempo_vuelo : r.piloto_tiempo_vuelo; }
+function aterrDe(r) { return r.obs_privada_aterrizajes != null ? r.obs_privada_aterrizajes : r.piloto_aterrizajes; }
+
 // ── Clasificar un turno ──────────────────────────────────────
 // Retorna una de: 'volado' | 'aprobado_futuro' | 'cancelado_alumno' |
 //                'cancelado_instructor' | 'vencido_confirmado' |
@@ -528,7 +550,7 @@ function clasificar(r) {
   if (r.cargado_por && r.estado === 'cancelado') return 'cancelado_instructor';
   // estado 'aprobado' pasado — poco frecuente (barrido lazy del cliente puede no haberlo vencido aún)
   if (r.estado === 'aprobado' && esPasado) {
-    return r.obs_privada_tiempo_vuelo ? 'volado' : 'no_realizado';
+    return horasDe(r) != null ? 'volado' : 'no_realizado';
   }
   if (r.estado === 'aprobado' && !esPasado) return 'aprobado_futuro';
   if (r.estado === 'cancelado') {
@@ -546,7 +568,7 @@ function clasificar(r) {
       // (pedido de Daniel: un turno vencido sin tiempo/aterrizajes cargados es un no-show, no
       // un "vuelo pendiente de papeleo" — no hay forma de distinguir ambos casos con los datos
       // actuales, así que se asume lo más simple y verificable: sin datos = no se voló).
-      return r.obs_privada_tiempo_vuelo ? 'volado' : 'no_realizado';
+      return horasDe(r) != null ? 'volado' : 'no_realizado';
     }
     // vencido SIN aprobado_por Y de instrucción = pendiente que nadie aprobó, se venció automáticamente
     return 'vencido_sin_aprobar';
@@ -634,8 +656,8 @@ async function generarReporte() {
       const cls = clasificar(r);
       if (cls === 'volado') {
         totVolados++;
-        totHoras += parseHoras(r.obs_privada_tiempo_vuelo);
-        totAterrizajes += parseInt(r.obs_privada_aterrizajes || 0);
+        totHoras += parseHoras(horasDe(r));
+        totAterrizajes += parseInt(aterrDe(r) || 0);
       }
       if (cls === 'cancelado_alumno' || cls === 'cancelado_instructor') totCancelados++;
       if (cls === 'vencido_sin_aprobar') totVencidos++;
@@ -669,7 +691,7 @@ async function generarReporte() {
 
     rs.forEach(r => {
       const cls = clasificar(r);
-      if (cls === 'volado')               { avVol++; avHoras+=parseHoras(r.obs_privada_tiempo_vuelo); avAterr+=parseInt(r.obs_privada_aterrizajes||0); }
+      if (cls === 'volado')               { avVol++; avHoras+=parseHoras(horasDe(r)); avAterr+=parseInt(aterrDe(r)||0); }
       if (cls === 'no_realizado') avSinObs++;
       if (cls === 'cancelado_alumno')      avCanAlumno++;
       if (cls === 'cancelado_instructor')  avCanInst++;
@@ -694,8 +716,8 @@ async function generarReporte() {
         'otro':                  '<span class="badge" style="color:var(--text3)">OTRO</span>',
       }[cls] || '';
 
-      const horas = cls === 'volado' ? `<span class="green">${rawHoras(r.obs_privada_tiempo_vuelo)}</span>` : '<span class="muted">—</span>';
-      const aterr = cls === 'volado' && r.obs_privada_aterrizajes ? `<span class="green">${r.obs_privada_aterrizajes}</span>` : '<span class="muted">—</span>';
+      const horas = cls === 'volado' ? `<span class="green">${rawHoras(horasDe(r))}</span>` : '<span class="muted">—</span>';
+      const aterr = cls === 'volado' && aterrDe(r) ? `<span class="green">${aterrDe(r)}</span>` : '<span class="muted">—</span>';
       const instructor = esc(r.instructor || r.aprobado_por || r.cancelado_por || '—');
       const quien = esc((r.nombre || '—').split(' ').slice(0,2).join(' '));
       const tipoVuelo = (r.tipo_vuelo || 'instruccion') === 'particular' ? 'Particular' : 'Instrucción';
@@ -778,8 +800,8 @@ async function generarReporte() {
       'Alumno/Piloto': r.nombre || '',
       'Tipo de vuelo': (r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción',
       'Estado': estadoLabel,
-      'Horas de vuelo': cls==='volado' ? (r.obs_privada_tiempo_vuelo||'') : '',
-      'Aterrizajes': cls==='volado' ? (r.obs_privada_aterrizajes||'') : '',
+      'Horas de vuelo': cls==='volado' ? (horasDe(r)||'') : '',
+      'Aterrizajes': cls==='volado' ? (aterrDe(r)||'') : '',
       'Instructor': r.instructor || r.aprobado_por || '',
       'Cancelado por': r.cancelado_por || '',
       'Motivo cancelación': r.obs_cancelacion || '',
@@ -880,8 +902,8 @@ async function generarReporteInstructor() {
 
   // Ordenar instructores por horas desc
   const instOrdenados = Object.entries(porInst).sort((a, b) => {
-    const hA = a[1].reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
-    const hB = b[1].reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
+    const hA = a[1].reduce((s,r) => s + parseHoras(horasDe(r)), 0);
+    const hB = b[1].reduce((s,r) => s + parseHoras(horasDe(r)), 0);
     return hB - hA;
   });
 
@@ -889,8 +911,8 @@ async function generarReporteInstructor() {
   // totVol solo cuenta 'volado' — filtrados también incluye 'no_realizado' (para
   // que aparezcan en la lista/detalle), pero eso no debe sumar como vuelo supervisado.
   const totVol   = filtrados.filter(r => clasificar(r) === 'volado').length;
-  const totHoras = filtrados.reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
-  const totAterr = filtrados.reduce((s,r) => s + parseInt(r.obs_privada_aterrizajes||0), 0);
+  const totHoras = filtrados.reduce((s,r) => s + parseHoras(horasDe(r)), 0);
+  const totAterr = filtrados.reduce((s,r) => s + parseInt(aterrDe(r)||0), 0);
   const totNoRealizados = filtrados.filter(r => clasificar(r) === 'no_realizado').length;
 
   document.getElementById('inst-stats-globales').innerHTML = `
@@ -910,8 +932,8 @@ async function generarReporteInstructor() {
   }
 
   instOrdenados.forEach(([instNombre, rs]) => {
-    const iHoras  = rs.reduce((s,r) => s + parseHoras(r.obs_privada_tiempo_vuelo), 0);
-    const iAterr  = rs.reduce((s,r) => s + parseInt(r.obs_privada_aterrizajes||0), 0);
+    const iHoras  = rs.reduce((s,r) => s + parseHoras(horasDe(r)), 0);
+    const iAterr  = rs.reduce((s,r) => s + parseInt(aterrDe(r)||0), 0);
     const iNoRealizados = rs.filter(r => clasificar(r) === 'no_realizado').length;
     const iVol    = rs.filter(r => clasificar(r) === 'volado').length;
 
@@ -924,10 +946,10 @@ async function generarReporteInstructor() {
     const filas = ordenados.map(r => {
       const cls = clasificar(r);
       const horas = cls==='volado'
-        ? `<span class="green">${rawHoras(r.obs_privada_tiempo_vuelo)}</span>`
+        ? `<span class="green">${rawHoras(horasDe(r))}</span>`
         : '<span class="muted">—</span>';
-      const aterr = cls==='volado' && r.obs_privada_aterrizajes
-        ? `<span class="green">${r.obs_privada_aterrizajes}</span>`
+      const aterr = cls==='volado' && aterrDe(r)
+        ? `<span class="green">${aterrDe(r)}</span>`
         : '<span class="muted">—</span>';
       const estadoBadge = cls==='volado'
         ? '<span class="badge vol">VOLADO</span>'
@@ -994,8 +1016,8 @@ async function generarReporteInstructor() {
       'Avión': r.avion || 'LV-OAD',
       'Tipo de vuelo': (r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción',
       'Estado': cls==='volado'?'Volado':'No volado',
-      'Horas de vuelo': r.obs_privada_tiempo_vuelo || '',
-      'Aterrizajes': r.obs_privada_aterrizajes || '',
+      'Horas de vuelo': horasDe(r) || '',
+      'Aterrizajes': aterrDe(r) || '',
       'Instructor': instDe(r),
     };
   });
