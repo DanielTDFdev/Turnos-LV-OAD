@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.48 · 2026-08-28
+  Pedido de Daniel: v5.47 (plugin de rotación del mapa) no andaba — ni la
+  brújula ni Shift+scroll respondían. Sin poder confirmar si era el CDN de
+  jsdelivr bloqueado/caído en su red o algo puntual, se saca la dependencia
+  externa: `leaflet-rotate.js` pasa a ser un archivo del repo (mismo
+  contenido del paquete npm `leaflet-rotate@0.2.8`, sin modificar, solo se le
+  sacó el comentario final que apuntaba a un `.map` que no se sube). El
+  `<script src="leaflet-rotate.js">` reemplaza al de jsdelivr; las opciones
+  del `L.map(...)` (rotate/touchRotate) no cambian. Mismo cambio en paralelo
+  en vuelo-piloto.html v4.32 y turnos.html v7.79.
+  ⚠ Recordatorio para Daniel: subir también `leaflet-rotate.js` (nuevo, en la
+  raíz del repo, junto a este archivo) — sin él el mapa no carga NADA, ni
+  siquiera zoom, porque falta el <script> y corta la ejecución del resto de
+  scripts de la página.
+
   v5.47 · 2026-08-28
   Pedido de Daniel — probando: además de zoom, que el mapa del visor GPS se
   pueda rotar con gesto (como Google Maps). Plugin nuevo `leaflet-rotate`
@@ -828,16 +843,14 @@
 <title>Vuelo · ACRG</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<!-- v5.47: plugin de rotación (Daniel probando la idea) — parchea L.Map/L.GridLayer/etc.
-     vía L.Class.include(), por eso va DESPUÉS de leaflet.min.js y ANTES de cualquier
-     L.map(...). Sin CSS propio (el botón de rotar usa un SVG inline como data-URI). Da
-     gesto de 2 dedos en touch (rotate:true+touchRotate:true en L.map) y, en desktop,
-     Shift+scroll (shiftKeyRotate, prendido por default) + un botón brújula arriba a la
-     izquierda (rotateControl, prendido por default, se apila debajo del +/- de zoom) que
-     se puede arrastrar para rotar o tocar para volver a norte-arriba. Si no convence,
-     alcanza con sacar este <script> y las 2 opciones nuevas del L.map(...) de abajo —
-     nada más del archivo depende de este plugin. -->
-<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
+<!-- v5.48: leaflet-rotate.js pasa de CDN externo (jsdelivr) a archivo local del repo —
+     Daniel reportó que no andaba nada (ni brújula ni Shift+scroll) en v5.47, y sin poder
+     confirmar si era el CDN bloqueado/caído no vale la pena seguir dependiendo de él.
+     Archivo sin modificar (mismo contenido que dist/leaflet-rotate.js del paquete npm
+     leaflet-rotate@0.2.8, solo se le sacó el comentario final "//# sourceMappingURL" que
+     apuntaba a un .map que no vamos a subir). Ver el resto de las opciones (rotate,
+     touchRotate) en el L.map(...) más abajo — nada de eso cambia. -->
+<script src="leaflet-rotate.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
@@ -1497,7 +1510,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.47'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.48'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)

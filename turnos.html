@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.79
+  FECHA   : 2026-08-28
+  CAMBIOS : Pedido de Daniel, mismo cambio en paralelo que vuelo.html v5.48 /
+            vuelo-piloto.html v4.32 (ver el comentario de vuelo.html para el
+            detalle completo): `leaflet-rotate.js` pasa de CDN externo
+            (jsdelivr) a archivo del repo — v7.78 no andaba (ni brújula ni
+            Shift+scroll). ⚠ Requiere subir el archivo nuevo
+            `leaflet-rotate.js` junto a este.
   VERSION : 7.78
   FECHA   : 2026-08-28
   CAMBIOS : Pedido de Daniel, mismo cambio en paralelo que vuelo.html v5.47 /
@@ -2575,9 +2583,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<!-- v7.78: plugin de rotación, mismo cambio en paralelo que vuelo.html v5.47 — ver ese
-     comentario para el detalle completo. -->
-<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
+<!-- v7.79: mismo cambio que vuelo.html v5.48 (CDN externo → archivo local del repo,
+     ver ese comentario). -->
+<script src="leaflet-rotate.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://www.gstatic.com/charts/loader.js"></script>
 <style>
@@ -3061,7 +3069,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.78</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.79</div>
   </div>
 
 </div>
