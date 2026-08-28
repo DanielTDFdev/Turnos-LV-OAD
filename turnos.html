@@ -1,8 +1,20 @@
 <!--
   ARCHIVO : turnos.html
-  VERSION : 7.83
+  VERSION : 7.84
   FECHA   : 2026-08-28
-  CAMBIOS : Mismo cambio en paralelo que vuelo.html v5.49 (ver ese comentario
+  CAMBIOS : LV-ART pasa a permitir slots de 30min en vez de 1hs. La grilla de
+            checkboxes de Config→Aeronaves (renderHorariosConfig) ahora usa
+            todasHorasParaAvion(avKey) — devuelve TODAS_HORAS_MEDIA (48 slots,
+            00:00 a 23:30) para los aviones en AVIONES_MEDIA_HORA (hoy solo
+            LV-ART), TODAS_HORAS (1hs) para el resto. marcarTodas() usa el
+            mismo helper. El resto del motor (horasParaDia, slotsTomados,
+            selectSlot, renderSlots, vista semana/lista) ya operaba por índice
+            sobre el array de horas configurado, sin asumir paso de 1hs, así
+            que no necesitó cambios. Los checkboxes existentes de LV-ART
+            (horas en punto ya tildadas) se mantienen — Daniel tiene que
+            entrar a Config→Aeronaves→LV-ART y tildar los ":30" nuevos (o
+            tocar "TODAS" por día) para activarlos.
+  CAMBIOS (7.83) : Mismo cambio en paralelo que vuelo.html v5.49 (ver ese comentario
             para el detalle completo): fix del botón brújula del mapa en PC
             — `rotateControl:{closeOnZeroBearing:false}` agregado al
             L.map(...), porque el default ocultaba el botón mientras el
@@ -3147,7 +3159,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.83</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.84</div>
   </div>
 
 </div>
@@ -4935,6 +4947,14 @@ async function registrarAuditoria(accion,rol,resultado,detalle=''){
 
 // ── CONSTANTES ─────────────────────────────────────────────────
 const TODAS_HORAS=['00:00','01:00','02:00','03:00','04:00','05:00','06:00','07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
+// v7.84: grilla de checkboxes en media hora, usada solo para el picker de Config→Aeronaves
+// del avión que use slots de 30min (hoy LV-ART). El resto de la lógica (horasParaDia,
+// slotsTomados, selectSlot, etc.) ya era agnóstica a la granularidad — opera por índice
+// sobre el array que sea, no asume paso de 1hs — así que no requirió cambios.
+const TODAS_HORAS_MEDIA=(()=>{const a=[];for(let h=0;h<24;h++)for(const m of['00','30'])a.push(String(h).padStart(2,'0')+':'+m);return a;})();
+// Avión(es) que usan grilla de 30min en vez de 1hs en el picker de checkboxes de horarios.
+const AVIONES_MEDIA_HORA=['LV-ART'];
+function todasHorasParaAvion(avKey){return AVIONES_MEDIA_HORA.includes(avKey)?TODAS_HORAS_MEDIA:TODAS_HORAS;}
 const HORAS_DEFAULT=['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'];
 const DEFAULT_CONFIG_AVION={
   horariosDia:{0:HORAS_DEFAULT,1:HORAS_DEFAULT,2:HORAS_DEFAULT,3:HORAS_DEFAULT,4:HORAS_DEFAULT,5:HORAS_DEFAULT,6:HORAS_DEFAULT},
@@ -8387,10 +8407,11 @@ function renderHorariosConfig(){
   const cfgActual=configs[activeConfigAvion]||DEFAULT_CONFIG_AVION;
   const estaActivo=cfgActual.activo!==false;
   renderToggleAvion(activeConfigAvion);
+  const colsGrid=AVIONES_MEDIA_HORA.includes(activeConfigAvion)?6:4;
   document.getElementById('horarios-config').innerHTML=
     '<div style="font-family:var(--font-mono);font-size:11px;color:var(--amber);margin-bottom:.6rem;letter-spacing:.1em">'+DIAS_NOMBRE[activeDow].toUpperCase()+'</div>'+
-    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">'+
-    TODAS_HORAS.map(h=>{
+    '<div style="display:grid;grid-template-columns:repeat('+colsGrid+',1fr);gap:6px">'+
+    todasHorasParaAvion(activeConfigAvion).map(h=>{
       const on=horas.includes(h);
       const onchange=esAdminRO()?'disabled':'onchange="toggleHorario(\''+h+'\',this.checked)"';
       return '<label style="display:flex;align-items:center;gap:6px;'+(esAdminRO()?'cursor:not-allowed;opacity:.7':'cursor:pointer')+';padding:5px 8px;border:1px solid '+(on?'var(--cyan)':'var(--border)')+';border-radius:var(--radius);background:'+(on?'rgba(0,200,212,.08)':'var(--bg2)')+';font-family:var(--font-mono);font-size:12px;color:'+(on?'var(--cyan)':'var(--text3)')+';transition:all .15s">'+
@@ -8440,7 +8461,7 @@ window.toggleHorario=async function(h,on){
 window.marcarTodas=async function(on){
   if(esAdminRO())return;
   if(!configs[activeConfigAvion])configs[activeConfigAvion]={...DEFAULT_CONFIG_AVION,horariosDia:{...DEFAULT_CONFIG_AVION.horariosDia},diasBloqueados:[]};
-  configs[activeConfigAvion].horariosDia[activeDow]=on?[...TODAS_HORAS]:[];
+  configs[activeConfigAvion].horariosDia[activeDow]=on?[...todasHorasParaAvion(activeConfigAvion)]:[];
   await saveConfigAvion(activeConfigAvion);renderHorariosConfig();
 };
 
