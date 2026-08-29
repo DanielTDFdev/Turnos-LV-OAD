@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   PLAN DE VUELO (FPL) — Prototipo standalone
+  v3.32 ·  Pedido de Daniel: el campo "Hora despegue (LOCAL)" mostraba AM/PM en
+           vez de 24hs en algunos dispositivos Android. Causa: era un
+           <input type="time"> nativo — en Android ese control delega al
+           selector de hora DEL SISTEMA OPERATIVO (no de la página), que
+           respeta la config. "Usar formato de 24 horas" del teléfono, sin
+           importar el lang="es" del documento. Fix: reemplazado por un input
+           de texto con máscara propia (maskHora24/clampHora24) — auto-inserta
+           ":" mientras se tipea, clampea HH 0-23 y MM 0-59 en blur. Al ser el
+           control MISMO el que da formato (no delegado al SO), el 24hs queda
+           garantizado en cualquier dispositivo. .value sigue devolviendo
+           "HH:MM" igual que antes — cero cambios en calcUTC() ni en el resto
+           del código que lo consume.
   v3.31 ·  Mismo fix en paralelo que turnos.html v7.86 (ver ese comentario para
            el detalle completo): navigator.serviceWorker.register('/sw.js',
            {scope:'/fpl.html'}) — antes sin scope explícito, tomaba "/" por
@@ -599,7 +611,7 @@
       <h1>Plan de Vuelo <small>/ FPL</small></h1>
       <div class="header-sub">Aeroclub Río Grande · Tierra del Fuego</div>
     </div>
-    <span class="ver">v3.31</span>
+    <span class="ver">v3.32</span>
     <a href="turnos.html" id="btn-volver" title="Volver (sin cerrar sesión)" style="font-family:var(--mono);font-size:12px;color:var(--cyan);text-decoration:none;border:1px solid var(--line-hot);border-radius:5px;padding:5px 11px;letter-spacing:1px;transition:.15s" onmouseover="this.style.background='var(--cyan)';this.style.color='#04141a'" onmouseout="this.style.background='transparent';this.style.color='var(--cyan)'">← VOLVER</a>
     <div class="clk">
       <div id="clkUTC">--:-- Z</div>
@@ -698,8 +710,8 @@
             <input id="f13a" placeholder="SAWE" value="SAWE" maxlength="4"></div>
           <div class="field"><label>Fecha (local)</label>
             <input id="f13fecha" type="date"></div>
-          <div class="field"><label>Hora despegue (LOCAL)</label>
-            <input id="f13hora" type="time"></div>
+          <div class="field"><label>Hora despegue (LOCAL, 24h)</label>
+            <input id="f13hora" type="text" inputmode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:MM" maxlength="5" autocomplete="off"></div>
         </div>
         <div class="utc" id="eobtUTC">EOBT (UTC): ----  ·  DOF: ------</div>
         <div class="aero" id="aeroSal"></div>
@@ -1086,6 +1098,22 @@ function fmtNivel(){
   $('f15l').value = pref + m[2].padStart(w,'0').slice(-w);
 }
 function fmtHHMM(id){ const s=$(id).value.replace(/\D/g,''); if(s) $(id).value=s.padStart(4,'0').slice(-4); }
+// v3.32: máscara para f13hora (hora local de despegue) — reemplaza el <input type="time">
+// nativo, que en Android delega al selector de hora DEL SISTEMA OPERATIVO y puede mostrar
+// AM/PM según la configuración del teléfono, sin importar el lang="es" de la página. Esta
+// máscara ES el control (texto simple con inputmode numérico), así que el formato 24hs queda
+// garantizado en cualquier dispositivo — no depende de configuración externa. Auto-inserta
+// ":" después de 2 dígitos mientras se tipea, y en blur clampea HH a 0-23 y MM a 0-59.
+function maskHora24(id){
+  const el=$(id); let d=el.value.replace(/\D/g,'').slice(0,4);
+  el.value = d.length<=2 ? d : d.slice(0,2)+':'+d.slice(2);
+}
+function clampHora24(id){
+  const el=$(id); const m=el.value.match(/^(\d{1,2}):?(\d{0,2})$/);
+  if(!m || !el.value){ return; }
+  let hh=Math.min(23,parseInt(m[1]||'0',10)||0), mm=Math.min(59,parseInt(m[2]||'0',10)||0);
+  el.value = pad(hh)+':'+pad(mm);
+}
 function upper(id){ $(id).value = vU(id); }
 
 /* ===================== ENSAMBLADO DEL MENSAJE FPL ===================== */
@@ -1885,6 +1913,8 @@ $('f15v').addEventListener('blur',()=>{ fmtVel(); refrescarPreview(); });
 $('f15l').addEventListener('blur',()=>{ fmtNivel(); refrescarPreview(); });
 $('f16eet').addEventListener('blur',()=>{ fmtHHMM('f16eet'); refrescarPreview(); });
 $('f19e').addEventListener('blur',()=>{ fmtHHMM('f19e'); refrescarPreview(); });
+$('f13hora').addEventListener('input',()=>{ maskHora24('f13hora'); });
+$('f13hora').addEventListener('blur',()=>{ clampHora24('f13hora'); refrescarPreview(); });
 ['f7','f9t','f10a','f10b','f13a','f15r','f16d','f16a1','f16a2','f19a','f19p']
   .forEach(id=>$(id).addEventListener('blur',()=>{ upper(id); refrescarPreview(); }));
 
