@@ -1,5 +1,21 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.87
+  FECHA   : 2026-08-29
+  CAMBIOS : Dos pedidos de Daniel sobre el modal LOG DEL ALUMNO / export:
+            (1) Nuevo botón ✎ en cada entrada del "Historial para instructores" (al
+            lado del 🗑 existente) para editar tiempo de vuelo/aterrizajes de ESE
+            vuelo puntual sin ir a buscarlo en Reservas. Función nueva
+            editarVueloLogAlumno(key,esPiloto) — prompt() simple para cada campo,
+            escribe en el par correcto (obs_privada_tiempo_vuelo/aterrizajes si lo
+            cargó un instructor, piloto_tiempo_vuelo/aterrizajes si fue
+            autorregistrado). Permisos: admin siempre; el instructor autor de una
+            entrada suya también puede editarla; entradas autorregistradas por el
+            piloto solo las edita admin.
+            (2) La columna "Observación" se saca del export a Excel
+            (_generarYDescargarLogXLS) — ya no viaja ni pública ni privada, en
+            ninguna de las 2 entradas que comparten la función (botón de EDITAR
+            USUARIO→LOG y "Mi Perfil/Vuelos").
   VERSION : 7.86
   FECHA   : 2026-08-29
   CAMBIOS : Fix reportado por Daniel: en Android, instalar la primera PWA del sitio
@@ -3190,7 +3206,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.86</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.87</div>
   </div>
 
 </div>
@@ -7356,6 +7372,22 @@ function renderNotasPrivadasAlumno(){
       btnDel.onclick=(e)=>{ e.stopPropagation(); borrarVueloLogAlumno(r.key); };
       head.appendChild(btnDel);
     }
+    // v7.87: pedido de Daniel — poder editar tiempo/aterrizajes de un vuelo puntual sin
+    // tener que ir a buscar el turno original en Reservas. Mismo criterio de permisos que
+    // ya usa el formulario de arriba (renderObsPrivadaParaTurno / guardarObsPrivada):
+    // admin siempre puede, y el instructor autor de ESA entrada puede editar la suya.
+    // Para entradas autorregistradas por el piloto (esPiloto) solo admin — no hay un
+    // "instructor autor" real, y no queremos que cualquier instructor de guardia les
+    // toque los datos autorreportados a un piloto sin que sea necesario.
+    const puedeEditar=r.key&&(session?.user==='admin'||(!esPiloto&&autorVal===session?.nombre));
+    if(puedeEditar){
+      const btnEdit=document.createElement('button');
+      btnEdit.title='Editar tiempo de vuelo / aterrizajes de este registro.';
+      btnEdit.style.cssText='font-family:var(--font-mono);font-size:10px;padding:2px 8px;background:var(--bg2);color:var(--cyan);border:1px solid var(--cyan);border-radius:var(--radius);cursor:pointer;font-weight:700;flex-shrink:0';
+      btnEdit.textContent='✎';
+      btnEdit.onclick=(e)=>{ e.stopPropagation(); editarVueloLogAlumno(r.key,esPiloto); };
+      head.appendChild(btnEdit);
+    }
     div.appendChild(head);
     if(horasVal!=null||aterrVal!=null){
       const datos=document.createElement('div');
@@ -7425,6 +7457,39 @@ window.borrarVueloLogAlumno=async function(key){
   renderNotasPrivadasAlumno();
 };
 
+// v7.87: editar tiempo de vuelo / aterrizajes de una entrada puntual del historial, sin
+// tener que buscar el turno original en Reservas. esPiloto decide el PAR de campos a
+// escribir: piloto_tiempo_vuelo/piloto_aterrizajes (autorregistrado) u
+// obs_privada_tiempo_vuelo/obs_privada_aterrizajes (cargado por instructor) — mismo
+// criterio que ya usa renderNotasPrivadasAlumno para leerlos y mostrarlos.
+window.editarVueloLogAlumno=async function(key,esPiloto){
+  const r=_reservasCache[key];
+  if(!r)return;
+  const campoTiempo=esPiloto?'piloto_tiempo_vuelo':'obs_privada_tiempo_vuelo';
+  const campoAterr=esPiloto?'piloto_aterrizajes':'obs_privada_aterrizajes';
+  const actualTiempo=r[campoTiempo], actualAterr=r[campoAterr];
+  const nuevoTiempoStr=prompt('Tiempo de vuelo (hs) — dejar vacío para borrar el dato:',actualTiempo!=null?String(actualTiempo):'');
+  if(nuevoTiempoStr===null)return; // canceló
+  const nuevoAterrStr=prompt('Aterrizajes — dejar vacío para borrar el dato:',actualAterr!=null?String(actualAterr):'');
+  if(nuevoAterrStr===null)return; // canceló
+  const nuevoTiempo=nuevoTiempoStr.trim()===''?null:Number(nuevoTiempoStr.replace(',','.'));
+  const nuevoAterr=nuevoAterrStr.trim()===''?null:parseInt(nuevoAterrStr,10);
+  if(nuevoTiempo!=null&&(isNaN(nuevoTiempo)||nuevoTiempo<0)){alert('Tiempo de vuelo inválido.');return;}
+  if(nuevoAterr!=null&&(isNaN(nuevoAterr)||nuevoAterr<0)){alert('Cantidad de aterrizajes inválida.');return;}
+  const updates={};
+  updates[campoTiempo]=nuevoTiempo;
+  updates[campoAterr]=nuevoAterr;
+  try{
+    await fbUpdate('reservas/'+key,updates);
+  }catch(e){
+    console.error(e);
+    alert('No se pudo guardar (error de conexión).');
+    return;
+  }
+  Object.assign(r,updates);
+  renderNotasPrivadasAlumno();
+};
+
 // v7.22/v7.24: exporta el log de vuelos del alumno (mismos datos que
 // renderNotasPrivadasAlumno, arriba) a un archivo .xlsx descargable. Librería SheetJS
 // cargada en diferido por CDN (mismo patrón que Google Charts en este archivo, ver
@@ -7465,7 +7530,6 @@ async function _generarYDescargarLogXLS(btn,soloPublico=false){
       const esPiloto=r.obs_privada_tiempo_vuelo==null&&r.obs_privada_aterrizajes==null&&r.obs_privada==null&&(r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.piloto_obs);
       const horasVal=esPiloto?r.piloto_tiempo_vuelo:r.obs_privada_tiempo_vuelo;
       const aterrVal=esPiloto?r.piloto_aterrizajes:r.obs_privada_aterrizajes;
-      const obsVal=esPiloto?r.piloto_obs:(soloPublico?'':r.obs_privada);
       const autorVal=esPiloto?r.piloto_autor:r.obs_privada_autor;
       return {
         'Fecha': r.fecha||'',
@@ -7474,8 +7538,7 @@ async function _generarYDescargarLogXLS(btn,soloPublico=false){
         'Tiempo de vuelo (hs)': horasVal!=null?Number(horasVal):'',
         'Aterrizajes': aterrVal!=null?Number(aterrVal):'',
         'Cargado por': autorVal||'',
-        'Origen': esPiloto?'Autorregistrado (piloto)':'Instructor',
-        'Observación': obsVal||''
+        'Origen': esPiloto?'Autorregistrado (piloto)':'Instructor'
       };
     });
 
@@ -7491,18 +7554,18 @@ async function _generarYDescargarLogXLS(btn,soloPublico=false){
         'Fecha':'(inicial)','Hora':'','Avión':'',
         'Tiempo de vuelo (hs)':Number(_logAlumnoCtx.horasIniciales||0),
         'Aterrizajes':Number(_logAlumnoCtx.aterrizajesIniciales||0),
-        'Cargado por':'','Origen':'Carga inicial (histórico pre-sistema)','Observación':''
+        'Cargado por':'','Origen':'Carga inicial (histórico pre-sistema)'
       });
     }
-    filas.push({'Fecha':'','Hora':'','Avión':'','Tiempo de vuelo (hs)':'','Aterrizajes':'','Cargado por':'','Origen':'','Observación':''});
+    filas.push({'Fecha':'','Hora':'','Avión':'','Tiempo de vuelo (hs)':'','Aterrizajes':'','Cargado por':'','Origen':''});
     filas.push({
       'Fecha':'TOTAL','Hora':'','Avión':'',
       'Tiempo de vuelo (hs)':Number(totalHs.toFixed(1)),'Aterrizajes':totalAter,
-      'Cargado por':'','Origen':'','Observación':''
+      'Cargado por':'','Origen':''
     });
 
     const ws=XLSX.utils.json_to_sheet(filas);
-    ws['!cols']=[{wch:12},{wch:7},{wch:9},{wch:18},{wch:12},{wch:16},{wch:24},{wch:40}];
+    ws['!cols']=[{wch:12},{wch:7},{wch:9},{wch:18},{wch:12},{wch:16},{wch:24}];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,'Log de vuelos');
     const fechaHoy=ahoraServidor().toISOString().slice(0,10);
@@ -7540,9 +7603,9 @@ window.exportarLogUsuarioXLS=async function(){
 
 // v7.25: entrada al export desde "Mi Perfil/Vuelos" — pedido de Daniel: mismo botón
 // pero para el propio alumno/piloto exportando SU log. soloPublico=true en
-// _generarYDescargarLogXLS: nunca incluye obs_privada (nota del instructor, privada
-// por diseño), solo piloto_obs (autorregistrado, público) y los datos numéricos —
-// mismo criterio de visibilidad que ya aplica en pantalla vía _logAlumnoModoAlumno.
+// _generarYDescargarLogXLS ya no tiene efecto en las columnas desde v7.87 (el export
+// dejó de incluir "Observación" del todo, pública o privada) — se deja el parámetro
+// por si en el futuro se agrega alguna columna que sí necesite distinguir.
 window.exportarMiLogVuelosXLS=async function(){
   if(session?.tipo!=='alumno')return;
   const btn=document.getElementById('ap-export-xls');
