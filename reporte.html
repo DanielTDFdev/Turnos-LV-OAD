@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.12 · Regla de negocio de Daniel: un turno es "VOLADO" si tiene CUALQUIERA
+         de estos 3 campos cargado — tiempo de vuelo, aterrizajes, u
+         observación privada — no solo tiempo de vuelo. clasificar() solo
+         miraba horasDe(r), así que un vuelo con aterrizajes u obs pero sin
+         tiempo cargado seguía cayendo mal en NO VOLADO. Fix: helper nuevo
+         esVolado(r) = horasDe(r)!=null || aterrDe(r)!=null || obsDe(r) (con
+         obsDe(r) nuevo, mismo fallback obs_privada→piloto_obs), usado en
+         ambas ramas de clasificar() en vez de chequear horasDe(r) solo.
+
   v1.11 · Pedido de Daniel tras probar v1.10: seguía mal para los particulares
          autoservicio (vuelo-piloto.html) — se veían como "NO VOLADO" pese a
          tener datos. Causa: esos vuelos NO escriben obs_privada_tiempo_vuelo/
@@ -349,7 +358,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.11</span>
+      <span class="ver">v1.12</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -539,6 +548,12 @@ if (!ok) {
 // aunque los tuviera, y clasificar() lo mandaba a NO VOLADO.
 function horasDe(r) { return r.obs_privada_tiempo_vuelo != null ? r.obs_privada_tiempo_vuelo : r.piloto_tiempo_vuelo; }
 function aterrDe(r) { return r.obs_privada_aterrizajes != null ? r.obs_privada_aterrizajes : r.piloto_aterrizajes; }
+function obsDe(r) { return r.obs_privada || r.piloto_obs || ''; }
+// v1.12, regla de negocio de Daniel: un turno es "VOLADO" si tiene CUALQUIERA de los 3
+// campos cargado (tiempo de vuelo, aterrizajes, u obs privada) — no solo tiempo de vuelo.
+// Antes clasificar() solo miraba horasDe(r), así que un vuelo con aterrizajes u obs pero
+// sin tiempo cargado quedaba mal como NO VOLADO.
+function esVolado(r) { return horasDe(r) != null || aterrDe(r) != null || !!obsDe(r); }
 
 // ── Clasificar un turno ──────────────────────────────────────
 // Retorna una de: 'volado' | 'aprobado_futuro' | 'cancelado_alumno' |
@@ -550,7 +565,7 @@ function clasificar(r) {
   if (r.cargado_por && r.estado === 'cancelado') return 'cancelado_instructor';
   // estado 'aprobado' pasado — poco frecuente (barrido lazy del cliente puede no haberlo vencido aún)
   if (r.estado === 'aprobado' && esPasado) {
-    return horasDe(r) != null ? 'volado' : 'no_realizado';
+    return esVolado(r) ? 'volado' : 'no_realizado';
   }
   if (r.estado === 'aprobado' && !esPasado) return 'aprobado_futuro';
   if (r.estado === 'cancelado') {
@@ -560,15 +575,15 @@ function clasificar(r) {
     // v1.10 fix: un turno de piloto PARTICULAR se autoaprueba sin escribir aprobado_por
     // (ver turnos.html — nunca pasa por un instructor). Antes esto lo hacía caer siempre en
     // 'vencido_sin_aprobar' aunque el vuelo se haya hecho y tenga datos cargados. Se trata
-    // igual que un vencido CON aprobado_por: 'volado' si tiene tiempo cargado, 'no_realizado'
-    // si no.
+    // igual que un vencido CON aprobado_por: 'volado' si tiene tiempo/aterrizajes/obs cargado,
+    // 'no_realizado' si no.
     if (r.aprobado_por || (r.tipo_vuelo === 'particular')) {
       // vencido CON aprobado_por = vuelo que se realizó (el avión salió y el turno venció por hora)
-      // Si el instructor cargó obs con tiempo = 'volado'; si no, se considera que NO se voló
-      // (pedido de Daniel: un turno vencido sin tiempo/aterrizajes cargados es un no-show, no
-      // un "vuelo pendiente de papeleo" — no hay forma de distinguir ambos casos con los datos
+      // Si tiene algo cargado (tiempo, aterrizajes u obs) = 'volado'; si no, se considera que
+      // NO se voló (pedido de Daniel: un turno vencido sin nada cargado es un no-show, no un
+      // "vuelo pendiente de papeleo" — no hay forma de distinguir ambos casos con los datos
       // actuales, así que se asume lo más simple y verificable: sin datos = no se voló).
-      return horasDe(r) != null ? 'volado' : 'no_realizado';
+      return esVolado(r) ? 'volado' : 'no_realizado';
     }
     // vencido SIN aprobado_por Y de instrucción = pendiente que nadie aprobó, se venció automáticamente
     return 'vencido_sin_aprobar';
