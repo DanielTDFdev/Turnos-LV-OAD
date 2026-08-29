@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.26 ·  Mismo fix en paralelo que turnos.html v7.86 (ver ese comentario para
+           el detalle completo): navigator.serviceWorker.register('/sw.js',
+           {scope:'/portal-alumno.html'}) — antes sin scope explícito, tomaba
+           "/" por default y causaba "Ya se instaló esta app" en Android al
+           intentar instalar una segunda PWA del sitio después de la primera.
   v1.25 ·  Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
            auto-zoom al enfocar cualquier campo con font-size menor a 16px, y el
            zoom quedaba pegado hasta sacarlo a mano. Regla nueva dentro de
@@ -424,7 +429,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.25</span>
+      <span class="ver">v1.26</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -1224,7 +1229,7 @@ renderFlashcards();
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+    navigator.serviceWorker.register('/sw.js',{scope:'/portal-alumno.html'}).catch(err=>console.warn('SW error:',err));
   });
 }
 </script>

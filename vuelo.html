@@ -2,6 +2,22 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.50 · 2026-08-29
+  Fix reportado por Daniel: en Android, instalar la primera PWA del sitio
+  (cualquiera) funcionaba, pero instalar cualquier otra después tiraba "Ya se
+  instaló esta app". Causa real: los 6 HTML del proyecto registran el mismo
+  /sw.js SIN especificar `scope`, así que el navegador tomaba el scope por
+  default = directorio del script = "/" (todo el origen). Aunque cada
+  manifest ya tenía su propio scope angosto, el service worker — que es lo
+  que Chrome/Android usan para decidir instalabilidad — cubría el sitio
+  entero, convirtiendo a la primera app instalada en la "outer app" que el
+  navegador cree ya cubre a todas las demás (patrón documentado por Google:
+  web.dev/building-multiple-pwas-on-the-same-domain). Fix:
+  navigator.serviceWorker.register('/sw.js',{scope:'/vuelo.html'}) — mismo
+  sw.js, cada página con su propio scope. Ver detalle completo en
+  turnos.html v7.86. Mismo cambio en paralelo en vuelo-piloto.html v4.34,
+  fpl.html v3.31, portal-alumno.html v1.26, peso-balance.html v1.10.
+
   v5.49 · 2026-08-28
   Fix del botón brújula en PC (rotación en mobile no se toca, sigue igual).
   Causa real: `rotateControl` tiene por defecto `closeOnZeroBearing:true`,
@@ -1521,7 +1537,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.49'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.50'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3227,7 +3243,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+    navigator.serviceWorker.register('/sw.js',{scope:'/vuelo.html'}).catch(err=>console.warn('SW error:',err));
   });
 }
 </script>

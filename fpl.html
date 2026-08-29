@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   PLAN DE VUELO (FPL) — Prototipo standalone
+  v3.31 ·  Mismo fix en paralelo que turnos.html v7.86 (ver ese comentario para
+           el detalle completo): navigator.serviceWorker.register('/sw.js',
+           {scope:'/fpl.html'}) — antes sin scope explícito, tomaba "/" por
+           default y causaba "Ya se instaló esta app" en Android al intentar
+           instalar una segunda PWA del sitio después de la primera.
   v3.30 ·  Pedido de Daniel: mismo fix que turnos.html v7.72 — iOS Safari hacía
            auto-zoom al enfocar cualquier campo con font-size menor a 16px (varios
            inputs/selects/textareas del formulario están en 12-13px), y el zoom
@@ -594,7 +599,7 @@
       <h1>Plan de Vuelo <small>/ FPL</small></h1>
       <div class="header-sub">Aeroclub Río Grande · Tierra del Fuego</div>
     </div>
-    <span class="ver">v3.30</span>
+    <span class="ver">v3.31</span>
     <a href="turnos.html" id="btn-volver" title="Volver (sin cerrar sesión)" style="font-family:var(--mono);font-size:12px;color:var(--cyan);text-decoration:none;border:1px solid var(--line-hot);border-radius:5px;padding:5px 11px;letter-spacing:1px;transition:.15s" onmouseover="this.style.background='var(--cyan)';this.style.color='#04141a'" onmouseout="this.style.background='transparent';this.style.color='var(--cyan)'">← VOLVER</a>
     <div class="clk">
       <div id="clkUTC">--:-- Z</div>
@@ -1922,7 +1927,7 @@ flushAuditQueue();   // por si quedó algo pendiente de una sesión anterior con
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+    navigator.serviceWorker.register('/sw.js',{scope:'/fpl.html'}).catch(err=>console.warn('SW error:',err));
   });
 }
 </script>

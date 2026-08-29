@@ -1,5 +1,25 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.86
+  FECHA   : 2026-08-29
+  CAMBIOS : Fix reportado por Daniel: en Android, instalar la primera PWA del sitio
+            (cualquiera) funcionaba, pero instalar cualquier otra después tiraba
+            "Ya se instaló esta app". Causa real: los 6 HTML del proyecto registran
+            el mismo /sw.js SIN especificar `scope`, así que el navegador tomaba
+            el scope por default = directorio del script = "/" (todo el origen).
+            Aunque cada manifest.json ya tenía su propio scope angosto
+            (/turnos.html, /fpl.html, etc.), el service worker — que es lo que
+            Chrome/Android usan para decidir instalabilidad — cubría el sitio
+            entero, convirtiendo a la primera app instalada en la "outer app" que
+            el navegador cree ya cubre a todas las demás (patrón documentado por
+            Google: web.dev/building-multiple-pwas-on-the-same-domain, sección
+            "overlapping/nested paths" — desaconsejado justo por este síntoma).
+            Fix: navigator.serviceWorker.register('/sw.js',{scope:'/turnos.html'})
+            — mismo sw.js, pero cada página registra su PROPIO scope, igual al de
+            su manifest. Mismo cambio en paralelo en fpl.html v3.31,
+            portal-alumno.html v1.26, peso-balance.html v1.10, vuelo.html v5.50,
+            vuelo-piloto.html v4.34. sw.js NO se tocó (su lógica no depende del
+            scope de registro, solo mira el pathname de cada request).
   VERSION : 7.85
   FECHA   : 2026-08-28
   CAMBIOS : Pedido de Daniel: los turnos de un solo slot en avión de media hora (LV-ART)
@@ -3170,7 +3190,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.85</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.86</div>
   </div>
 
 </div>
@@ -10598,7 +10618,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+    navigator.serviceWorker.register('/sw.js',{scope:'/turnos.html'}).catch(err=>console.warn('SW error:',err));
   });
 }
 

@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.34 · 2026-08-29
+  Mismo cambio en paralelo que vuelo.html v5.50 (ver ese comentario para el
+  detalle completo): navigator.serviceWorker.register('/sw.js',
+  {scope:'/vuelo-piloto.html'}) — fix del "Ya se instaló esta app" en Android
+  al instalar más de una PWA del sitio.
+
   v4.33 · 2026-08-28
   Mismo cambio en paralelo que vuelo.html v5.49 (ver ese comentario para el
   detalle completo): fix del botón brújula en PC con `rotateControl:
@@ -1374,7 +1380,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.33';
+const APP_VERSION = '4.34';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3284,7 +3290,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js').catch(err=>console.warn('SW error:',err));
+    navigator.serviceWorker.register('/sw.js',{scope:'/vuelo-piloto.html'}).catch(err=>console.warn('SW error:',err));
   });
 }
 </script>
