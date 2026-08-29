@@ -2,6 +2,35 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.51 · 2026-08-29
+  Pedido de Daniel: visualización del recorrido GPS estilo Pilotfy — dos cosas
+  nuevas en el visor de mapa (◈ Ver recorrido GPS):
+  (1) La traza ahora se colorea por altitud (amber→verde→cian) en vez de un
+  solo color cyan fijo. Escala RELATIVA a cada vuelo (min/max de ESA traza),
+  no una escala fija en pies — así un circuito bajo (500-1000ft) muestra el
+  degradé completo igual que un vuelo de crucero a 6000ft. Leyenda nueva
+  abajo a la derecha del mapa con los ft mín/máx reales. Implementación:
+  antes se dibujaba 1 polyline por tramo "real" (entre huecos); ahora se
+  dibuja 1 mini-polyline por CADA PAR de puntos consecutivos, coloreada por
+  el promedio de altitud de ese par — con trazas de 300+ puntos son cientos
+  de paths, por eso preferCanvas:true nuevo en el L.map(...) (el renderer
+  SVG default de Leaflet se pone pesado con tantos paths, canvas no). Si el
+  vuelo no tiene variación de altitud real (o no hay datos), se mantiene el
+  color cyan fijo de antes — no tiene sentido un degradé sin rango.
+  (2) Detección automática de aeródromo origen/destino cruzando el primer y
+  último punto GPS contra aerodromos.json (el MISMO archivo que ya usa
+  fpl.html, ~27KB, 1183 aeródromos AR). Nuevo: _cargarAerodromosDB() (fetch +
+  cache en memoria + dedupe de las entradas duplicadas OACI/código corto,
+  prefiere el código corto tipo "GRA" — igual que muestra Pilotfy, no el OACI
+  "SAWE") y _aerodromoCercano(lat,lng) (nearest-match con un umbral de 4nm —
+  más allá de eso se prefiere no mostrar nada a mostrar un aeródromo lejano
+  incorrecto). Se muestra como "✈ GRA → GRA" debajo del título del modal.
+  Si ninguno de los dos puntos matchea un aeródromo conocido (vuelo/maniobra
+  fuera de aeródromo), la línea de ruta simplemente no se muestra.
+  Arranca en vuelo.html a pedido explícito de Daniel — el mismo criterio
+  puede portarse después a turnos.html/vuelo-piloto.html (tienen su propio
+  visor de mapa independiente, "tripled implementation" ya documentada).
+
   v5.50 · 2026-08-29
   Fix reportado por Daniel: en Android, instalar la primera PWA del sitio
   (cualquiera) funcionaba, pero instalar cualquier otra después tiraba "Ya se
@@ -1537,7 +1566,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.50'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.51'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3009,6 +3038,73 @@ function _segmentarPorHuecos(puntos) {
   return segs.filter(s => s.pts.length > 1 || s.tipo === 'hueco');
 }
 
+// ══════════ v5.51: detección de aeródromo origen/destino + color por altitud ══════════
+// Pedido de Daniel — estilo Pilotfy: la traza coloreada por altura y el par
+// "ORIGEN → DESTINO" detectado cruzando el primer/último punto GPS contra una base de
+// aeródromos. Reusa aerodromos.json — el MISMO archivo que ya usa fpl.html (~27KB,
+// clave = código corto de 3 letras tipo "GRA" para el local + alias de 4 letras OACI
+// tipo "SAWE" apuntando al mismo objeto). Se cachea en memoria — un solo fetch por
+// sesión de la página, no por cada apertura de mapa.
+let _aerodromosDB = null;
+async function _cargarAerodromosDB(){
+  if(_aerodromosDB) return _aerodromosDB;
+  try{
+    const r = await fetch('aerodromos.json?v=3');
+    const raw = await r.json();
+    // Dedupe: cada aeródromo con OACI aparece 2 veces (clave corta + alias OACI,
+    // mismas coordenadas) — nos quedamos con la clave MÁS CORTA de cada coordenada
+    // única (el código local tipo "GRA", que es el que Pilotfy muestra), para no
+    // matchear dos veces el mismo punto ni mostrar el OACI de 4 letras sin necesidad.
+    const porCoord = {};
+    for(const [k,v] of Object.entries(raw)){
+      if(!v.c) continue;
+      const m = v.c.match(/^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])$/);
+      if(!m) continue;
+      const lat = (Number(m[1])+Number(m[2])/60) * (m[3]==='S'?-1:1);
+      const lng = (Number(m[4])+Number(m[5])/60) * (m[6]==='W'?-1:1);
+      const existente = porCoord[v.c];
+      if(!existente || k.length < existente.cod.length){
+        porCoord[v.c] = { cod: k, nombre: v.n||k, lat, lng };
+      }
+    }
+    _aerodromosDB = Object.values(porCoord);
+  }catch(e){
+    console.warn('No se pudo cargar aerodromos.json (sigo sin detección de ruta).', e);
+    _aerodromosDB = [];
+  }
+  return _aerodromosDB;
+}
+// Aeródromo más cercano a un punto, si está a menos de UMBRAL_NM millas náuticas.
+// Más allá de eso preferimos no mostrar nada a mostrar un aeródromo lejano incorrecto
+// (ej. un vuelo que termina en un campo o zona de maniobras, no en un aeródromo real).
+const AERO_UMBRAL_NM = 4;
+async function _aerodromoCercano(lat, lng){
+  const db = await _cargarAerodromosDB();
+  let mejor = null, mejorDistNm = Infinity;
+  for(const a of db){
+    const dKm = calcDistanciaKm([[lat,lng],[a.lat,a.lng]]);
+    const dNm = dKm * 0.539957;
+    if(dNm < mejorDistNm){ mejorDistNm = dNm; mejor = a; }
+  }
+  return (mejor && mejorDistNm <= AERO_UMBRAL_NM) ? mejor : null;
+}
+// Color por altitud relativa AL VUELO (no una escala fija en pies): interpola
+// amber→verde→cian a lo largo del rango [altMin,altMax] de la traza. Con una escala
+// fija, un circuito bajo (ej. 500-1000ft) saldría todo del mismo color; relativa a
+// cada vuelo, siempre se ve el degradé completo.
+function _colorPorAltitud(alt, altMin, altMax){
+  if(alt==null || !isFinite(altMin) || !isFinite(altMax) || altMax<=altMin) return '#00c8d4';
+  const f = Math.max(0, Math.min(1, (alt-altMin)/(altMax-altMin)));
+  const stops = f<0.5
+    ? [[240,165,0],[34,197,94], f*2]      // amber → verde
+    : [[34,197,94],[0,200,212], (f-0.5)*2]; // verde → cian
+  const [c1,c2,t] = stops;
+  const r = Math.round(c1[0]+(c2[0]-c1[0])*t);
+  const g = Math.round(c1[1]+(c2[1]-c1[1])*t);
+  const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
+  return `rgb(${r},${g},${b})`;
+}
+
 window.abrirMapa = async function(key, alumno, avion, hora) {
   // Formateador local para los tooltips — definido acá para no depender del scope del módulo
   const fmtTs = iso => {
@@ -3022,6 +3118,8 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
   $('map-loading').style.display = 'flex';
   $('map-info-bar').style.display = 'none';
   $('mi-huecos').style.display = 'none';
+  $('map-modal-ruta').style.display = 'none';
+  $('map-alt-legend').style.display = 'none';
   $('map-leaflet').style.opacity = '0';
   modal.classList.add('open');
 
@@ -3041,7 +3139,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     const coords = puntos.map(p => [p.lat, p.lng]);
 
     // Inicializar Leaflet
-    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false } });
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false }, preferCanvas: true });
 
     // Capa satélite ESRI (aeronáuticamente más útil que calles)
     // maxNativeZoom:15 — v5.25: sin esto, al hacer zoom manual más allá de
@@ -3059,7 +3157,14 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       maxZoom: 19, opacity: 0.7,
     }).addTo(_leafletMap);
 
-    // Polilínea(s) del recorrido — tramos reales sólidos, huecos punteados
+    // Polilínea(s) del recorrido — tramos reales con degradé de color por altitud
+    // (v5.51), huecos punteados en rojo (sin cambios). preferCanvas:true en el
+    // L.map(...) de más abajo porque acá pasamos de 1 polyline por tramo real a UNA
+    // por CADA PAR de puntos consecutivos — con trazas de 300+ puntos son cientos de
+    // paths, y el renderer SVG por defecto de Leaflet se pone pesado; canvas no.
+    const altsValidas = puntos.filter(p=>p.alt!=null).map(p=>p.alt);
+    const altMinTraza = altsValidas.length ? Math.min(...altsValidas) : null;
+    const altMaxTraza = altsValidas.length ? Math.max(...altsValidas) : null;
     const segmentos = _segmentarPorHuecos(puntos);
     for (const seg of segmentos) {
       const segCoords = seg.pts.map(p => [p.lat, p.lng]);
@@ -3068,7 +3173,19 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
         L.polyline(segCoords, { color: '#ff6b6b', weight: 2.5, opacity: 0.85, dashArray: '6,6' })
           .bindTooltip(`⚠ Sin datos GPS — ${durMinHueco} min`)
           .addTo(_leafletMap);
+      } else if(altMinTraza!=null && altMaxTraza>altMinTraza) {
+        // hay variación de altitud real en el vuelo → un mini-tramo por par de puntos,
+        // coloreado por el promedio de altitud de ese par.
+        for(let i=0;i<seg.pts.length-1;i++){
+          const p1=seg.pts[i], p2=seg.pts[i+1];
+          const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
+          L.polyline([[p1.lat,p1.lng],[p2.lat,p2.lng]], {
+            color: _colorPorAltitud(altProm, altMinTraza, altMaxTraza), weight: 3.5, opacity: 0.9
+          }).addTo(_leafletMap);
+        }
       } else {
+        // sin datos de altitud (o vuelo a altitud prácticamente constante) → color fijo,
+        // igual que antes de v5.51.
         L.polyline(segCoords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_leafletMap);
       }
     }
@@ -3127,6 +3244,28 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('map-info-bar').style.display = 'flex';
     // Leaflet necesita que el contenedor sea visible antes de invalidar el tamaño
     setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 100);
+
+    // v5.51: leyenda de altitud (min/max REALES del vuelo, no una escala fija — ver
+    // nota en _colorPorAltitud) y detección de origen/destino en paralelo, ninguna de
+    // las dos bloquea el resto del render de arriba (el mapa ya se ve mientras esto
+    // resuelve).
+    if(altMinTraza!=null && altMaxTraza>altMinTraza){
+      $('mal-max').textContent = Math.round(altMaxTraza*3.28084)+'ft';
+      $('mal-min').textContent = Math.round(altMinTraza*3.28084)+'ft';
+      $('map-alt-legend').style.display = 'block';
+    } else {
+      $('map-alt-legend').style.display = 'none';
+    }
+    _aerodromoCercano(puntos[0].lat, puntos[0].lng).then(origen => {
+      _aerodromoCercano(puntos[puntos.length-1].lat, puntos[puntos.length-1].lng).then(destino => {
+        if(origen || destino){
+          $('map-modal-ruta').textContent = '✈ '+(origen?origen.cod:'—')+'  →  '+(destino?destino.cod:'—');
+          $('map-modal-ruta').style.display = 'block';
+        } else {
+          $('map-modal-ruta').style.display = 'none';
+        }
+      });
+    });
 
   } catch(e) {
     $('map-loading').innerHTML = `<span style="color:var(--red)">Error al cargar la traza: ${e.message}</span>`;
@@ -3254,6 +3393,7 @@ if('serviceWorker' in navigator){
       <div>
         <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
         <div class="map-sub" id="map-modal-sub"></div>
+        <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.08em;margin-top:2px"></div>
       </div>
       <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
     </div>
@@ -3263,6 +3403,19 @@ if('serviceWorker' in navigator){
     </div>
     <div id="map-leaflet"></div>
     <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
+    <!-- v5.51: leyenda de colores por altitud — pedido de Daniel, estilo Pilotfy.
+         Se puebla en JS (alt mín/máx REALES del vuelo) porque la escala es relativa
+         a cada traza, no una escala fija — un circuito de 500ft y un vuelo de
+         crucero a 6000ft necesitan rangos totalmente distintos para que el
+         degradé se note. -->
+    <div id="map-alt-legend" style="display:none;position:absolute;right:10px;bottom:10px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--gray);pointer-events:none">
+      <div style="margin-bottom:4px;color:var(--white);font-weight:700">ALTITUD</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span id="mal-max">—</span>
+        <div style="width:10px;height:70px;border-radius:5px;background:linear-gradient(to top, #f0a500, #22c55e, #00c8d4)"></div>
+        <span id="mal-min">—</span>
+      </div>
+    </div>
   </div>
   <div class="map-info-bar" id="map-info-bar" style="display:none">
     <span>📍 Puntos: <span class="mv" id="mi-puntos">—</span></span>
