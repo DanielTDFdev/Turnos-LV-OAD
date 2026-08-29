@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.52 · 2026-08-29
+  4 ajustes de Daniel sobre lo de v5.51 (color por altitud + ruta detectada):
+  (1) info bar (puntos/duración/distancia/alt.máx) con tipografía más grande —
+  labels 14px→16px, valores 15px→19px. (2) línea de ruta con emojis 🛫/🛬 en
+  vez de "✈ ... → ...", y más grande (10px→13px). (3) leyenda de altitud
+  movida de esquina inferior derecha a superior derecha — la inferior se
+  superponía con el botón flotante ✕ de cerrar (mismo rincón). (4) SIN
+  cambios de lógica, solo tipografía/posición.
+
   v5.51 · 2026-08-29
   Pedido de Daniel: visualización del recorrido GPS estilo Pilotfy — dos cosas
   nuevas en el visor de mapa (◈ Ver recorrido GPS):
@@ -1230,9 +1239,9 @@ textarea{resize:none;min-height:80px;line-height:1.5}
    todo lo de Leaflet en su propio contexto — de ahora en más nada de adentro
    puede "escaparse" y competir con hermanos de #map-container. */
 #map-leaflet{width:100%;height:100%;isolation:isolate}
-.map-info-bar{padding:12px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:22px;flex-wrap:wrap;flex:none}
-.map-info-bar span{font-family:var(--mono);font-size:14px;color:var(--gray)}
-.map-info-bar .mv{color:var(--white);font-weight:700;font-size:15px}
+.map-info-bar{padding:14px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:26px;flex-wrap:wrap;flex:none}
+.map-info-bar span{font-family:var(--mono);font-size:16px;color:var(--gray)}
+.map-info-bar .mv{color:var(--white);font-weight:700;font-size:19px}
 .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
 .btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;transition:all .15s}
 .btn-traza:active{background:rgba(0,200,212,.2)}
@@ -1566,7 +1575,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.51'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.52'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3259,7 +3268,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     _aerodromoCercano(puntos[0].lat, puntos[0].lng).then(origen => {
       _aerodromoCercano(puntos[puntos.length-1].lat, puntos[puntos.length-1].lng).then(destino => {
         if(origen || destino){
-          $('map-modal-ruta').textContent = '✈ '+(origen?origen.cod:'—')+'  →  '+(destino?destino.cod:'—');
+          $('map-modal-ruta').textContent = '🛫 '+(origen?origen.cod:'—')+'   🛬 '+(destino?destino.cod:'—');
           $('map-modal-ruta').style.display = 'block';
         } else {
           $('map-modal-ruta').style.display = 'none';
@@ -3393,7 +3402,7 @@ if('serviceWorker' in navigator){
       <div>
         <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
         <div class="map-sub" id="map-modal-sub"></div>
-        <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.08em;margin-top:2px"></div>
+        <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
       </div>
       <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
     </div>
@@ -3408,7 +3417,7 @@ if('serviceWorker' in navigator){
          a cada traza, no una escala fija — un circuito de 500ft y un vuelo de
          crucero a 6000ft necesitan rangos totalmente distintos para que el
          degradé se note. -->
-    <div id="map-alt-legend" style="display:none;position:absolute;right:10px;bottom:10px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--gray);pointer-events:none">
+    <div id="map-alt-legend" style="display:none;position:absolute;right:10px;top:10px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--gray);pointer-events:none">
       <div style="margin-bottom:4px;color:var(--white);font-weight:700">ALTITUD</div>
       <div style="display:flex;align-items:center;gap:6px">
         <span id="mal-max">—</span>

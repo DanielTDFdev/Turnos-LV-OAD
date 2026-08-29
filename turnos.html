@@ -1,5 +1,31 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.89
+  FECHA   : 2026-08-29
+  CAMBIOS : Mismo cambio en paralelo que vuelo.html v5.51+v5.52 y vuelo-piloto.html
+            v4.35 (ver esos comentarios para el detalle completo), portado al visor
+            de mapa PROPIO de turnos.html (abrirMapaVuelo / #modal-mapa-vuelo — "Ver
+            recorrido GPS" desde Mi Log de Vuelos y desde el Log del Alumno): color
+            por altitud en la traza (amber→verde→cian, relativo a cada vuelo),
+            detección de aeródromo origen/destino contra aerodromos.json ("🛫 GRA
+            🛬 GRA" bajo el título), leyenda de altitud en la esquina superior
+            derecha del mapa, e info bar (puntos/duración/distancia/alt. máx) con
+            tipografía más grande. Esta es la 3ra y última de las "tripled
+            implementation" documentada — vuelo.html, vuelo-piloto.html y turnos.html
+            ahora tienen el mismo criterio de color/ruta, cada uno con su propia
+            copia del código (deuda arquitectural ya conocida, sin resolver acá).
+  VERSION : 7.88
+  FECHA   : 2026-08-29
+  CAMBIOS : Pedido de Daniel tras probar v7.87: el editor de tiempo/aterrizajes del
+            Log del Alumno usaba prompt() nativo del navegador — nada de prompts del
+            navegador de acá en más, a pedido explícito. Reemplazado por modal nuevo
+            #modal-editar-log-vuelo (mismo patrón Promise que pedirMotivoCancelacion:
+            función pedirEdicionLogVuelo(tiempoActual,aterrActual) que resuelve
+            {tiempo,aterrizajes} o null si se cancela). Además ahora edita AMBOS
+            campos en una sola pantalla (dos inputs lado a lado) en vez de dos
+            prompts seguidos — v7.87 solo parecía editar tiempo porque el segundo
+            prompt (aterrizajes) aparecía recién después de aceptar el primero, fácil
+            de confundir con "solo edita tiempo" si no se lo esperaba.
   VERSION : 7.87
   FECHA   : 2026-08-29
   CAMBIOS : Dos pedidos de Daniel sobre el modal LOG DEL ALUMNO / export:
@@ -3014,8 +3040,8 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .btn-map-close-float:active{transform:scale(.93)}
 #mapa-vuelo-leaflet{width:100%;height:100%;isolation:isolate}
 #mapa-vuelo-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#050d1a;z-index:10;font-family:var(--font-mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
-#modal-mapa-vuelo .map-info{display:flex;gap:18px;flex-wrap:wrap;padding:10px 16px;background:#0b1929;border-top:1px solid rgba(0,200,212,.1);flex:none;font-family:var(--font-mono);font-size:11px;color:var(--text3)}
-#modal-mapa-vuelo .map-info .mv{color:var(--text)}
+#modal-mapa-vuelo .map-info{display:flex;gap:24px;flex-wrap:wrap;padding:14px 16px;background:#0b1929;border-top:1px solid rgba(0,200,212,.1);flex:none;font-family:var(--font-mono);font-size:15px;color:var(--text3)}
+#modal-mapa-vuelo .map-info .mv{color:var(--text);font-weight:700;font-size:18px}
 .btn-ver-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.25);border-radius:4px;color:var(--cyan);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;transition:all .15s;letter-spacing:.05em}
 .btn-ver-mapa:hover{background:rgba(0,200,212,.18)}
 .btn-export-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);border-radius:4px;color:var(--amber);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;margin-left:6px;transition:all .15s;letter-spacing:.05em}
@@ -3206,7 +3232,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.87</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.89</div>
   </div>
 
 </div>
@@ -3666,6 +3692,34 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div style="display:flex;gap:8px;margin-top:.85rem;justify-content:flex-end">
         <button id="motivo-cancel-btn-cancelar" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius);cursor:pointer">CANCELAR</button>
         <button id="motivo-cancel-btn-confirmar" class="danger" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px">CONFIRMAR</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v7.88: modal para editar tiempo de vuelo/aterrizajes de una entrada del historial
+       del Log del Alumno — pedido de Daniel: reemplaza los prompt() nativos que usaba
+       editarVueloLogAlumno() (v7.87), que además solo dejaban editar un campo por vez.
+       Mismo patrón Promise que pedirMotivoCancelacion(), reusa .modal-overlay/.modal. -->
+  <div class="modal-overlay" id="modal-editar-log-vuelo" style="z-index:1160">
+    <div class="modal" style="max-width:360px">
+      <div class="modal-title">◈ Editar Vuelo</div>
+      <p style="font-family:var(--font-mono);font-size:11px;color:var(--text3);margin-bottom:.85rem;letter-spacing:.05em">
+        Dejar vacío borra el dato.
+      </p>
+      <div class="row">
+        <div class="field" style="margin:0;flex:1">
+          <label style="font-size:10px">Tiempo de vuelo (hs)</label>
+          <input type="number" id="elv-tiempo" step="0.1" min="0" placeholder="Ej: 1.2">
+        </div>
+        <div class="field" style="margin:0;flex:1">
+          <label style="font-size:10px">Aterrizajes</label>
+          <input type="number" id="elv-aterrizajes" step="1" min="0" placeholder="Ej: 4">
+        </div>
+      </div>
+      <div id="elv-err" style="font-family:var(--font-mono);font-size:11px;color:var(--red);margin-top:.4rem;min-height:16px;letter-spacing:.05em"></div>
+      <div style="display:flex;gap:8px;margin-top:.6rem;justify-content:flex-end">
+        <button id="elv-btn-cancelar" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius);cursor:pointer">CANCELAR</button>
+        <button id="elv-btn-guardar" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--cyan);border:1px solid var(--cyan);color:#0a0a0a;font-weight:700;border-radius:var(--radius);cursor:pointer">GUARDAR</button>
       </div>
     </div>
   </div>
@@ -7457,28 +7511,63 @@ window.borrarVueloLogAlumno=async function(key){
   renderNotasPrivadasAlumno();
 };
 
-// v7.87: editar tiempo de vuelo / aterrizajes de una entrada puntual del historial, sin
-// tener que buscar el turno original en Reservas. esPiloto decide el PAR de campos a
-// escribir: piloto_tiempo_vuelo/piloto_aterrizajes (autorregistrado) u
+// v7.88: modal Promise para editar tiempo/aterrizajes — mismo patrón que
+// pedirMotivoCancelacion(). Devuelve {tiempo,aterrizajes} (cualquiera de los 2 puede
+// ser null = "borrar el dato") o null si se canceló.
+function pedirEdicionLogVuelo(tiempoActual,aterrActual){
+  return new Promise(resolve=>{
+    const overlay=document.getElementById('modal-editar-log-vuelo');
+    const inTiempo=document.getElementById('elv-tiempo');
+    const inAterr=document.getElementById('elv-aterrizajes');
+    const err=document.getElementById('elv-err');
+    const btnGuardar=document.getElementById('elv-btn-guardar');
+    const btnCancelar=document.getElementById('elv-btn-cancelar');
+    inTiempo.value=tiempoActual!=null?String(tiempoActual):'';
+    inAterr.value=aterrActual!=null?String(aterrActual):'';
+    err.textContent='';
+    overlay.classList.add('open');
+    setTimeout(()=>inTiempo.focus(),100);
+    const cerrar=(resultado)=>{
+      overlay.classList.remove('open');
+      btnGuardar.removeEventListener('click',onGuardar);
+      btnCancelar.removeEventListener('click',onCancelar);
+      overlay.removeEventListener('click',onOverlayClick);
+      resolve(resultado);
+    };
+    const onGuardar=()=>{
+      const tStr=inTiempo.value.trim(), aStr=inAterr.value.trim();
+      const tiempo=tStr===''?null:Number(tStr.replace(',','.'));
+      const aterrizajes=aStr===''?null:parseInt(aStr,10);
+      if(tiempo!=null&&(isNaN(tiempo)||tiempo<0)){err.textContent='Tiempo de vuelo inválido.';return;}
+      if(aterrizajes!=null&&(isNaN(aterrizajes)||aterrizajes<0)){err.textContent='Cantidad de aterrizajes inválida.';return;}
+      cerrar({tiempo,aterrizajes});
+    };
+    const onCancelar=()=>cerrar(null);
+    const onOverlayClick=(e)=>{ if(e.target===overlay)cerrar(null); };
+    btnGuardar.addEventListener('click',onGuardar);
+    btnCancelar.addEventListener('click',onCancelar);
+    overlay.addEventListener('click',onOverlayClick);
+  });
+}
+
+// v7.87/7.88: editar tiempo de vuelo / aterrizajes de una entrada puntual del
+// historial, sin tener que buscar el turno original en Reservas. esPiloto decide el
+// PAR de campos a escribir: piloto_tiempo_vuelo/piloto_aterrizajes (autorregistrado) u
 // obs_privada_tiempo_vuelo/obs_privada_aterrizajes (cargado por instructor) — mismo
-// criterio que ya usa renderNotasPrivadasAlumno para leerlos y mostrarlos.
+// criterio que ya usa renderNotasPrivadasAlumno para leerlos y mostrarlos. v7.88:
+// pedido de Daniel — reemplaza los prompt()/alert() nativos (v7.87) por el modal
+// modal-editar-log-vuelo, y ahora edita AMBOS campos en una sola pantalla en vez de
+// dos prompts seguidos.
 window.editarVueloLogAlumno=async function(key,esPiloto){
   const r=_reservasCache[key];
   if(!r)return;
   const campoTiempo=esPiloto?'piloto_tiempo_vuelo':'obs_privada_tiempo_vuelo';
   const campoAterr=esPiloto?'piloto_aterrizajes':'obs_privada_aterrizajes';
-  const actualTiempo=r[campoTiempo], actualAterr=r[campoAterr];
-  const nuevoTiempoStr=prompt('Tiempo de vuelo (hs) — dejar vacío para borrar el dato:',actualTiempo!=null?String(actualTiempo):'');
-  if(nuevoTiempoStr===null)return; // canceló
-  const nuevoAterrStr=prompt('Aterrizajes — dejar vacío para borrar el dato:',actualAterr!=null?String(actualAterr):'');
-  if(nuevoAterrStr===null)return; // canceló
-  const nuevoTiempo=nuevoTiempoStr.trim()===''?null:Number(nuevoTiempoStr.replace(',','.'));
-  const nuevoAterr=nuevoAterrStr.trim()===''?null:parseInt(nuevoAterrStr,10);
-  if(nuevoTiempo!=null&&(isNaN(nuevoTiempo)||nuevoTiempo<0)){alert('Tiempo de vuelo inválido.');return;}
-  if(nuevoAterr!=null&&(isNaN(nuevoAterr)||nuevoAterr<0)){alert('Cantidad de aterrizajes inválida.');return;}
+  const resultado=await pedirEdicionLogVuelo(r[campoTiempo],r[campoAterr]);
+  if(!resultado)return; // canceló
   const updates={};
-  updates[campoTiempo]=nuevoTiempo;
-  updates[campoAterr]=nuevoAterr;
+  updates[campoTiempo]=resultado.tiempo;
+  updates[campoAterr]=resultado.aterrizajes;
   try{
     await fbUpdate('reservas/'+key,updates);
   }catch(e){
@@ -10715,6 +10804,64 @@ function _segmentarPorHuecos(puntos) {
   return segs.filter(s => s.pts.length > 1 || s.tipo === 'hueco');
 }
 
+// ══════════ v7.89: detección de aeródromo origen/destino + color por altitud ══════════
+// Mismo cambio en paralelo que vuelo.html v5.51/v5.52 — ver ese comentario para el
+// detalle completo. Acá con Haversine standalone (_haversineKm) porque turnos.html no
+// tenía una función de distancia reusable — el cálculo estaba inline en abrirMapaVuelo.
+function _haversineKm(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+let _aerodromosDB = null;
+async function _cargarAerodromosDB(){
+  if(_aerodromosDB) return _aerodromosDB;
+  try{
+    const r = await fetch('aerodromos.json?v=3');
+    const raw = await r.json();
+    const porCoord = {};
+    for(const [k,v] of Object.entries(raw)){
+      if(!v.c) continue;
+      const m = v.c.match(/^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])$/);
+      if(!m) continue;
+      const lat = (Number(m[1])+Number(m[2])/60) * (m[3]==='S'?-1:1);
+      const lng = (Number(m[4])+Number(m[5])/60) * (m[6]==='W'?-1:1);
+      const existente = porCoord[v.c];
+      if(!existente || k.length < existente.cod.length){
+        porCoord[v.c] = { cod: k, nombre: v.n||k, lat, lng };
+      }
+    }
+    _aerodromosDB = Object.values(porCoord);
+  }catch(e){
+    console.warn('No se pudo cargar aerodromos.json (sigo sin detección de ruta).', e);
+    _aerodromosDB = [];
+  }
+  return _aerodromosDB;
+}
+const AERO_UMBRAL_NM = 4;
+async function _aerodromoCercano(lat, lng){
+  const db = await _cargarAerodromosDB();
+  let mejor = null, mejorDistNm = Infinity;
+  for(const a of db){
+    const dNm = _haversineKm(lat,lng,a.lat,a.lng) * 0.539957;
+    if(dNm < mejorDistNm){ mejorDistNm = dNm; mejor = a; }
+  }
+  return (mejor && mejorDistNm <= AERO_UMBRAL_NM) ? mejor : null;
+}
+function _colorPorAltitud(alt, altMin, altMax){
+  if(alt==null || !isFinite(altMin) || !isFinite(altMax) || altMax<=altMin) return '#00c8d4';
+  const f = Math.max(0, Math.min(1, (alt-altMin)/(altMax-altMin)));
+  const stops = f<0.5
+    ? [[240,165,0],[34,197,94], f*2]
+    : [[34,197,94],[0,200,212], (f-0.5)*2];
+  const [c1,c2,t] = stops;
+  const r = Math.round(c1[0]+(c2[0]-c1[0])*t);
+  const g = Math.round(c1[1]+(c2[1]-c1[1])*t);
+  const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
+  return `rgb(${r},${g},${b})`;
+}
+
 window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
   const modal = document.getElementById('modal-mapa-vuelo');
   document.getElementById('mapa-vuelo-title').textContent = nombre ? `${nombre} — ${avion}` : avion;
@@ -10722,6 +10869,8 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
   document.getElementById('mapa-vuelo-loading').style.display = 'flex';
   document.getElementById('mapa-vuelo-info').style.display = 'none';
   document.getElementById('mv-huecos').style.display = 'none';
+  document.getElementById('mapa-vuelo-ruta').style.display = 'none';
+  document.getElementById('mapa-vuelo-alt-legend').style.display = 'none';
   document.getElementById('mapa-vuelo-leaflet').style.opacity = '0';
   modal.classList.add('open');
 
@@ -10738,13 +10887,17 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     const puntos = data.puntos;
     const coords = puntos.map(p => [p.lat, p.lng]);
 
-    _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false } });
+    _mapaVueloLeaflet = L.map('mapa-vuelo-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false }, preferCanvas: true });
 
     // Satélite ESRI + etiquetas
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 17 }).addTo(_mapaVueloLeaflet);
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(_mapaVueloLeaflet);
 
-    // Polilínea(s) — tramos reales sólidos, huecos punteados en otro color
+    // Polilínea(s) — tramos reales con degradé de color por altitud, huecos punteados
+    // en rojo (sin cambios). Ver nota completa en vuelo.html v5.51.
+    const altsValidas = puntos.filter(p=>p.alt!=null).map(p=>p.alt);
+    const altMinTraza = altsValidas.length ? Math.min(...altsValidas) : null;
+    const altMaxTraza = altsValidas.length ? Math.max(...altsValidas) : null;
     const segmentos = _segmentarPorHuecos(puntos);
     for (const seg of segmentos) {
       const segCoords = seg.pts.map(p => [p.lat, p.lng]);
@@ -10753,6 +10906,14 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
         L.polyline(segCoords, { color: '#ff6b6b', weight: 2.5, opacity: 0.85, dashArray: '6,6' })
           .bindTooltip(`⚠ Sin datos GPS — ${durMinHueco} min`)
           .addTo(_mapaVueloLeaflet);
+      } else if(altMinTraza!=null && altMaxTraza>altMinTraza) {
+        for(let i=0;i<seg.pts.length-1;i++){
+          const p1=seg.pts[i], p2=seg.pts[i+1];
+          const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
+          L.polyline([[p1.lat,p1.lng],[p2.lat,p2.lng]], {
+            color: _colorPorAltitud(altProm, altMinTraza, altMaxTraza), weight: 3.5, opacity: 0.9
+          }).addTo(_mapaVueloLeaflet);
+        }
       } else {
         L.polyline(segCoords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_mapaVueloLeaflet);
       }
@@ -10802,6 +10963,25 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     document.getElementById('mapa-vuelo-leaflet').style.opacity = '1';
     document.getElementById('mapa-vuelo-info').style.display = 'flex';
     setTimeout(() => _mapaVueloLeaflet && _mapaVueloLeaflet.invalidateSize(), 100);
+
+    if(altMinTraza!=null && altMaxTraza>altMinTraza){
+      document.getElementById('mval-max').textContent = Math.round(altMaxTraza*3.28084)+'ft';
+      document.getElementById('mval-min').textContent = Math.round(altMinTraza*3.28084)+'ft';
+      document.getElementById('mapa-vuelo-alt-legend').style.display = 'block';
+    } else {
+      document.getElementById('mapa-vuelo-alt-legend').style.display = 'none';
+    }
+    _aerodromoCercano(puntos[0].lat, puntos[0].lng).then(origen => {
+      _aerodromoCercano(puntos[puntos.length-1].lat, puntos[puntos.length-1].lng).then(destino => {
+        const rutaEl = document.getElementById('mapa-vuelo-ruta');
+        if(origen || destino){
+          rutaEl.textContent = '🛫 '+(origen?origen.cod:'—')+'   🛬 '+(destino?destino.cod:'—');
+          rutaEl.style.display = 'block';
+        } else {
+          rutaEl.style.display = 'none';
+        }
+      });
+    });
 
   } catch(e) {
     document.getElementById('mapa-vuelo-loading').innerHTML =
@@ -10927,6 +11107,7 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
     <div>
       <div class="map-title" id="mapa-vuelo-title">RECORRIDO DEL VUELO</div>
       <div class="map-sub" id="mapa-vuelo-sub"></div>
+      <div class="map-sub" id="mapa-vuelo-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
     </div>
     <button onclick="cerrarMapaVuelo()" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--text3);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer">✕ Cerrar</button>
   </div>
@@ -10937,6 +11118,14 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
     </div>
     <div id="mapa-vuelo-leaflet"></div>
     <button class="btn-map-close-float" id="btn-mapa-vuelo-close-float" onclick="cerrarMapaVuelo()" title="Cerrar">✕</button>
+    <div id="mapa-vuelo-alt-legend" style="display:none;position:absolute;right:10px;top:10px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--font-mono);font-size:10px;color:var(--text3);pointer-events:none">
+      <div style="margin-bottom:4px;color:var(--text);font-weight:700">ALTITUD</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span id="mval-max">—</span>
+        <div style="width:10px;height:70px;border-radius:5px;background:linear-gradient(to top, #f0a500, #22c55e, #00c8d4)"></div>
+        <span id="mval-min">—</span>
+      </div>
+    </div>
   </div>
   <div class="map-info" id="mapa-vuelo-info" style="display:none">
     <span>📍 Puntos: <span class="mv" id="mv-puntos">—</span></span>

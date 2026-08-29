@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.35 · 2026-08-29
+  Mismo cambio en paralelo que vuelo.html v5.51+v5.52 (ver esos comentarios
+  para el detalle completo): color por altitud en la traza (amber→verde→cian,
+  relativo al rango de cada vuelo), detección de aeródromo origen/destino
+  contra aerodromos.json ("🛫 GRA   🛬 GRA" bajo el título), leyenda de
+  altitud en la esquina superior derecha del mapa (no inferior — se
+  superponía con el botón flotante ✕ de cerrar), e info bar con tipografía
+  más grande.
+
   v4.34 · 2026-08-29
   Mismo cambio en paralelo que vuelo.html v5.50 (ver ese comentario para el
   detalle completo): navigator.serviceWorker.register('/sw.js',
@@ -998,9 +1007,9 @@ select:disabled{opacity:.55}
    competían directo contra el header/botón de afuera y ganaban, tapándolos.
    isolation:isolate encierra todo lo de Leaflet en su propio contexto. */
 #map-leaflet{width:100%;height:100%;isolation:isolate}
-.map-info-bar{padding:12px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:22px;flex-wrap:wrap;flex:none}
-.map-info-bar span{font-family:var(--mono);font-size:14px;color:var(--gray)}
-.map-info-bar .mv{color:var(--white);font-weight:700;font-size:15px}
+.map-info-bar{padding:14px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:26px;flex-wrap:wrap;flex:none}
+.map-info-bar span{font-family:var(--mono);font-size:16px;color:var(--gray)}
+.map-info-bar .mv{color:var(--white);font-weight:700;font-size:19px}
 .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
 
 /* ── Cancelar vuelo: long-press (v4.10, pedido de Daniel — el click directo
@@ -1380,7 +1389,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.34';
+const APP_VERSION = '4.35';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3124,6 +3133,58 @@ function _segmentarPorHuecos(puntos) {
   return segs.filter(s => s.pts.length > 1 || s.tipo === 'hueco');
 }
 
+// ══════════ v4.35: detección de aeródromo origen/destino + color por altitud ══════════
+// Mismo cambio en paralelo que vuelo.html v5.51/v5.52 — ver ese comentario para el
+// detalle completo del porqué de cada decisión.
+let _aerodromosDB = null;
+async function _cargarAerodromosDB(){
+  if(_aerodromosDB) return _aerodromosDB;
+  try{
+    const r = await fetch('aerodromos.json?v=3');
+    const raw = await r.json();
+    const porCoord = {};
+    for(const [k,v] of Object.entries(raw)){
+      if(!v.c) continue;
+      const m = v.c.match(/^(\d{2})(\d{2})([NS])(\d{3})(\d{2})([EW])$/);
+      if(!m) continue;
+      const lat = (Number(m[1])+Number(m[2])/60) * (m[3]==='S'?-1:1);
+      const lng = (Number(m[4])+Number(m[5])/60) * (m[6]==='W'?-1:1);
+      const existente = porCoord[v.c];
+      if(!existente || k.length < existente.cod.length){
+        porCoord[v.c] = { cod: k, nombre: v.n||k, lat, lng };
+      }
+    }
+    _aerodromosDB = Object.values(porCoord);
+  }catch(e){
+    console.warn('No se pudo cargar aerodromos.json (sigo sin detección de ruta).', e);
+    _aerodromosDB = [];
+  }
+  return _aerodromosDB;
+}
+const AERO_UMBRAL_NM = 4;
+async function _aerodromoCercano(lat, lng){
+  const db = await _cargarAerodromosDB();
+  let mejor = null, mejorDistNm = Infinity;
+  for(const a of db){
+    const dKm = calcDistanciaKm([[lat,lng],[a.lat,a.lng]]);
+    const dNm = dKm * 0.539957;
+    if(dNm < mejorDistNm){ mejorDistNm = dNm; mejor = a; }
+  }
+  return (mejor && mejorDistNm <= AERO_UMBRAL_NM) ? mejor : null;
+}
+function _colorPorAltitud(alt, altMin, altMax){
+  if(alt==null || !isFinite(altMin) || !isFinite(altMax) || altMax<=altMin) return '#00c8d4';
+  const f = Math.max(0, Math.min(1, (alt-altMin)/(altMax-altMin)));
+  const stops = f<0.5
+    ? [[240,165,0],[34,197,94], f*2]
+    : [[34,197,94],[0,200,212], (f-0.5)*2];
+  const [c1,c2,t] = stops;
+  const r = Math.round(c1[0]+(c2[0]-c1[0])*t);
+  const g = Math.round(c1[1]+(c2[1]-c1[1])*t);
+  const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
+  return `rgb(${r},${g},${b})`;
+}
+
 window.abrirMapa = async function(key, alumno, avion, hora) {
   const fmtTs = iso => {
     if(!iso) return '—';
@@ -3136,6 +3197,8 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
   $('map-loading').style.display = 'flex';
   $('map-info-bar').style.display = 'none';
   $('mi-huecos').style.display = 'none';
+  $('map-modal-ruta').style.display = 'none';
+  $('map-alt-legend').style.display = 'none';
   $('map-leaflet').style.opacity = '0';
   modal.classList.add('open');
 
@@ -3153,7 +3216,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     const puntos = data.puntos;
     const coords = puntos.map(p => [p.lat, p.lng]);
 
-    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false } });
+    _leafletMap = L.map('map-leaflet', { zoomControl: true, attributionControl: false, rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false }, preferCanvas: true });
 
     // maxNativeZoom:15 — mismo fix que vuelo.html v5.25: evita el error
     // "image not available" al hacer zoom manual más allá de la cobertura
@@ -3167,7 +3230,11 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
       maxZoom: 19, opacity: 0.7,
     }).addTo(_leafletMap);
 
-    // Polilínea(s) del recorrido — tramos reales sólidos, huecos punteados
+    // Polilínea(s) del recorrido — tramos reales con degradé de color por altitud,
+    // huecos punteados en rojo (sin cambios). Ver nota completa en vuelo.html v5.51.
+    const altsValidas = puntos.filter(p=>p.alt!=null).map(p=>p.alt);
+    const altMinTraza = altsValidas.length ? Math.min(...altsValidas) : null;
+    const altMaxTraza = altsValidas.length ? Math.max(...altsValidas) : null;
     const segmentos = _segmentarPorHuecos(puntos);
     for (const seg of segmentos) {
       const segCoords = seg.pts.map(p => [p.lat, p.lng]);
@@ -3176,6 +3243,14 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
         L.polyline(segCoords, { color: '#ff6b6b', weight: 2.5, opacity: 0.85, dashArray: '6,6' })
           .bindTooltip(`⚠ Sin datos GPS — ${durMinHueco} min`)
           .addTo(_leafletMap);
+      } else if(altMinTraza!=null && altMaxTraza>altMinTraza) {
+        for(let i=0;i<seg.pts.length-1;i++){
+          const p1=seg.pts[i], p2=seg.pts[i+1];
+          const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
+          L.polyline([[p1.lat,p1.lng],[p2.lat,p2.lng]], {
+            color: _colorPorAltitud(altProm, altMinTraza, altMaxTraza), weight: 3.5, opacity: 0.9
+          }).addTo(_leafletMap);
+        }
       } else {
         L.polyline(segCoords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_leafletMap);
       }
@@ -3227,6 +3302,24 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('map-leaflet').style.opacity = '1';
     $('map-info-bar').style.display = 'flex';
     setTimeout(() => _leafletMap && _leafletMap.invalidateSize(), 100);
+
+    if(altMinTraza!=null && altMaxTraza>altMinTraza){
+      $('mal-max').textContent = Math.round(altMaxTraza*3.28084)+'ft';
+      $('mal-min').textContent = Math.round(altMinTraza*3.28084)+'ft';
+      $('map-alt-legend').style.display = 'block';
+    } else {
+      $('map-alt-legend').style.display = 'none';
+    }
+    _aerodromoCercano(puntos[0].lat, puntos[0].lng).then(origen => {
+      _aerodromoCercano(puntos[puntos.length-1].lat, puntos[puntos.length-1].lng).then(destino => {
+        if(origen || destino){
+          $('map-modal-ruta').textContent = '🛫 '+(origen?origen.cod:'—')+'   🛬 '+(destino?destino.cod:'—');
+          $('map-modal-ruta').style.display = 'block';
+        } else {
+          $('map-modal-ruta').style.display = 'none';
+        }
+      });
+    });
 
   } catch(e) {
     $('map-loading').innerHTML = `<span style="color:var(--red)">Error al cargar la traza: ${e.message}</span>`;
@@ -3301,6 +3394,7 @@ if('serviceWorker' in navigator){
       <div>
         <div class="map-title" id="map-modal-title">RECORRIDO DEL VUELO</div>
         <div class="map-sub" id="map-modal-sub"></div>
+        <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
       </div>
       <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
     </div>
@@ -3310,6 +3404,14 @@ if('serviceWorker' in navigator){
     </div>
     <div id="map-leaflet"></div>
     <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
+    <div id="map-alt-legend" style="display:none;position:absolute;right:10px;top:10px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--gray);pointer-events:none">
+      <div style="margin-bottom:4px;color:var(--white);font-weight:700">ALTITUD</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span id="mal-max">—</span>
+        <div style="width:10px;height:70px;border-radius:5px;background:linear-gradient(to top, #f0a500, #22c55e, #00c8d4)"></div>
+        <span id="mal-min">—</span>
+      </div>
+    </div>
   </div>
   <div class="map-info-bar" id="map-info-bar" style="display:none">
     <span>📍 Puntos: <span class="mv" id="mi-puntos">—</span></span>
