@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.91
+  FECHA   : 2026-08-29
+  CAMBIOS : FIX de v7.90 (reportado por Daniel con captura): el botón "✎ CARGAR
+            TIEMPO / ATERRIZAJES" se mostraba en CUALQUIER turno vencido, incluso
+            uno ya "VOLADO" con tiempo/aterrizajes cargados — el gate solo miraba
+            estado==='vencido', sin chequear si ya había datos. Agregado el chequeo
+            que faltaba (mismo criterio que esVolado()/renderNotasPrivadasAlumno):
+            el botón ahora solo aparece si NO hay tiempo/aterrizajes/obs cargados en
+            ningún lado (ni obs_privada_* ni piloto_*).
   VERSION : 7.90
   FECHA   : 2026-08-29
   CAMBIOS : Pedido de Daniel: caso real — piloto particular voló pero no usó
@@ -3246,7 +3255,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.90</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.91</div>
   </div>
 
 </div>
@@ -8145,7 +8154,7 @@ window.abrirModal=function(key){
       abrirLogAlumno();
     };
   })();
-  // v7.90: pedido de Daniel — un turno VENCIDO puede haberse volado igual sin que
+  // v7.90/7.91: pedido de Daniel — un turno VENCIDO puede haberse volado igual sin que
   // nadie haya cargado tiempo/aterrizajes (ej. piloto particular que no usó
   // vuelo-piloto.html). Antes la única forma de cargarle datos era "VER LOG DEL
   // ALUMNO" → cambiar manualmente a la pestaña "Log de Instructores" — nada obvio
@@ -8153,11 +8162,16 @@ window.abrirModal=function(key){
   // turnos que YA tienen algo cargado). Este botón es un atajo directo: mismo
   // _logAlumnoCtx que arriba, pero entra directo a la pestaña 'log' con el form
   // de carga a la vista.
+  // v7.91 FIX: v7.90 solo chequeaba estado==='vencido', sin mirar si el turno YA
+  // tenía datos — Daniel reportó el botón visible en un turno "VOLADO" con 0.7hs/1
+  // aterrizaje ya cargados. Falta el chequeo de "sin datos todavía", mismo criterio
+  // que ya usa esVolado()/renderNotasPrivadasAlumno para decidir si hay algo cargado.
   (function(){
     const row=document.getElementById('md-cargar-row');
     const btn=document.getElementById('md-cargar-btn');
     if(!row||!btn)return;
-    if(session?.tipo!=='instructor'||r.estado!=='vencido'){ row.style.display='none'; btn.onclick=null; return; }
+    const yaTieneDatos=r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.obs_privada||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null;
+    if(session?.tipo!=='instructor'||r.estado!=='vencido'||yaTieneDatos){ row.style.display='none'; btn.onclick=null; return; }
     row.style.display='flex';
     btn.onclick=()=>{
       _logAlumnoCtx={emailKey:ek(r.email),nombre:r.nombre,email:r.email,reservaKey:key,reservaRef:{fecha:r.fecha,hora:r.hora,avion:r.avion||'LV-OAD'}};
