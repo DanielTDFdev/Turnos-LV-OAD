@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.36 · 2026-08-29
+  Pedido de Daniel: el piloto ahora puede cargar tiempo/aterrizajes de un vuelo
+  propio vencido que quedó SIN datos (ej. voló pero no usó la app en vivo ese
+  día). En Libro, cargarLibro() ahora también trae vencidos sin datos (antes el
+  filtro los excluía del todo — invisibles, sin forma de encontrarlos). La fila
+  de un vuelo sin datos muestra un botón amber "✎ Cargar tiempo / aterrizajes"
+  en vez de "— hs / —"; con datos (los haya cargado la app en vivo o un
+  instructor) sigue de solo lectura, sin excepción — "se asume que fueron
+  cargados correctamente", pedido explícito. Modal nuevo (#cargar-datos-modal-
+  overlay, familia visual .cancelar-modal-*, nada de prompt() nativo) +
+  abrirCargaDatosVuelo(): re-chequea contra Firebase ANTES de dejar cargar (no
+  confía en lo ya renderizado — si alguien cargó algo mientras el modal estaba
+  cerrado, avisa y no deja pisar). Escribe piloto_tiempo_vuelo/
+  piloto_aterrizajes/piloto_autor/piloto_ts — mismo set de campos que el cierre
+  normal de vuelo, así reporte.html/turnos.html lo tratan igual que un vuelo
+  cerrado en vivo.
+
   v4.35 · 2026-08-29
   Mismo cambio en paralelo que vuelo.html v5.51+v5.52 (ver esos comentarios
   para el detalle completo): color por altitud en la traza (amber→verde→cian,
@@ -945,6 +962,9 @@ select:disabled{opacity:.55}
 .libro-cal-day.sel .lcd-dot{background:var(--bg)}
 
 .btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;transition:all .15s}
+/* v4.36: botón "Cargar tiempo/aterrizajes" en Libro — amber en vez de cyan (.btn-traza)
+   para que se note a simple vista que ese vuelo TODAVÍA no tiene datos cargados. */
+.btn-cargar-datos{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:11px;padding:5px 11px;cursor:pointer;letter-spacing:.04em}
 .btn-traza:active{background:rgba(0,200,212,.2)}
 .btn-export-gps{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);border-radius:6px;color:var(--amber);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-left:6px;transition:all .15s}
 .btn-export-gps:active{background:rgba(240,165,0,.2)}
@@ -1389,7 +1409,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.35';
+const APP_VERSION = '4.36';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2850,10 +2870,15 @@ async function cargarLibro(){
   try{
     const snap=await get(ref(db,'reservas'));
     const todas=rArr(snap.val());
+    // v4.36: antes solo entraban acá los vuelos que YA tenían datos cargados — un
+    // vencido sin nada (ej. el piloto voló pero no usó la app en vivo) era invisible,
+    // no había forma de encontrarlo para cargar tiempo/aterrizajes después. Ahora
+    // también entran los vencidos SIN datos (pedido de Daniel); se distinguen en el
+    // render de más abajo con un botón "✎ Cargar" en vez de mostrar "—".
     const mis=todas.filter(r=>
       r.email===session.email&&
       r.fecha===fecha&&
-      (r.piloto_tiempo_vuelo!=null||r.obs_privada_tiempo_vuelo!=null)
+      (r.piloto_tiempo_vuelo!=null||r.obs_privada_tiempo_vuelo!=null||r.estado==='vencido')
     ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
 
     if(!mis.length){
@@ -2872,10 +2897,17 @@ async function cargarLibro(){
     $('libro-contenido').innerHTML=totalizador+mis.map(r=>{
       const despegue=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
       const aterr=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
+      const tieneDatos=r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null;
       const horas=(r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo)??'—';
       const aterrizajes=(r.piloto_aterrizajes??r.obs_privada_aterrizajes)??'—';
       const obsVisible=r.piloto_obs||''; // obs_privada NUNCA se muestra acá — sigue siendo privada del instructor
       const escObs = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); // v4.4: alineado con esc() usado en el resto del archivo — antes solo escapaba '<'
+      // v4.36: sin datos → botón de carga en vez de "— hs / —". Con datos (los haya
+      // cargado la propia app en vivo o un instructor) → solo lectura, como siempre —
+      // "se asume que fueron cargados correctamente", pedido explícito de Daniel.
+      const datosHtml=tieneDatos
+        ? `<span>⏱ <span class="vr-val">${horas} hs</span></span><span>🛬 <span class="vr-val">${aterrizajes}</span></span>`
+        : `<button class="btn-cargar-datos" onclick='abrirCargaDatosVuelo(${JSON.stringify({key:r.key,fecha:r.fecha,hora:r.hora||r.horaInicio||'',avion:r.avion||''}).replace(/'/g,"&apos;")})'>✎ Cargar tiempo / aterrizajes</button>`;
       return `<div class="vuelo-row">
         <div class="vr-top">
           <div class="vr-hora">${r.hora||r.horaInicio||'—'}</div>
@@ -2884,8 +2916,7 @@ async function cargarLibro(){
         <div class="vr-datos">
           <span>▶ <span class="vr-val">${despegue}</span></span>
           <span>⏹ <span class="vr-val">${aterr}</span></span>
-          <span>⏱ <span class="vr-val">${horas} hs</span></span>
-          <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
+          ${datosHtml}
         </div>
         ${obsVisible?`<div class="vr-obs">${escObs(obsVisible)}</div>`:''}
         ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
@@ -2897,7 +2928,75 @@ async function cargarLibro(){
   }
 }
 
-// ── REPORTE DE HORAS (rango de fechas, descargable a Excel) ─
+// v4.36: modal Promise (mismo patrón que el resto del archivo) — devuelve
+// {tiempo,aterrizajes} o null si se cancela. A diferencia del editor de turnos.html,
+// ACÁ no se permite dejar vacío para borrar — es carga inicial de un dato que no
+// existe, no edición de uno existente (esos quedan de solo lectura, ver guarda en
+// abrirCargaDatosVuelo).
+function pedirCargaDatosVuelo(){
+  return new Promise(resolve=>{
+    const overlay=$('cargar-datos-modal-overlay');
+    const inTiempo=$('cd-tiempo'), inAterr=$('cd-aterrizajes'), err=$('cd-err');
+    const btnGuardar=$('btn-cd-guardar'), btnCancelar=$('btn-cd-cancelar');
+    inTiempo.value=''; inAterr.value=''; err.textContent='';
+    overlay.classList.add('open');
+    setTimeout(()=>inTiempo.focus(),100);
+    const cerrar=(resultado)=>{
+      overlay.classList.remove('open');
+      btnGuardar.removeEventListener('click',onGuardar);
+      btnCancelar.removeEventListener('click',onCancelar);
+      resolve(resultado);
+    };
+    const onGuardar=()=>{
+      const tStr=inTiempo.value.trim(), aStr=inAterr.value.trim();
+      if(tStr===''&&aStr===''){ err.textContent='Cargá al menos un dato.'; return; }
+      const tiempo=tStr===''?null:Number(tStr.replace(',','.'));
+      const aterrizajes=aStr===''?null:parseInt(aStr,10);
+      if(tiempo!=null&&(isNaN(tiempo)||tiempo<0)){ err.textContent='Tiempo de vuelo inválido.'; return; }
+      if(aterrizajes!=null&&(isNaN(aterrizajes)||aterrizajes<0)){ err.textContent='Cantidad de aterrizajes inválida.'; return; }
+      cerrar({tiempo,aterrizajes});
+    };
+    const onCancelar=()=>cerrar(null);
+    btnGuardar.addEventListener('click',onGuardar);
+    btnCancelar.addEventListener('click',onCancelar);
+  });
+}
+
+// v4.36: entrada desde el botón "✎ Cargar tiempo / aterrizajes" en Libro. Re-chequea
+// contra Firebase (no confía en lo ya renderizado) que siga sin datos antes de dejar
+// cargar — si alguien más (instructor, u otra pestaña del propio piloto) ya cargó algo
+// mientras tanto, avisa y no deja pisar. Escribe piloto_tiempo_vuelo/piloto_aterrizajes/
+// piloto_autor/piloto_ts — MISMO set de campos que escribe el cierre normal de vuelo
+// (ver guardarVuelo/sincronización pendiente), así reporte.html/turnos.html lo tratan
+// exactamente igual que un vuelo cerrado en vivo con la app.
+window.abrirCargaDatosVuelo=async function(info){
+  try{
+    const snap=await get(ref(db,'reservas/'+info.key));
+    const r=snap.val();
+    if(!r||r.email!==session.email){ toast('No se pudo abrir este vuelo.'); return; }
+    if(r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null){
+      toast('Este vuelo ya tiene datos cargados — no se puede editar acá.');
+      cargarLibro();
+      return;
+    }
+    $('cd-modal-sub').textContent=fmtFecha(info.fecha)+' — '+(info.hora||'')+' hs — '+(info.avion||'');
+    const resultado=await pedirCargaDatosVuelo();
+    if(!resultado)return;
+    await conTimeout(update(ref(db,'reservas/'+info.key),{
+      piloto_tiempo_vuelo:resultado.tiempo,
+      piloto_aterrizajes:resultado.aterrizajes,
+      piloto_autor:session.nombre,
+      piloto_ts:new Date().toISOString()
+    }));
+    toast('Datos cargados ✓');
+    cargarLibro();
+  }catch(e){
+    console.error(e);
+    toast('Error al guardar (revisá tu conexión).');
+  }
+};
+
+
 // v4.18 — pedido de Daniel. Mismo criterio de "mis vuelos" que cargarLibro
 // (session.email + piloto_tiempo_vuelo ?? obs_privada_tiempo_vuelo) pero
 // sobre un rango [desde,hasta] en vez de un solo día. _repRows guarda la
@@ -3458,6 +3557,32 @@ if('serviceWorker' in navigator){
     <div class="cancelar-modal-btns">
       <button class="btn btn-ghost" id="btn-conflicto-modal-no">Cancelar</button>
       <button class="btn" id="btn-conflicto-modal-si" style="background:var(--red);border-color:var(--red);color:#fff">Iniciar igual</button>
+    </div>
+  </div>
+</div>
+
+<!-- v4.36: modal para cargar tiempo/aterrizajes de un vuelo propio vencido SIN datos —
+     pedido de Daniel: "el piloto voló pero no usó la app en vivo, el turno quedó como
+     vencido sin datos". Reusa la familia visual .cancelar-modal-* (mismo patrón que el
+     resto de los modales de este archivo, nada de prompt() nativo). Solo permite cargar
+     si NO hay datos todavía — la guarda real está en abrirCargaDatosVuelo() (re-chequea
+     contra Firebase justo antes de abrir, no confía en el HTML ya renderizado). -->
+<div class="cancelar-modal-overlay" id="cargar-datos-modal-overlay">
+  <div class="cancelar-modal" style="max-width:320px;text-align:left">
+    <div class="cancelar-modal-title" style="text-align:left">✎ Cargar datos del vuelo</div>
+    <div class="cancelar-modal-sub" style="text-align:left" id="cd-modal-sub"></div>
+    <div class="field" style="margin-bottom:14px">
+      <label>Tiempo de vuelo (hs)</label>
+      <input type="number" id="cd-tiempo" step="0.1" min="0" placeholder="Ej: 1.2">
+    </div>
+    <div class="field" style="margin-bottom:6px">
+      <label>Aterrizajes</label>
+      <input type="number" id="cd-aterrizajes" step="1" min="0" placeholder="Ej: 4">
+    </div>
+    <div id="cd-err" style="font-family:var(--mono);font-size:11px;color:var(--red);min-height:16px;margin-bottom:6px"></div>
+    <div class="cancelar-modal-btns">
+      <button class="btn btn-ghost" id="btn-cd-cancelar">Cancelar</button>
+      <button class="btn btn-cyan" id="btn-cd-guardar">Guardar</button>
     </div>
   </div>
 </div>

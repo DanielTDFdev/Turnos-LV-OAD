@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.90
+  FECHA   : 2026-08-29
+  CAMBIOS : Pedido de Daniel: caso real — piloto particular voló pero no usó
+            vuelo-piloto.html, el turno venció sin tiempo/aterrizajes/obs y quedó
+            clasificado como "no volado" en reporte.html. La única forma de cargarle
+            datos después era "VER LOG DEL ALUMNO" → cambiar a mano a la pestaña
+            "Log de Instructores" — nada obvio, y ese turno ni siquiera aparece en el
+            historial de esa pestaña (solo lista turnos que YA tienen algo cargado).
+            Fix: botón nuevo "✎ CARGAR TIEMPO / ATERRIZAJES" en el modal de detalle
+            del turno, visible para instructor/admin SOLO si estado==='vencido' —
+            atajo directo al mismo formulario (mismo _logAlumnoCtx que "VER LOG DEL
+            ALUMNO"), pero abrirLogAlumno() ahora acepta un parámetro de pestaña
+            inicial y este botón pasa 'log' en vez del 'obs' de siempre, así entra
+            directo al form de carga sin un click extra.
   VERSION : 7.89
   FECHA   : 2026-08-29
   CAMBIOS : Mismo cambio en paralelo que vuelo.html v5.51+v5.52 y vuelo-piloto.html
@@ -3232,7 +3246,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.89</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.90</div>
   </div>
 
 </div>
@@ -3605,6 +3619,10 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div class="modal-row" id="md-log-row" style="display:none">
         <span class="modal-lbl">ALUMNO</span>
         <span class="modal-val"><button id="md-log-btn" style="font-family:var(--font-mono);font-size:11px;padding:5px 12px;background:rgba(0,200,212,.08);border:1px solid var(--cyan);color:var(--cyan);border-radius:var(--radius);cursor:pointer">◈ VER LOG DEL ALUMNO</button></span>
+      </div>
+      <div class="modal-row" id="md-cargar-row" style="display:none">
+        <span class="modal-lbl">VENCIDO</span>
+        <span class="modal-val"><button id="md-cargar-btn" style="font-family:var(--font-mono);font-size:11px;padding:5px 12px;background:rgba(240,165,0,.08);border:1px solid var(--amber);color:var(--amber);border-radius:var(--radius);cursor:pointer">✎ CARGAR TIEMPO / ATERRIZAJES</button></span>
       </div>
       <div id="md-obspost-row" style="display:none;flex-direction:column;gap:.45rem;margin:.6rem 0;padding-top:.6rem;border-top:1px solid var(--border)">
         <span class="modal-lbl" style="color:var(--amber)">OBSERVACIÓN POST-VUELO PARA EL ALUMNO</span>
@@ -7237,7 +7255,7 @@ window.showLogAlumnoTab=function(tab){
   });
 };
 
-window.abrirLogAlumno=async function(){
+window.abrirLogAlumno=async function(tabInicial='obs'){
   if(!_logAlumnoCtx)return;
   _logAlumnoModoAlumno=false;
   document.getElementById('mla-modal-title').textContent='◈ Log del Alumno';
@@ -7245,7 +7263,7 @@ window.abrirLogAlumno=async function(){
   document.getElementById('mla-hist-box').classList.add('obspriv-box');
   document.getElementById('mla-lista-titulo').textContent='🔒 Historial para instructores (más nuevo primero)';
   document.getElementById('mla-tabbtn-log').textContent='🔒 Log de Instructores';
-  showLogAlumnoTab('obs');
+  showLogAlumnoTab(tabInicial);
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
   document.getElementById('mla-email').textContent=_logAlumnoCtx.email;
   const rv=_logAlumnoCtx.reservaRef;
@@ -8125,6 +8143,25 @@ window.abrirModal=function(key){
     btn.onclick=()=>{
       _logAlumnoCtx={emailKey:ek(r.email),nombre:r.nombre,email:r.email,reservaKey:key,reservaRef:{fecha:r.fecha,hora:r.hora,avion:r.avion||'LV-OAD'}};
       abrirLogAlumno();
+    };
+  })();
+  // v7.90: pedido de Daniel — un turno VENCIDO puede haberse volado igual sin que
+  // nadie haya cargado tiempo/aterrizajes (ej. piloto particular que no usó
+  // vuelo-piloto.html). Antes la única forma de cargarle datos era "VER LOG DEL
+  // ALUMNO" → cambiar manualmente a la pestaña "Log de Instructores" — nada obvio
+  // para un turno que ni siquiera aparece en ese historial (el historial solo lista
+  // turnos que YA tienen algo cargado). Este botón es un atajo directo: mismo
+  // _logAlumnoCtx que arriba, pero entra directo a la pestaña 'log' con el form
+  // de carga a la vista.
+  (function(){
+    const row=document.getElementById('md-cargar-row');
+    const btn=document.getElementById('md-cargar-btn');
+    if(!row||!btn)return;
+    if(session?.tipo!=='instructor'||r.estado!=='vencido'){ row.style.display='none'; btn.onclick=null; return; }
+    row.style.display='flex';
+    btn.onclick=()=>{
+      _logAlumnoCtx={emailKey:ek(r.email),nombre:r.nombre,email:r.email,reservaKey:key,reservaRef:{fecha:r.fecha,hora:r.hora,avion:r.avion||'LV-OAD'}};
+      abrirLogAlumno('log');
     };
   })();
   document.getElementById('modal-turno').classList.add('open');
