@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.97
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel sobre "Pedir turno" (selector de día): (1) sacado el
+            reborde verde de .day-btn.hoy (outline:2px solid var(--green)) — el día
+            de hoy ya se distingue con la etiqueta "● HOY" debajo, el reborde
+            competía visualmente con el de .selected (cyan) cuando hoy también
+            estaba seleccionado. (2) .day-btn-hoy-tag de 8px a 11px. (3) fuente
+            general de .day-btn de 11px a 13px (10px→12px en el breakpoint mobile
+            de línea ~3250) — se veían chicas.
   VERSION : 7.96
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel sobre el calendario de "Bloquear días por avión"
@@ -2997,15 +3006,14 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .turno-status-vencido .turno-status-dot{background:#a07ef0}
 
 .days-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:1rem}
-.day-btn{padding:10px 4px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:11px;background:var(--bg2);color:var(--text2);line-height:1.5;transition:all .15s;}
+.day-btn{padding:10px 4px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:13px;background:var(--bg2);color:var(--text2);line-height:1.5;transition:all .15s;}
 .day-btn:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,200,212,.06)}
 .day-btn.selected{border:1px solid var(--cyan);color:var(--cyan);background:rgba(0,200,212,.1);box-shadow:0 0 12px rgba(0,200,212,.15)}
 .day-btn.blocked{background:rgba(248,81,73,.06);color:var(--red);border-color:rgba(248,81,73,.25);cursor:not-allowed}
 .day-btn.holiday{border-color:rgba(240,165,0,.4);color:var(--amber);background:rgba(240,165,0,.06);}
 .day-btn.holiday:hover{border-color:var(--amber);background:rgba(240,165,0,.12);}
 .day-btn-festivo{font-size:8px;line-height:1.2;opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
-.day-btn.hoy{outline:2px solid var(--green);outline-offset:-2px;}
-.day-btn-hoy-tag{font-size:8px;line-height:1.2;letter-spacing:.1em;color:var(--green);font-weight:700;margin-top:2px;}
+.day-btn-hoy-tag{font-size:11px;line-height:1.2;letter-spacing:.1em;color:var(--green);font-weight:700;margin-top:2px;}
 
 .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:.5rem}
 .slot{padding:12px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;cursor:pointer;background:var(--bg2);color:var(--text2);transition:all .15s;}
@@ -3247,7 +3255,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   /* days-grid: 7 columnas se mantienen (es el selector de dia de la semana, achicarlo
      a menos columnas rompe el modelo mental de "elegir un dia"), solo se ajusta tamaño */
   .days-grid{gap:4px}
-  .day-btn{padding:7px 2px;font-size:10px}
+  .day-btn{padding:7px 2px;font-size:12px}
 
   /* avion-selector y cal-avion-tabs: que no se aprieten, gap mas chico */
   .avion-selector,.cal-avion-tabs{gap:6px}
@@ -3319,7 +3327,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.96</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.97</div>
   </div>
 
 </div>
