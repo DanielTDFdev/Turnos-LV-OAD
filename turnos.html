@@ -1,5 +1,15 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.98
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: efecto 3D en las celdas de días (.day-btn) y horarios
+            (.slot) de "Pedir turno" — box-shadow tipo botón elevado (sombra sólida
+            inferior + sombra difusa) en reposo, más elevación al hover
+            (translateY -2px + sombra más grande) y efecto de "apretado"
+            (translateY +2px + sombra chica) al :active. Los estados .selected
+            combinan la sombra 3D con el glow de color que ya tenían. .blocked/
+            .taken quedan sin sombra (se ven "hundidos"/deshabilitados, refuerza
+            que no son clickeables).
   VERSION : 7.97
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel sobre "Pedir turno" (selector de día): (1) sacado el
@@ -3006,23 +3016,25 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .turno-status-vencido .turno-status-dot{background:#a07ef0}
 
 .days-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:1rem}
-.day-btn{padding:10px 4px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:13px;background:var(--bg2);color:var(--text2);line-height:1.5;transition:all .15s;}
-.day-btn:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,200,212,.06)}
-.day-btn.selected{border:1px solid var(--cyan);color:var(--cyan);background:rgba(0,200,212,.1);box-shadow:0 0 12px rgba(0,200,212,.15)}
-.day-btn.blocked{background:rgba(248,81,73,.06);color:var(--red);border-color:rgba(248,81,73,.25);cursor:not-allowed}
+.day-btn{padding:10px 4px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:13px;background:var(--bg2);color:var(--text2);line-height:1.5;transition:all .15s;box-shadow:0 3px 0 rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.2);}
+.day-btn:hover{border-color:var(--cyan);color:var(--cyan);background:rgba(0,200,212,.06);transform:translateY(-2px);box-shadow:0 5px 0 rgba(0,0,0,.35),0 6px 10px rgba(0,0,0,.25);}
+.day-btn:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.35);}
+.day-btn.selected{border:1px solid var(--cyan);color:var(--cyan);background:rgba(0,200,212,.1);box-shadow:0 3px 0 rgba(0,0,0,.35),0 0 12px rgba(0,200,212,.15)}
+.day-btn.blocked{background:rgba(248,81,73,.06);color:var(--red);border-color:rgba(248,81,73,.25);cursor:not-allowed;box-shadow:none;}
 .day-btn.holiday{border-color:rgba(240,165,0,.4);color:var(--amber);background:rgba(240,165,0,.06);}
 .day-btn.holiday:hover{border-color:var(--amber);background:rgba(240,165,0,.12);}
 .day-btn-festivo{font-size:8px;line-height:1.2;opacity:.85;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
 .day-btn-hoy-tag{font-size:11px;line-height:1.2;letter-spacing:.1em;color:var(--green);font-weight:700;margin-top:2px;}
 
 .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:.5rem}
-.slot{padding:12px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;cursor:pointer;background:var(--bg2);color:var(--text2);transition:all .15s;}
-.slot:hover{border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.06)}
-.slot.selected{border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.1);box-shadow:0 0 12px rgba(240,165,0,.15)}
+.slot{padding:12px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;cursor:pointer;background:var(--bg2);color:var(--text2);transition:all .15s;box-shadow:0 3px 0 rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.2);}
+.slot:hover{border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.06);transform:translateY(-2px);box-shadow:0 5px 0 rgba(0,0,0,.35),0 6px 10px rgba(0,0,0,.25);}
+.slot:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.35);}
+.slot.selected{border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.1);box-shadow:0 3px 0 rgba(0,0,0,.35),0 0 12px rgba(240,165,0,.15)}
 .slot.sin-instructor{border-color:rgba(224,82,156,.55);color:var(--pink);background:rgba(224,82,156,.05);border-style:dashed;}
 .slot.sin-instructor:hover{border-color:var(--pink);color:var(--pink);background:rgba(224,82,156,.12)}
-.slot.sin-instructor.selected{border-style:solid;border-color:var(--pink);background:rgba(224,82,156,.14);box-shadow:0 0 12px rgba(224,82,156,.2)}
-.slot.taken{background:var(--bg);color:var(--text3);cursor:not-allowed;text-decoration:line-through;border-color:var(--border)}
+.slot.sin-instructor.selected{border-style:solid;border-color:var(--pink);background:rgba(224,82,156,.14);box-shadow:0 3px 0 rgba(0,0,0,.35),0 0 12px rgba(224,82,156,.2)}
+.slot.taken{background:var(--bg);color:var(--text3);cursor:not-allowed;text-decoration:line-through;border-color:var(--border);box-shadow:none;}
 
 .reserva-item{padding:.85rem 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
 .reserva-item:last-child{border-bottom:none}
@@ -3327,7 +3339,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.97</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.98</div>
   </div>
 
 </div>
