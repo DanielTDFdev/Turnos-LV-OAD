@@ -1461,6 +1461,10 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
       <!-- Formulario cierre (oculto hasta STOP) -->
       <div id="v-cierre" style="display:none">
+        <div class="card" id="metar-card" style="display:none">
+          <div class="card-title">METAR</div>
+          <div id="metar-info" style="font-family:var(--mono);font-size:12px;color:var(--gray);white-space:pre-line;line-height:1.5"></div>
+        </div>
         <div class="card">
           <div class="card-title">Tiempo de vuelo</div>
           <div class="tiempo-calculado">
@@ -1598,6 +1602,8 @@ let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
 let metarInicio = null;   // METAR crudo al momento del START (v5.53), null si falló/no disponible
 let metarFin = null;      // METAR crudo al momento del STOP (v5.55), null si falló/no disponible
+let metarInicioListo = false; // v5.56: true cuando terminó el intento (éxito o fallo) — distingue "capturando…" de "no disponible" en la UI
+let metarFinListo = false;
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let _cierreRestaurado = null; // borrador del formulario de cierre restaurado de localStorage, se aplica en mostrarCierre()
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
@@ -1665,6 +1671,8 @@ function init(){
       tsFin=est.tsFin||null;
       metarInicio=est.metarInicio||null;
       metarFin=est.metarFin||null;
+      metarInicioListo=est.metarInicioListo||false;
+      metarFinListo=est.metarFinListo||false;
       if(est.cAterr||est.cObs||est.tManualValor) _cierreRestaurado={cAterr:est.cAterr,cObs:est.cObs,tManualVisible:est.tManualVisible,tManualValor:est.tManualValor};
       // Si el vuelo seguía en curso con GPS activo, retoma el muestreo
       // (watchPosition se corta solo con la recarga de página).
@@ -1922,7 +1930,7 @@ function activarTurno(turno){
     if(!confirm('Hay un cierre de vuelo sin guardar. ¿Descartarlo y activar este turno?')) return;
   }
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
-  turnoActual=turno;tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;guardadoExitoso=false;
+  turnoActual=turno;tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;metarInicioListo=false;metarFinListo=false;guardadoExitoso=false;
   localStorage.removeItem(LS);
   mostrarPantallaVuelo(turno);
   cambiarATab('vuelo');
@@ -2007,7 +2015,7 @@ function crearTurnoInSitu(persona){
     rol:persona.rol,
     esInSitu:true // sin `.key`: todavía no existe en Firebase
   };
-  tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;guardadoExitoso=false;
+  tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;metarInicioListo=false;metarFinListo=false;guardadoExitoso=false;
   $('nt-buscar').value='';
   $('nt-resultados').innerHTML='';
   persistir();
@@ -2016,7 +2024,7 @@ function crearTurnoInSitu(persona){
 }
 
 $('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
-$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];gpsGaps=[];localStorage.removeItem(LS_GPS_PUNTOS);localStorage.removeItem(LS_GPS_HUECOS);turnoActual=null;tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
+$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];gpsGaps=[];localStorage.removeItem(LS_GPS_PUNTOS);localStorage.removeItem(LS_GPS_HUECOS);turnoActual=null;tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;metarInicioListo=false;metarFinListo=false;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
 $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
 $('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
 
@@ -2301,7 +2309,7 @@ async function obtenerMetar(cual){
     if(!json.results||!json.data||!json.data.length)throw new Error('sin estación cercana');
     return extraerRaw(json.data[0]);
   }
-  let valor;
+  let valor=null;
   try{
     valor=await metarPorGPS();
   }catch(e){
@@ -2310,11 +2318,27 @@ async function obtenerMetar(cual){
       valor=await metarPorICAO('SAWE');
     }catch(e2){
       console.warn('No se pudo obtener METAR de '+cual+' (ni GPS ni SAWE):',e2);
-      return;
     }
   }
-  if(cual==='inicio') metarInicio=valor; else metarFin=valor;
+  if(cual==='inicio'){ metarInicio=valor; metarInicioListo=true; }
+  else { metarFin=valor; metarFinListo=true; }
   persistir();
+  actualizarMetarUI();
+}
+
+// v5.56: refresca la card METAR de la pantalla de cierre (v-cierre) — muestra
+// "capturando…" mientras la promesa de obtenerMetar() todavía no resolvió,
+// el METAR crudo si llegó bien, o "no disponible" si falló GPS y SAWE. La
+// card se oculta si todavía no hay ni tsInicio ni tsFin (no debería pasar
+// estando en v-cierre, pero por las dudas).
+function actualizarMetarUI(){
+  const card=$('metar-card'), el=$('metar-info');
+  if(!card||!el) return;
+  const partes=[];
+  if(tsInicio) partes.push('INICIO — '+(metarInicio?metarInicio:(metarInicioListo?'no disponible':'capturando…')));
+  if(tsFin) partes.push('FIN — '+(metarFin?metarFin:(metarFinListo?'no disponible':'capturando…')));
+  if(partes.length){ card.style.display='block'; el.textContent=partes.join('\n'); }
+  else card.style.display='none';
 }
 
 // START / STOP
@@ -2323,7 +2347,7 @@ $('btn-start-stop').addEventListener('click', async ()=>{
     // START — confirmar antes de grabar (evita un toque accidental)
     if(!(await confirmarAccion('¿Iniciar el vuelo ahora?','▶ Sí, iniciar'))) return;
     tsInicio=new Date().toISOString();
-    metarInicio=null;
+    metarInicio=null;metarInicioListo=false;
     obtenerMetar('inicio'); // en segundo plano, no bloquea
     if(gpsHabilitado){
       // Chequear candado ANTES de arrancar el GPS propio — si el alumno ya
@@ -2364,7 +2388,7 @@ $('btn-start-stop').addEventListener('click', async ()=>{
     // STOP — confirmar antes de grabar
     if(!(await confirmarAccion('¿Finalizar el vuelo ahora?','⏹ Sí, finalizar'))) return;
     tsFin=new Date().toISOString();
-    metarFin=null;
+    metarFin=null;metarFinListo=false;
     obtenerMetar('fin'); // en segundo plano, no bloquea
     detenerTrackGPS();
     liberarWakeLock(); // liberar wake lock al aterrizar
@@ -2409,7 +2433,7 @@ function cancelarVuelo(){
     update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:null}).catch(e=>console.warn('No se pudo soltar el candado GPS:',e));
     gpsLockTomadoPorMi=false;
   }
-  tsInicio=null; tsFin=null; metarInicio=null; metarFin=null; guardadoExitoso=false;
+  tsInicio=null; tsFin=null; metarInicio=null; metarFin=null; metarInicioListo=false; metarFinListo=false; guardadoExitoso=false;
   persistir();
   mostrarPantallaVuelo(turnoActual);
   toast('Vuelo cancelado — no se grabó nada');
@@ -2455,6 +2479,7 @@ $('btn-cancelar-modal-si').addEventListener('click',()=>{
 });
 
 function mostrarCierre(){
+  actualizarMetarUI();
   const horas=calcHorasDecimal(tsInicio,tsFin);
   $('t-calculado').textContent=`${horas} hs`;
   $('t-manual').style.display='none';
@@ -2722,7 +2747,7 @@ setInterval(()=>intentarSincronizarPendientes(),30000);
 
 function resetVuelo(){
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
-  tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;turnoActual=null;guardadoExitoso=false;
+  tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;metarInicioListo=false;metarFinListo=false;turnoActual=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   $('btn-start-stop').style.display='';
   $('btn-start-stop').textContent='▶ INICIAR VUELO';
@@ -2738,7 +2763,7 @@ function resetVuelo(){
 
 function persistir(){
   localStorage.setItem(LS,JSON.stringify({
-    turno:turnoActual,tsInicio,tsFin,metarInicio,metarFin,gpsHabilitado,
+    turno:turnoActual,tsInicio,tsFin,metarInicio,metarFin,metarInicioListo,metarFinListo,gpsHabilitado,
     // Borrador del formulario de cierre — así, si la app se cuelga esperando
     // conexión en CONFIRMAR (ver guardar()) y hay que recargarla, no se
     // pierde lo ya tipeado (antes solo se guardaban los timestamps).
