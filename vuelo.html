@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.54 · 2026-08-29
+  Mejora sobre v5.53 (pedido de Daniel: "¿no podemos confiar en GPS/red
+  celular?" ante el caso de un vuelo que no arranca en SAWE): obtenerMetarInicio()
+  ahora pide primero la posición GPS real (getCurrentPosition, independiente
+  del toggle de traza) y busca con CheckWX la estación más cercana a esas
+  coordenadas (radio 100 millas). Si el GPS falla, lo niegan o da timeout, o
+  no hay estación dentro del radio, cae al SAWE fijo (comportamiento de
+  v5.53) como red de seguridad. Sigue siendo fire-and-forget, no bloquea.
+
   v5.53 · 2026-08-29
   Pedido de Daniel: al tocar INICIAR VUELO se pide en paralelo (no bloquea)
   el METAR crudo de SAWE a CheckWX — mismo endpoint/key que usa index.html.
@@ -1584,7 +1593,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.53'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.54'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2242,21 +2251,54 @@ function confirmarAccion(titulo,textoSi){
   });
 }
 
-// METAR al momento del START (v5.53, pedido de Daniel) — mismo endpoint/key
-// que usa index.html. Fire-and-forget: no bloquea el START ni el resto del
-// flujo si CheckWX tarda o falla; si llega, se persiste y viaja con el vuelo.
+// METAR al momento del START (v5.53, mejorado v5.54 — pedido de Daniel):
+// mismo endpoint/key que index.html, pero ahora prioriza la posición GPS real
+// (navigator.geolocation.getCurrentPosition, independiente del toggle de
+// traza) y busca la estación CheckWX más cercana a esas coordenadas — así un
+// vuelo que arranca en otro aeródromo (no SAWE) graba el METAR que corresponde
+// de verdad. Si el GPS falla/lo niegan/da timeout, o no hay estación dentro
+// del radio, cae al SAWE fijo como red de seguridad (comportamiento de v5.53).
+// Fire-and-forget: nunca bloquea el START ni el resto del flujo.
 async function obtenerMetarInicio(){
-  try{
-    const KEY='05639bfe66b24b929b7b0d1aeb313c91';
-    const res=await fetch('https://api.checkwx.com/metar/SAWE/raw',{headers:{'X-API-Key':KEY}});
+  const KEY='05639bfe66b24b929b7b0d1aeb313c91';
+  function extraerRaw(dato){
+    if(typeof dato==='string') return dato;
+    if(dato&&dato.raw_text) return dato.raw_text;
+    throw new Error('respuesta sin raw_text utilizable');
+  }
+  async function metarPorICAO(icao){
+    const res=await fetch('https://api.checkwx.com/metar/'+icao+'/raw',{headers:{'X-API-Key':KEY}});
     if(!res.ok)throw new Error('HTTP '+res.status);
     const json=await res.json();
     if(!json.results||!json.data||!json.data.length)throw new Error('sin datos');
-    metarInicio=json.data[0];
-    persistir();
-  }catch(e){
-    console.warn('No se pudo obtener METAR de inicio:',e);
+    return extraerRaw(json.data[0]);
   }
+  async function metarPorGPS(){
+    if(!navigator.geolocation) throw new Error('sin geolocalización');
+    const pos=await new Promise((res,rej)=>{
+      navigator.geolocation.getCurrentPosition(res,rej,{enableHighAccuracy:false,timeout:6000,maximumAge:60000});
+    });
+    const {latitude:lat,longitude:lon}=pos.coords;
+    // radio 100 millas — margen generoso para Tierra del Fuego, donde los
+    // aeródromos alternativos pueden quedar bastante lejos entre sí.
+    const res=await fetch(`https://api.checkwx.com/metar/lat/${lat}/lon/${lon}/radius/100`,{headers:{'X-API-Key':KEY}});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const json=await res.json();
+    if(!json.results||!json.data||!json.data.length)throw new Error('sin estación cercana');
+    return extraerRaw(json.data[0]);
+  }
+  try{
+    metarInicio=await metarPorGPS();
+  }catch(e){
+    console.warn('METAR por GPS no disponible, cae a SAWE fijo:',e);
+    try{
+      metarInicio=await metarPorICAO('SAWE');
+    }catch(e2){
+      console.warn('No se pudo obtener METAR de inicio (ni GPS ni SAWE):',e2);
+      return;
+    }
+  }
+  persistir();
 }
 
 // START / STOP
