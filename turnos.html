@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.99
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: en ningún lado se veía explícitamente que un turno
+            de un solo slot en LV-ART dura 30min — solo se podía inferir por el
+            tamaño del bloque .media-hora en la grilla. Nueva función
+            horaMasMinutos(hhmm,minutos) calcula el fin real del slot según el
+            avión (30min en AVIONES_MEDIA_HORA, 60min en el resto). Se usa en
+            el modal DETALLE DEL TURNO (campo HORA, antes solo "10:00 hs", ahora
+            "10:00 a 10:30 hs") y en "Mis Turnos" (mismo cambio en
+            .reserva-fecha) — ambos ahora muestran el rango completo, sea de
+            30 o 60 min, sin necesidad de mirar el tamaño de ningún bloque.
   VERSION : 7.98
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: efecto 3D en las celdas de días (.day-btn) y horarios
@@ -3339,7 +3350,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.98</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.99</div>
   </div>
 
 </div>
@@ -5167,6 +5178,18 @@ const TODAS_HORAS_MEDIA=(()=>{const a=[];for(let h=0;h<24;h++)for(const m of['00
 // Avión(es) que usan grilla de 30min en vez de 1hs en el picker de checkboxes de horarios.
 const AVIONES_MEDIA_HORA=['LV-ART'];
 function todasHorasParaAvion(avKey){return AVIONES_MEDIA_HORA.includes(avKey)?TODAS_HORAS_MEDIA:TODAS_HORAS;}
+// v7.99: pedido de Daniel — el modal DETALLE DEL TURNO mostraba solo la hora de
+// inicio de un turno de un solo slot (ej. "10:00 hs"), sin decir en ningún lado
+// cuánto dura ni cuándo termina — la única forma de saber que era de 30min (LV-ART)
+// era fijándose el tamaño del bloque .media-hora en la grilla. Ahora md-hora
+// siempre muestra un rango horaInicio–horaFin explícito, calculando el fin con
+// horaMasMinutos() según la duración real del slot del avión (30min en
+// AVIONES_MEDIA_HORA, 60min en el resto) — no hace falta inferir nada a simple vista.
+function horaMasMinutos(hhmm,minutos){
+  const[h,m]=hhmm.split(':').map(Number);
+  const total=(h*60+m+minutos+1440)%1440;
+  return String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+}
 const HORAS_DEFAULT=['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'];
 const DEFAULT_CONFIG_AVION={
   horariosDia:{0:HORAS_DEFAULT,1:HORAS_DEFAULT,2:HORAS_DEFAULT,3:HORAS_DEFAULT,4:HORAS_DEFAULT,5:HORAS_DEFAULT,6:HORAS_DEFAULT},
@@ -6485,7 +6508,7 @@ function renderMisTurnos(data){
   el.innerHTML=mis.map(r=>`
     <div class="reserva-item">
       <div>
-        <div class="reserva-fecha">${fmtFechaLinda(r.fecha)} — ${r.horaInicio&&r.horaFin?r.horaInicio+' a '+r.horaFin+' hs':r.hora+' hs'}</div>
+        <div class="reserva-fecha">${fmtFechaLinda(r.fecha)} — ${r.horaInicio&&r.horaFin?r.horaInicio+' a '+r.horaFin+' hs':r.hora+' a '+horaMasMinutos(r.hora,AVIONES_MEDIA_HORA.includes(r.avion||'LV-OAD')?30:60)+' hs'}</div>
         <div class="reserva-avion">✈ ${r.avion||'LV-OAD'}</div>
         ${r.estado==='aprobado'&&(r.aprobado_por||r.instructor)?`<div class="reserva-obs">👤 Instructor: ${r.aprobado_por||r.instructor}</div>`:''}
         ${r.obs?`<div class="reserva-obs">${r.obs}</div>`:''}
@@ -7901,7 +7924,7 @@ window.abrirModal=function(key){
   document.getElementById('md-fecha').textContent=fmtFechaLinda(r.fecha);
   document.getElementById('md-hora').textContent=r.horaInicio&&r.horaFin
     ?r.horaInicio+' a '+r.horaFin+' hs (exclusivo)'
-    :r.hora+' hs';
+    :r.hora+' a '+horaMasMinutos(r.hora,AVIONES_MEDIA_HORA.includes(r.avion||'LV-OAD')?30:60)+' hs';
   document.getElementById('md-nombre').textContent=r.nombre;
   document.getElementById('md-email').textContent=r.email;
   const obsRow=document.getElementById('md-obs-row');
