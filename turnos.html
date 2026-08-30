@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.96
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel sobre el calendario de "Bloquear días por avión"
+            (renderCalMes): las celdas de días pasados tenían border:1px solid
+            transparent (invisible) y las celdas de relleno antes del día 1 del
+            mes no tenían border en absoluto — el grid se veía sin recuadros en
+            buena parte de la grilla. Ahora ambas usan border:1px solid var(--border),
+            igual que las celdas normales (no bloqueadas/feriado/hoy), así el
+            grid completo queda con recuadro parejo en todas las celdas.
   VERSION : 7.95
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: en SEGUIMIENTO DE TURNOS, la columna ESTADO ACTUAL
@@ -3310,7 +3319,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.95</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.96</div>
   </div>
 
 </div>
@@ -8846,7 +8855,11 @@ async function renderCalMes(){
     h.style.cssText='font-family:var(--font-mono);font-size:10px;color:var(--text3);text-align:center;padding:4px 0;letter-spacing:.08em';
     h.textContent=lbl;wrap.appendChild(h);
   });
-  for(let i=0;i<primerDow;i++){wrap.appendChild(document.createElement('div'));}
+  for(let i=0;i<primerDow;i++){
+    const filler=document.createElement('div');
+    filler.style.cssText='border:1px solid var(--border);border-radius:var(--radius);min-height:42px;';
+    wrap.appendChild(filler);
+  }
   for(let d=1;d<=diasEnMes;d++){
     const ds=año+'-'+String(mes+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
     const bl=bloqueados.includes(ds);
@@ -8854,7 +8867,7 @@ async function renderCalMes(){
     const motivoFeriado=feriados[ds]||'';
     const cell=document.createElement('div');
     cell.style.cssText='text-align:center;padding:6px 2px;border-radius:var(--radius);font-family:var(--font-mono);font-size:12px;transition:all .15s;position:relative;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:2px;';
-    if(pasado){cell.style.color='var(--text3)';cell.style.border='1px solid transparent';cell.style.cursor='default';}
+    if(pasado){cell.style.color='var(--text3)';cell.style.border='1px solid var(--border)';cell.style.cursor='default';}
     else if(bl){cell.style.background='rgba(248,81,73,.15)';cell.style.border='1px solid rgba(248,81,73,.4)';cell.style.color='var(--red)';cell.style.cursor='pointer';cell.style.fontWeight='600';}
     else if(esFeriado){cell.style.background='rgba(240,165,0,.1)';cell.style.border='1px solid rgba(240,165,0,.35)';cell.style.color='var(--amber)';cell.style.cursor='pointer';}
     else if(esHoy){cell.style.background='rgba(0,200,212,.08)';cell.style.border='1px solid rgba(0,200,212,.3)';cell.style.color='var(--cyan)';cell.style.cursor='pointer';}
