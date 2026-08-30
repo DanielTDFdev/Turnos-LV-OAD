@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.40 · 2026-08-30
+  Mismo cambio en paralelo que vuelo.html v5.56 (pedido de Daniel — corrige
+  también un bump que había quedado sin aplicar en v4.39): el METAR de
+  inicio/fin ahora se muestra de forma persistente en TAB LIBRO (histórico
+  por día), debajo de ▶/⏹/datos de cada vuelo — antes solo se veía en la card
+  de la pantalla de cierre, que desaparece al guardar.
+
   v4.39 · 2026-08-30
   Mismo cambio en paralelo que vuelo.html v5.55 (pedido de Daniel): grabar
   también el METAR de FINALIZAR VUELO, sea el mismo aeródromo de salida o
@@ -1446,7 +1453,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.39';
+const APP_VERSION = '4.40';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3034,6 +3041,7 @@ async function cargarLibro(){
           <span>⏹ <span class="vr-val">${aterr}</span></span>
           ${datosHtml}
         </div>
+        ${(r.metar_inicio||r.metar_fin)?`<div class="vr-obs" style="white-space:pre-line">${[r.metar_inicio?'🌤 INI '+escObs(r.metar_inicio):'',r.metar_fin?'🌤 FIN '+escObs(r.metar_fin):''].filter(Boolean).join('\n')}</div>`:''}
         ${obsVisible?`<div class="vr-obs">${escObs(obsVisible)}</div>`:''}
         ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
       </div>`;

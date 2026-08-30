@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.56 · 2026-08-30
+  Pedido de Daniel: la card METAR de la pantalla de cierre (agregada en v5.55,
+  aunque por error de bump quedó sin subir la versión real — corregido acá)
+  solo se veía durante ese momento puntual. Ahora el METAR de inicio/fin
+  también se muestra de forma persistente en TAB LIBRO (histórico por día),
+  debajo de los datos ▶/⏹/⏱/🛬 de cada vuelo — mismo lugar donde ya se puede
+  volver a consultar tiempo/aterrizajes después de guardado. Mismo cambio en
+  paralelo en vuelo-piloto.html v4.40.
+
   v5.55 · 2026-08-30
   Pedido de Daniel: grabar también el METAR de FINALIZAR VUELO, sea el mismo
   aeródromo de salida o uno distinto (el METAR real de ese AD). obtenerMetarInicio()
@@ -1610,7 +1619,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.55'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.56'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3040,6 +3049,7 @@ async function cargarLibro(){
           <span>🛬 <span class="vr-val">${aterrizajes}</span></span>
           ${tieneObs?'<span class="badge-ok">obs ✓</span>':''}
         </div>
+        ${(r.metar_inicio||r.metar_fin)?`<div class="vr-obs" style="white-space:pre-line">${[r.metar_inicio?'🌤 INI '+escN(r.metar_inicio):'',r.metar_fin?'🌤 FIN '+escN(r.metar_fin):''].filter(Boolean).join('\n')}</div>`:''}
         ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+''+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
       </div>`;
     }).join('');
