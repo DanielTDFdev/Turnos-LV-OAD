@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.14 · Pedido de Daniel: tercera sección "◈ Horas por alumno/piloto", mismo
+         patrón que la de instructor (fechas desde/hasta + selector, GENERAR,
+         PDF/EXCEL). Selector poblado desde /alumnos (value=email, más estable
+         que nombre para agrupar — evita colisiones de homónimos). Se agrupa
+         por email; cada alumno/piloto muestra sus stats (vuelos volados,
+         horas, aterrizajes, no volados) y el detalle de turnos con quién lo
+         instruyó/aprobó en cada uno (columna Instructor, inversa de la tabla
+         del reporte de instructor que muestra el alumno). imprimirPDF() ahora
+         soporta 3 modos (aviones/instructor/alumno) — cada botón PDF imprime
+         solo su sección, ocultando las otras dos.
+
   v1.13 · Fix relacionado a turnos.html v7.92 (bug de aprobado_por en VUELO
          HISTÓRICO, ver ese comentario): clasificar() ahora también entra a la
          rama esVolado() cuando r.es_historico es true, no solo con
@@ -312,14 +323,15 @@ table.det tbody td.gray{color:var(--text3)}
 @media print{
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body{background:#fff!important;color:#111!important}
-  header.bar,#gate,#spinner,#spinner-inst,.filtros-card,.btn-pdf,.btn-pdf-inst,.btn-back,.btn-gen,hr{display:none!important}
-  /* v1.6: imprimirPDF() marca <body> con print-aviones o print-instructor antes de
-     window.print() — evita que ambas secciones salgan juntas en el PDF cuando las
-     dos fueron generadas en la misma sesión (antes se forzaba display:block en
-     #reporte Y #reporte-inst sin importar cuál botón PDF se apretó). */
-  body.print-aviones #reporte-inst{display:none!important}
-  body.print-instructor #reporte{display:none!important}
-  #reporte,#reporte-inst{display:block!important}
+  header.bar,#gate,#spinner,#spinner-inst,#spinner-alu,.filtros-card,.btn-pdf,.btn-pdf-inst,.btn-back,.btn-gen,hr{display:none!important}
+  /* v1.6: imprimirPDF() marca <body> con print-aviones/print-instructor/print-alumno
+     (v1.14) antes de window.print() — evita que las otras secciones salgan juntas en
+     el PDF cuando fueron generadas en la misma sesión (antes se forzaba display:block
+     en las tres sin importar cuál botón PDF se apretó). */
+  body.print-aviones #reporte-inst,body.print-aviones #reporte-alu{display:none!important}
+  body.print-instructor #reporte,body.print-instructor #reporte-alu{display:none!important}
+  body.print-alumno #reporte,body.print-alumno #reporte-inst{display:none!important}
+  #reporte,#reporte-inst,#reporte-alu{display:block!important}
   :root{
     --navy:#fff;--blue:#f0f4f8;--blue2:#e8eff7;
     --text:#111;--text2:#444;--text3:#666;
@@ -366,7 +378,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.13</span>
+      <span class="ver">v1.14</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -476,6 +488,52 @@ table.det tbody td.gray{color:var(--text3)}
       <div id="inst-detalle"></div>
     </div>
 
+    <!-- ── SEPARADOR ── -->
+    <hr style="border:none;border-top:1px solid var(--border2);margin:40px 0 32px">
+
+    <!-- Filtros reporte alumno/piloto -->
+    <div class="filtros-card">
+      <h2>◈ Horas por alumno/piloto</h2>
+      <div class="filtros-row">
+        <div class="field-g">
+          <label>Fecha desde</label>
+          <input type="date" id="p-desde">
+        </div>
+        <div class="field-g">
+          <label>Fecha hasta</label>
+          <input type="date" id="p-hasta">
+        </div>
+        <div class="field-g">
+          <label>Alumno/Piloto</label>
+          <select id="p-alumno">
+            <option value="todos">Todos</option>
+          </select>
+        </div>
+        <div class="field-g">
+          <label>&nbsp;</label>
+          <button class="btn-gen" id="btn-generar-alu">▶ GENERAR</button>
+        </div>
+        <div class="field-g">
+          <label>&nbsp;</label>
+          <button class="btn-pdf" id="btn-pdf-alu" style="display:none" onclick="imprimirPDF('alumno')">⬇ PDF</button>
+          <button class="btn-xls" id="btn-xls-alu" style="display:none" onclick="exportarExcelAlumno()">⬇ EXCEL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spinner alumno -->
+    <div id="spinner-alu" style="display:none;text-align:center;padding:40px;font-family:var(--font-mono);color:var(--cyan);font-size:13px">⟳ Cargando datos...</div>
+
+    <!-- Reporte alumno -->
+    <div id="reporte-alu" style="display:none">
+      <div class="reporte-header">
+        <h2 id="rep-alu-titulo">HORAS POR ALUMNO/PILOTO</h2>
+        <p id="rep-alu-subtitulo"></p>
+      </div>
+      <div class="stats-globales" id="alu-stats-globales"></div>
+      <div id="alu-detalle"></div>
+    </div>
+
   </div><!-- /main-content -->
 </div><!-- /wrap -->
 
@@ -486,8 +544,10 @@ import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.7.1
 // ── Estado para exportación Excel ────────────────────────────
 let _datosAeronaves = []; // filas del reporte de aeronaves
 let _datosInstructor = []; // filas del reporte de instructor
+let _datosAlumno = []; // filas del reporte de alumno/piloto
 let _paramsAeronaves = {}; // parámetros usados al generar
 let _paramsInstructor = {};
+let _paramsAlumno = {};
 
 // ── Firebase config ──────────────────────────────────────────
 const app = initializeApp({
@@ -881,6 +941,211 @@ if (ok) {
   document.getElementById('btn-generar-inst').addEventListener('click', generarReporteInstructor);
 }
 
+// ── REPORTE ALUMNO/PILOTO ────────────────────────────────────
+
+// Poblar selector de alumnos/pilotos desde Firebase — value=email (clave estable,
+// evita colisiones de nombres repetidos), label="Nombre (rol)".
+async function cargarAlumnos() {
+  try {
+    const snap = await get(ref(db, 'alumnos'));
+    const data = snap.val() || {};
+    const sel = document.getElementById('p-alumno');
+    while (sel.options.length > 1) sel.remove(1);
+    Object.values(data)
+      .filter(a => a && a.email)
+      .sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''))
+      .forEach(a => {
+        const opt = document.createElement('option');
+        opt.value = a.email;
+        const rolLbl = a.rol === 'piloto' ? 'Piloto' : 'Alumno';
+        opt.textContent = `${a.nombre||a.email} (${rolLbl})`;
+        sel.appendChild(opt);
+      });
+  } catch(e) { console.warn('No se pudo cargar alumnos:', e); }
+}
+
+if (ok) {
+  cargarAlumnos();
+  const ahora3 = new Date();
+  const primer3 = new Date(ahora3.getFullYear(), ahora3.getMonth(), 1);
+  document.getElementById('p-desde').value = fmtDate(primer3);
+  document.getElementById('p-hasta').value = fmtDate(ahora3);
+  document.getElementById('btn-generar-alu').addEventListener('click', generarReporteAlumno);
+}
+
+async function generarReporteAlumno() {
+  const desde = document.getElementById('p-desde').value;
+  const hasta = document.getElementById('p-hasta').value;
+  const alumnoFiltro = document.getElementById('p-alumno').value;
+
+  if (!desde || !hasta) { alert('Seleccioná ambas fechas.'); return; }
+  if (desde > hasta)    { alert('La fecha "desde" debe ser anterior a "hasta".'); return; }
+
+  document.getElementById('spinner-alu').style.display = 'block';
+  document.getElementById('reporte-alu').style.display = 'none';
+  document.getElementById('btn-pdf-alu').style.display = 'none';
+
+  let reservas = [];
+  try {
+    const snap = await get(ref(db, 'reservas'));
+    reservas = rArr(snap.val());
+  } catch(e) {
+    document.getElementById('spinner-alu').style.display = 'none';
+    alert('Error al leer Firebase: ' + e.message);
+    return;
+  }
+
+  const hoyStr = hoy();
+  const volados = reservas.filter(r => {
+    if (!r.fecha) return false;
+    if (r.fecha < desde || r.fecha > hasta) return false;
+    const cls = clasificar(r);
+    return cls === 'volado' || cls === 'no_realizado';
+  });
+
+  // Clave de agrupación: email (estable) — nombre solo para mostrar, por si el
+  // registro tiene email vacío en algún caso viejo (fallback al nombre).
+  const claveDe = r => (r.email||'').trim().toLowerCase() || ('__sinemail__'+(r.nombre||'').trim());
+  const nombreDe = r => r.nombre || r.email || '(sin nombre)';
+
+  const filtrados = alumnoFiltro === 'todos'
+    ? volados
+    : volados.filter(r => (r.email||'').trim().toLowerCase() === alumnoFiltro.toLowerCase());
+
+  // Agrupar por alumno/piloto
+  const porAlu = {};
+  filtrados.forEach(r => {
+    const k = claveDe(r);
+    if (!porAlu[k]) porAlu[k] = [];
+    porAlu[k].push(r);
+  });
+
+  const aluOrdenados = Object.entries(porAlu).sort((a, b) => {
+    const hA = a[1].reduce((s,r) => s + parseHoras(horasDe(r)), 0);
+    const hB = b[1].reduce((s,r) => s + parseHoras(horasDe(r)), 0);
+    return hB - hA;
+  });
+
+  // ── Totales globales ────────────────────────────────────────
+  const totVol   = filtrados.filter(r => clasificar(r) === 'volado').length;
+  const totHoras = filtrados.reduce((s,r) => s + parseHoras(horasDe(r)), 0);
+  const totAterr = filtrados.reduce((s,r) => s + parseInt(aterrDe(r)||0), 0);
+  const totNoRealizados = filtrados.filter(r => clasificar(r) === 'no_realizado').length;
+
+  document.getElementById('alu-stats-globales').innerHTML = `
+    <div class="stat-box green"><span class="num">${totVol}</span><span class="lbl">Vuelos realizados</span></div>
+    <div class="stat-box" style="--cyan:#00c8d4"><span class="num" style="color:var(--cyan)">${fmtHoras(totHoras)}</span><span class="lbl">Horas totales</span></div>
+    <div class="stat-box"><span class="num" style="color:#60a5fa">${totAterr||'—'}</span><span class="lbl">Aterrizajes</span></div>
+    <div class="stat-box"><span class="num" style="color:var(--text3)">${totNoRealizados}</span><span class="lbl">No volados</span></div>
+    <div class="stat-box"><span class="num" style="color:var(--text2)">${Object.keys(porAlu).length}</span><span class="lbl">Alumnos/Pilotos</span></div>
+  `;
+
+  // ── Render por alumno/piloto ─────────────────────────────────
+  const cont = document.getElementById('alu-detalle');
+  cont.innerHTML = '';
+
+  if (aluOrdenados.length === 0) {
+    cont.innerHTML = '<div class="empty-avion" style="border-radius:var(--radius)">Sin vuelos realizados en el período seleccionado.</div>';
+  }
+
+  aluOrdenados.forEach(([, rs]) => {
+    const aluNombre = nombreDe(rs[0]);
+    const aluRol = rs[0].rol === 'piloto' ? 'Piloto' : 'Alumno';
+    const aHoras  = rs.reduce((s,r) => s + parseHoras(horasDe(r)), 0);
+    const aAterr  = rs.reduce((s,r) => s + parseInt(aterrDe(r)||0), 0);
+    const aNoRealizados = rs.filter(r => clasificar(r) === 'no_realizado').length;
+    const aVol    = rs.filter(r => clasificar(r) === 'volado').length;
+
+    const aviones = [...new Set(rs.map(r => r.avion||'LV-OAD'))].join(' / ');
+    const ordenados = [...rs].sort((a,b) => b.fecha.localeCompare(a.fecha)||(b.hora||'').localeCompare(a.hora||''));
+
+    const filas = ordenados.map(r => {
+      const cls = clasificar(r);
+      const horas = cls==='volado'
+        ? `<span class="green">${rawHoras(horasDe(r))}</span>`
+        : '<span class="muted">—</span>';
+      const aterr = cls==='volado' && aterrDe(r)
+        ? `<span class="green">${aterrDe(r)}</span>`
+        : '<span class="muted">—</span>';
+      const estadoBadge = cls==='volado'
+        ? '<span class="badge vol">VOLADO</span>'
+        : '<span class="badge nvo">NO VOLADO</span>';
+      const avion  = esc(r.avion||'LV-OAD');
+      const tipo   = (r.tipo_vuelo||'instruccion')==='particular' ? 'Particular' : 'Instrucción';
+      const inst   = esc((r.aprobado_por || r.instructor || '—'));
+      return `<tr>
+        <td class="muted">${fmtDD(r.fecha)}</td>
+        <td class="muted">${r.hora||r.horaInicio||'—'}</td>
+        <td class="muted">${avion}</td>
+        <td class="muted">${tipo}</td>
+        <td>${estadoBadge}</td>
+        <td>${horas}</td>
+        <td>${aterr}</td>
+        <td class="muted">${inst}</td>
+      </tr>`;
+    }).join('');
+
+    cont.innerHTML += `
+      <div class="inst-section">
+        <div class="inst-header">
+          <div>
+            <div class="iname">${esc(aluNombre)} <span style="font-size:11px;color:var(--text3);font-weight:400">(${aluRol})</span></div>
+            <div class="iavion">Aeronaves: ${aviones}</div>
+          </div>
+          <div class="horas-badge">⏱ ${fmtHoras(aHoras)}</div>
+        </div>
+        <div class="inst-stats">
+          <div class="inst-stat"><span class="n" style="color:var(--green)">${aVol}</span><span class="l">Vuelos volados</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--cyan)">${fmtHoras(aHoras)}</span><span class="l">Horas de vuelo</span></div>
+          <div class="inst-stat"><span class="n" style="color:#60a5fa">${aAterr||'—'}</span><span class="l">Aterrizajes</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--text3)">${aNoRealizados}</span><span class="l">No volados</span></div>
+          <div class="inst-stat"><span class="n" style="color:var(--text3)">${rs.length}</span><span class="l">Total turnos</span></div>
+        </div>
+        <div class="tabla-wrap">
+          <table class="det">
+            <thead><tr>
+              <th>Fecha</th><th>Hora</th><th>Avión</th><th>Tipo</th>
+              <th>Estado</th><th>Hs. vuelo</th><th>Aterr.</th><th>Instructor</th>
+            </tr></thead>
+            <tbody>${filas}</tbody>
+          </table>
+        </div>
+      </div>`;
+  });
+
+  const aluLabel = alumnoFiltro === 'todos'
+    ? 'Todos'
+    : (aluOrdenados[0] ? nombreDe(aluOrdenados[0][1][0]) : alumnoFiltro);
+  document.getElementById('rep-alu-titulo').textContent =
+    `HORAS POR ALUMNO/PILOTO — ${aluLabel.toUpperCase()}`;
+  document.getElementById('rep-alu-subtitulo').textContent =
+    `Período: ${fmtDD(desde)} al ${fmtDD(hasta)}  ·  Generado: ${fmtDD(hoyStr)}  ·  Por: ${nombre}`;
+
+  _paramsAlumno = { desde, hasta, alumno: alumnoFiltro };
+  _datosAlumno = filtrados.map(r => {
+    const cls = clasificar(r);
+    return {
+      'Fecha': fmtDD(r.fecha),
+      'Hora': r.hora || r.horaInicio || '',
+      'Alumno/Piloto': nombreDe(r),
+      'Rol': r.rol === 'piloto' ? 'Piloto' : 'Alumno',
+      'Avión': r.avion || 'LV-OAD',
+      'Tipo de vuelo': (r.tipo_vuelo||'instruccion')==='particular'?'Particular':'Instrucción',
+      'Estado': cls==='volado'?'Volado':'No volado',
+      'Horas de vuelo': horasDe(r) || '',
+      'Aterrizajes': aterrDe(r) || '',
+      'Instructor': r.aprobado_por || r.instructor || '',
+    };
+  });
+
+  document.getElementById('spinner-alu').style.display = 'none';
+  document.getElementById('reporte-alu').style.display = 'block';
+  document.getElementById('btn-pdf-alu').style.display = 'block';
+  document.getElementById('btn-xls-alu').style.display = 'block';
+
+  document.getElementById('reporte-alu').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 async function generarReporteInstructor() {
   const desde = document.getElementById('i-desde').value;
   const hasta  = document.getElementById('i-hasta').value;
@@ -1069,7 +1334,7 @@ async function generarReporteInstructor() {
 // el CSS @media print usa para ocultar la sección que no corresponde, imprime,
 // y limpia la clase al volver (afterprint cubre cancelar el diálogo también).
 window.imprimirPDF = function(seccion) {
-  const cls = seccion === 'aviones' ? 'print-aviones' : 'print-instructor';
+  const cls = seccion === 'aviones' ? 'print-aviones' : (seccion === 'instructor' ? 'print-instructor' : 'print-alumno');
   document.body.classList.add(cls);
   const limpiar = () => { document.body.classList.remove(cls); window.removeEventListener('afterprint', limpiar); };
   window.addEventListener('afterprint', limpiar);
@@ -1157,6 +1422,47 @@ window.exportarExcelInstructor = function() {
 
   const instLabel = inst === 'todos' ? 'Todos' : inst.replace(/ /g,'_');
   XLSX.writeFile(wb, `Horas_Instructor_${instLabel}_${desde}_${hasta}.xlsx`);
+};
+
+window.exportarExcelAlumno = function() {
+  if (!_datosAlumno.length) return;
+  const { desde, hasta, alumno } = _paramsAlumno;
+  const wb = XLSX.utils.book_new();
+
+  // Hoja detalle
+  const ws = XLSX.utils.json_to_sheet(_datosAlumno);
+  ws['!cols'] = [{wch:12},{wch:8},{wch:28},{wch:10},{wch:10},{wch:14},{wch:14},{wch:14},{wch:10},{wch:22}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalle');
+
+  // Hoja resumen: totales por alumno/piloto
+  const porAlu = {};
+  _datosAlumno.forEach(r => {
+    const k = r['Alumno/Piloto'] || '(sin registrar)';
+    if (!porAlu[k]) porAlu[k] = [];
+    porAlu[k].push(r);
+  });
+  const resumenRows = Object.entries(porAlu)
+    .map(([aluNombre, rs]) => {
+      const horas = rs.reduce((s,r) => s + parseFloat(r['Horas de vuelo']||0), 0);
+      const aterr = rs.reduce((s,r) => s + parseInt(r['Aterrizajes']||0), 0);
+      return {
+        'Alumno/Piloto': aluNombre,
+        'Rol': rs[0]['Rol'] || '',
+        'Vuelos volados': rs.filter(r=>r['Estado']==='Volado').length,
+        'Horas de vuelo': horas ? Math.round(horas*100)/100 : '',
+        'Aterrizajes': aterr || '',
+        'No volados': rs.filter(r=>r['Estado']==='No volado').length,
+        'Total turnos': rs.length,
+      };
+    })
+    .sort((a,b) => (b['Horas de vuelo']||0) - (a['Horas de vuelo']||0));
+
+  const wsRes = XLSX.utils.json_to_sheet(resumenRows);
+  wsRes['!cols'] = [{wch:26},{wch:10},{wch:14},{wch:14},{wch:12},{wch:10},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen por alumno-piloto');
+
+  const aluLabel = alumno === 'todos' ? 'Todos' : (_datosAlumno[0]?.['Alumno/Piloto']||alumno).replace(/ /g,'_');
+  XLSX.writeFile(wb, `Horas_Alumno_${aluLabel}_${desde}_${hasta}.xlsx`);
 };
 </script>
 </body>
