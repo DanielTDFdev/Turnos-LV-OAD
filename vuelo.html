@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.57 · 2026-08-30
+  Pedido de Daniel: al tocar FINALIZAR VUELO había que scrollear para ver el
+  formulario de cierre (tiempo/METAR/aterrizajes/obs/confirmar) — quedaba
+  dibujado más abajo en el flujo normal de la página, sin indicación visual
+  de que había algo para hacer. #v-cierre pasa a ser un overlay de pantalla
+  completa (mismo patrón .modal-overlay ya usado en cancelar-modal-overlay/
+  accion-modal-overlay), centrado, con scroll propio si el contenido no
+  entra en la altura de pantalla. Sin cambios de lógica — mostrarCierre()/
+  guardar() siguen igual, solo cambió display:block→flex. Mismo cambio en
+  paralelo en vuelo-piloto.html v4.41.
+
   v5.56 · 2026-08-30
   Pedido de Daniel: la card METAR de la pantalla de cierre (agregada en v5.55,
   aunque por error de bump quedó sin subir la versión real — corregido acá)
@@ -1328,6 +1339,24 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 .accion-modal-title{font-family:var(--disp);font-size:16px;color:var(--white);letter-spacing:.03em;margin-bottom:18px}
 .accion-modal-btns{display:flex;flex-direction:column;gap:10px}
 .accion-modal-btns .btn{margin:0;font-size:14px;padding:13px}
+
+/* v5.57: pedido de Daniel — al tocar FINALIZAR VUELO, el formulario de cierre
+   (tiempo/METAR/aterrizajes/obs/confirmar) quedaba dibujado más abajo en el
+   flujo normal de la página, fuera de vista — había que scrollear para
+   encontrar el spinner de aterrizajes y el botón de confirmar, y eso generaba
+   confusión ("¿tocué FINALIZAR y no pasó nada?"). Ahora #v-cierre es un
+   overlay fijo de pantalla completa (mismo patrón que cancelar-modal-overlay/
+   accion-modal-overlay), centrado, con scroll propio si el contenido no
+   entra — aparece inmediatamente arriba de todo apenas se toca FINALIZAR,
+   sin tocar la lógica de mostrarCierre()/guardar() (solo display block→flex). */
+.cierre-modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:1100;
+  align-items:flex-start;justify-content:center;padding:20px;overflow-y:auto;
+}
+.cierre-modal{
+  background:var(--bg);border:1px solid rgba(0,200,212,.3);border-radius:14px;
+  padding:18px 16px 22px;max-width:420px;width:100%;margin:20px 0;
+}
 </style>
 </head>
 <body>
@@ -1469,7 +1498,8 @@ textarea{resize:none;min-height:80px;line-height:1.5}
       </button>
 
       <!-- Formulario cierre (oculto hasta STOP) -->
-      <div id="v-cierre" style="display:none">
+      <div id="v-cierre" class="cierre-modal-overlay" style="display:none">
+       <div class="cierre-modal">
         <div class="card" id="metar-card" style="display:none">
           <div class="card-title">METAR</div>
           <div id="metar-info" style="font-family:var(--mono);font-size:12px;color:var(--gray);white-space:pre-line;line-height:1.5"></div>
@@ -1506,6 +1536,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
         <div class="err" id="c-err" style="margin-top:4px"></div>
         <button class="btn btn-green" id="btn-confirmar">✓ CONFIRMAR Y GUARDAR</button>
         <button class="btn btn-ghost" id="btn-nuevo-vuelo">Nuevo vuelo</button>
+       </div>
       </div>
 
       <!-- Confirmación guardado -->
@@ -1515,6 +1546,7 @@ textarea{resize:none;min-height:80px;line-height:1.5}
         <div style="font-family:var(--mono);font-size:13px;color:var(--gray);margin-bottom:24px" id="guardado-detalle"></div>
         <button class="btn btn-cyan" id="btn-otro-vuelo">Siguiente vuelo</button>
       </div>
+
 
       <button class="btn btn-ghost" id="btn-cambiar-turno" style="margin-top:4px">← Cambiar turno</button>
     </div>
@@ -1619,7 +1651,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.56'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.57'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2498,7 +2530,7 @@ function mostrarCierre(){
   $('c-aterr').value='0';
   $('c-aterr-display').textContent='0';
   $('c-obs').value='';
-  $('v-cierre').style.display='block';
+  $('v-cierre').style.display='flex';
   $('v-guardado').style.display='none';
   $('btn-start-stop').style.display='none';
   // Restaurar borrador si venía de una recarga a mitad de cierre (ver
