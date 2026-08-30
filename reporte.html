@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.15 · FIX reportado por Daniel: el Excel exportado (Detalle de aeronaves/
+         instructor/alumno) salía SIN ordenar por fecha — _datosAeronaves/
+         _datosInstructor/_datosAlumno se armaban con .map() directo sobre
+         filtradas/filtrados, en el orden de creación del turno en Firebase,
+         no por fecha de vuelo. La tabla en pantalla sí ordena (variable
+         `ordenados`, sort por fecha+hora desc) así que un alumno con DOS
+         turnos el mismo día (uno no volado a la mañana, otro volado a la
+         tarde) los veía juntos en pantalla pero salteados en cualquier lado
+         del Excel — parecía un dato faltante/contradictorio cuando en
+         realidad estaban los dos, solo que desordenados. Fix: las tres
+         fuentes ahora se ordenan (mismo criterio que `ordenados`: fecha
+         desc, hora desc) antes de mapear a filas de Excel.
+
   v1.14 · Pedido de Daniel: tercera sección "◈ Horas por alumno/piloto", mismo
          patrón que la de instructor (fechas desde/hasta + selector, GENERAR,
          PDF/EXCEL). Selector poblado desde /alumnos (value=email, más estable
@@ -378,7 +391,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.14</span>
+      <span class="ver">v1.15</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -875,7 +888,7 @@ async function generarReporte() {
 
   // Guardar datos procesados para exportación Excel
   _paramsAeronaves = { desde, hasta, avion: avionFiltro };
-  _datosAeronaves = filtradas.map(r => {
+  _datosAeronaves = [...filtradas].sort((a,b)=>b.fecha.localeCompare(a.fecha)||(b.hora||'').localeCompare(a.hora||'')).map(r => {
     const cls = clasificar(r);
     const estadoLabel = {
       'volado':'Volado','no_realizado':'No volado',
@@ -1122,7 +1135,7 @@ async function generarReporteAlumno() {
     `Período: ${fmtDD(desde)} al ${fmtDD(hasta)}  ·  Generado: ${fmtDD(hoyStr)}  ·  Por: ${nombre}`;
 
   _paramsAlumno = { desde, hasta, alumno: alumnoFiltro };
-  _datosAlumno = filtrados.map(r => {
+  _datosAlumno = [...filtrados].sort((a,b)=>b.fecha.localeCompare(a.fecha)||(b.hora||'').localeCompare(a.hora||'')).map(r => {
     const cls = clasificar(r);
     return {
       'Fecha': fmtDD(r.fecha),
@@ -1303,7 +1316,7 @@ async function generarReporteInstructor() {
 
   // Guardar datos procesados para exportación Excel
   _paramsInstructor = { desde, hasta, inst: instFiltro };
-  _datosInstructor = filtrados.map(r => {
+  _datosInstructor = [...filtrados].sort((a,b)=>b.fecha.localeCompare(a.fecha)||(b.hora||'').localeCompare(a.hora||'')).map(r => {
     const cls = clasificar(r);
     return {
       'Fecha': fmtDD(r.fecha),
