@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.93
+  FECHA   : 2026-08-29
+  CAMBIOS : Pedido de Daniel sobre el modal VUELO HISTÓRICO: "Tipo de vuelo" ahora
+            sigue a "Instructor que voló" — si queda/vuelve a "— Sin instructor
+            (particular) —" (value vacío), Tipo de vuelo se autocompleta a
+            "Particular" (onchange inline en ct-hist-instructor). También se corrigió
+            el DEFAULT inicial del modal: antes abría con instructor vacío pero tipo
+            "Instrucción" (inconsistente a simple vista, como se ve en la captura de
+            Daniel) — ahora abre con ambos consistentes: sin instructor + particular.
+            No toca el sentido inverso (elegir un instructor no fuerza Tipo de vuelo a
+            Instrucción) — un instructor puede acompañar un vuelo particular sin que
+            sea formalmente instrucción, no se quiso asumir eso.
   VERSION : 7.92
   FECHA   : 2026-08-29
   CAMBIOS : FIX reportado por Daniel: cargó un vuelo histórico particular con "— Sin
@@ -3274,7 +3286,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.92</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.93</div>
   </div>
 
 </div>
@@ -4374,7 +4386,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       </div>
       <div class="field">
         <label>Instructor que voló <span style="font-size:10px;color:var(--text3)">(opcional)</span></label>
-        <select id="ct-hist-instructor"><option value="">— Sin instructor (particular) —</option></select>
+        <select id="ct-hist-instructor" onchange="if(!this.value)document.getElementById('ct-hist-tipovuelo').value='particular'"><option value="">— Sin instructor (particular) —</option></select>
       </div>
       <div class="field">
         <label>Tipo de vuelo</label>
@@ -9189,7 +9201,7 @@ async function abrirModalCargarTurno(){
   document.getElementById('ct-hist-tiempo').value='';
   document.getElementById('ct-hist-aterr').value='';
   document.getElementById('ct-hist-obs').value='';
-  document.getElementById('ct-hist-tipovuelo').value='instruccion';
+  document.getElementById('ct-hist-tipovuelo').value='particular';
   // Resetear modo a turno
   _ctModo='turno';
   ctSetModo('turno');
