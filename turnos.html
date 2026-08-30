@@ -1,5 +1,24 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.92
+  FECHA   : 2026-08-29
+  CAMBIOS : FIX reportado por Daniel: cargó un vuelo histórico particular con "— Sin
+            instructor (particular) —" en el modal "VUELO HISTÓRICO" (dentro de
+            "+ CARGAR TURNO"), pero el vuelo apareció en SU PROPIO Libro de vuelo.html
+            como si él hubiera sido el instructor. Causa: guardarVueloHistorico()
+            escribía `aprobado_por: instSel || (session.nombre||session.user||'')` —
+            cuando instSel era '' (opción "sin instructor" elegida a propósito), el
+            operador || caía en el instructor LOGUEADO (quien está cargando el dato
+            histórico), no en "nadie". El modal de detalle del turno no lo mostraba
+            (esa fila solo mira r.instructor, que si quedaba correctamente vacío —
+            'instructor: instSel||""' ya estaba bien), pero vuelo.html/reporte.html sí
+            miran r.aprobado_por, así que el vuelo se filtraba mal ahí. Fix: sin
+            fallback — instructor/aprobado_por ahora solo se agregan al objeto si
+            instSel es realmente un instructor elegido (mismo patrón que ya usa
+            guardarTurnoManual() para el modo Turno Futuro, que nunca tuvo este bug).
+            El registro histórico ya guardado con este bug NO se corrige solo — si
+            Daniel carga otro con el mismo problema, hay que ir a Reservas y borrarle
+            aprobado_por/instructor a mano (o borrar y volver a cargar).
   VERSION : 7.91
   FECHA   : 2026-08-29
   CAMBIOS : FIX de v7.90 (reportado por Daniel con captura): el botón "✎ CARGAR
@@ -3255,7 +3274,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.91</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.92</div>
   </div>
 
 </div>
@@ -9387,8 +9406,15 @@ window.guardarVueloHistorico = async function() {
     fecha, hora, avion,
     tipo_vuelo: tipoV,
     estado:    'vencido',      // clasificado como vuelo realizado
-    aprobado_por: instSel || (session.nombre || session.user || ''),
-    instructor:   instSel || '',
+    // v7.92 FIX (reportado por Daniel): antes `aprobado_por: instSel || (session.nombre...)`
+    // caía en el instructor LOGUEADO cuando se elegía "— Sin instructor (particular) —"
+    // (instSel==='') — el vuelo quedaba atribuido a quien lo CARGÓ, no a quien lo VOLÓ.
+    // Consecuencia real: aparecía en el Libro de vuelo.html del instructor que cargó el
+    // dato, como si hubiera sido su alumno/vuelo, aunque el modal de detalle no mostrara
+    // fila INSTRUCTOR/APROBÓ (esa fila solo mira r.instructor, no r.aprobado_por — por
+    // eso no se notaba ahí). Fix: sin fallback — instructor/aprobado_por solo se agregan
+    // al objeto si instSel es realmente un instructor elegido, igual que guardarTurnoManual().
+    ...(instSel ? { aprobado_por: instSel, instructor: instSel } : {}),
     obs_privada_tiempo_vuelo: tiempo,
     obs_privada_aterrizajes:  aterr || null,
     obs_privada:              obs || null,

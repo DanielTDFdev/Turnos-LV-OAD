@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.13 · Fix relacionado a turnos.html v7.92 (bug de aprobado_por en VUELO
+         HISTÓRICO, ver ese comentario): clasificar() ahora también entra a la
+         rama esVolado() cuando r.es_historico es true, no solo con
+         aprobado_por o tipo_vuelo particular — un histórico de INSTRUCCIÓN
+         sin instructor especificado (campo opcional en ese formulario) tiene
+         igual todos los datos (tiempo de vuelo es obligatorio ahí) y no debe
+         caer en vencido_sin_aprobar.
+
   v1.12 · Regla de negocio de Daniel: un turno es "VOLADO" si tiene CUALQUIERA
          de estos 3 campos cargado — tiempo de vuelo, aterrizajes, u
          observación privada — no solo tiempo de vuelo. clasificar() solo
@@ -358,7 +366,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.12</span>
+      <span class="ver">v1.13</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -577,7 +585,15 @@ function clasificar(r) {
     // 'vencido_sin_aprobar' aunque el vuelo se haya hecho y tenga datos cargados. Se trata
     // igual que un vencido CON aprobado_por: 'volado' si tiene tiempo/aterrizajes/obs cargado,
     // 'no_realizado' si no.
-    if (r.aprobado_por || (r.tipo_vuelo === 'particular')) {
+    // v1.13: un vuelo cargado como "VUELO HISTÓRICO" en turnos.html (es_historico:true)
+    // SIEMPRE tiene datos (tiempo de vuelo es obligatorio en ese formulario) pero puede
+    // no tener aprobado_por si se cargó como instrucción sin especificar el instructor
+    // que voló (campo opcional) — sin este OR caía en 'vencido_sin_aprobar' aunque
+    // tuviera todo cargado. Ver turnos.html v7.92 para el fix relacionado (antes ese
+    // caso SIEMPRE tenía aprobado_por seteado por error, a nombre de quien cargó el
+    // dato — ahora que eso está bien arreglado, hace falta este OR acá para no perder
+    // la clasificación correcta en el caso legítimo de "no sé quién instruyó").
+    if (r.aprobado_por || r.tipo_vuelo === 'particular' || r.es_historico) {
       // vencido CON aprobado_por = vuelo que se realizó (el avión salió y el turno venció por hora)
       // Si tiene algo cargado (tiempo, aterrizajes u obs) = 'volado'; si no, se considera que
       // NO se voló (pedido de Daniel: un turno vencido sin nada cargado es un no-show, no un
