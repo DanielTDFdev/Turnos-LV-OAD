@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 7.95
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: en SEGUIMIENTO DE TURNOS, la columna ESTADO ACTUAL
+            mostraba el campo crudo r.estado (aprobado/cancelado/vencido/pendiente),
+            sin distinguir VOLADO de NO VOLADO dentro de "aprobado"/"vencido", ni
+            CANC. ALUMNO de CANC. INSTRUCTOR dentro de "cancelado". Se porta el mismo
+            criterio de clasificación que ya usa reporte.html (funciones horasDe/
+            aterrDe/obsDe/esVolado/clasificar de ese archivo, acá con prefijo seg* —
+            segHorasDe/segAterrDe/segObsDe/segEsVolado/segClasificar — para no chocar
+            con nada existente), con la misma tabla de 8 estados (volado, no_realizado,
+            aprobado_futuro, cancelado_alumno, cancelado_instructor, vencido_sin_aprobar,
+            pendiente, otro) y sus badges (SEG_BADGE). Nueva clase CSS .badge-novolado
+            (gris, mismo color que .badge.nvo de reporte.html) para no_realizado/otro.
   VERSION : 7.94
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: mostrar el METAR de inicio/fin (metar_inicio/metar_fin,
@@ -2946,6 +2959,7 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .badge-aprobado{background:rgba(57,211,83,.1);color:var(--green);border:1px solid rgba(57,211,83,.3)}
 .badge-cancelado{background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.25)}
 .badge-vencido{background:rgba(120,80,200,.12);color:#a07ef0;border:1px solid rgba(120,80,200,.3)}
+.badge-novolado{background:rgba(148,163,184,.14);color:var(--text3);border:1px solid rgba(148,163,184,.35)}
 .hist-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:.9rem;}
 .hist-filter-btn{font-family:var(--font-mono);font-size:11px;padding:4px 11px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer;letter-spacing:.08em;transition:background .15s,color .15s,border-color .15s;}
 .hist-filter-btn:hover{background:var(--bg4);color:var(--text);}
@@ -3296,7 +3310,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.94</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.95</div>
   </div>
 
 </div>
@@ -8449,6 +8463,42 @@ function segCanceladorDe(r){
   return null;
 }
 
+// v7.95: pedido de Daniel — la columna ESTADO ACTUAL mostraba el campo crudo r.estado
+// (aprobado/cancelado/vencido/pendiente), sin distinguir VOLADO de NO VOLADO dentro
+// de "aprobado"/"vencido", ni CANC. ALUMNO de CANC. INSTRUCTOR dentro de "cancelado".
+// Mismo criterio de clasificación que reporte.html (funciones horasDe/aterrDe/obsDe/
+// esVolado/clasificar de ese archivo, portadas acá con prefijo seg* para no chocar con
+// nada existente) — así Seguimiento habla el mismo idioma que los reportes de Aeronaves/
+// Instructor/Alumno. hoyStr usa fmtDate(ahoraServidor()), igual que el resto de turnos.html.
+function segHorasDe(r){ return r.obs_privada_tiempo_vuelo!=null ? r.obs_privada_tiempo_vuelo : r.piloto_tiempo_vuelo; }
+function segAterrDe(r){ return r.obs_privada_aterrizajes!=null ? r.obs_privada_aterrizajes : r.piloto_aterrizajes; }
+function segObsDe(r){ return r.obs_privada || r.piloto_obs || ''; }
+function segEsVolado(r){ return segHorasDe(r)!=null || segAterrDe(r)!=null || !!segObsDe(r); }
+function segClasificar(r){
+  const hoyStr=fmtDate(ahoraServidor());
+  const esPasado=r.fecha<hoyStr;
+  if(r.cargado_por && r.estado==='cancelado') return 'cancelado_instructor';
+  if(r.estado==='aprobado' && esPasado) return segEsVolado(r)?'volado':'no_realizado';
+  if(r.estado==='aprobado' && !esPasado) return 'aprobado_futuro';
+  if(r.estado==='cancelado') return r.cancelado_rol==='instructor'?'cancelado_instructor':'cancelado_alumno';
+  if(r.estado==='vencido'){
+    if(r.aprobado_por||r.tipo_vuelo==='particular'||r.es_historico) return segEsVolado(r)?'volado':'no_realizado';
+    return 'vencido_sin_aprobar';
+  }
+  if(r.estado==='pendiente') return 'pendiente';
+  return 'otro';
+}
+const SEG_BADGE={
+  volado:                {cls:'badge-aprobado', txt:'VOLADO'},
+  no_realizado:          {cls:'badge-novolado', txt:'NO VOLADO'},
+  aprobado_futuro:       {cls:'badge-aprobado', txt:'APROBADO'},
+  cancelado_alumno:      {cls:'badge-cancelado',txt:'CANC. ALUMNO'},
+  cancelado_instructor:  {cls:'badge-cancelado',txt:'CANC. INSTRUCTOR'},
+  vencido_sin_aprobar:   {cls:'badge-vencido',  txt:'VENC. S/APROBAR'},
+  pendiente:             {cls:'badge-pendiente',txt:'PENDIENTE'},
+  otro:                  {cls:'badge-novolado', txt:'OTRO'},
+};
+
 async function poblarSelectorSeg(){
   const sel=document.getElementById('seg-instructor');
   if(!sel)return;
@@ -8551,7 +8601,7 @@ window.renderSeguimiento=async function(){
         <td style="padding:7px 8px;color:var(--cyan)">${f.avion||'LV-OAD'}</td>
         <td style="padding:7px 8px;color:var(--text)">${f.nombre||'—'}</td>
         ${mostrarActor?`<td style="padding:7px 8px;color:var(--text2)">${f._actor}</td>`:''}
-        <td style="padding:7px 8px"><span class="badge badge-${f.estado}">${f.estado}</span>${notaAccion}</td>
+        <td style="padding:7px 8px"><span class="badge ${SEG_BADGE[segClasificar(f)].cls}">${SEG_BADGE[segClasificar(f)].txt}</span>${notaAccion}</td>
       </tr>`;
   }).join('');
   cont.innerHTML=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:12px;min-width:540px">
