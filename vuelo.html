@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.55 · 2026-08-30
+  Pedido de Daniel: grabar también el METAR de FINALIZAR VUELO, sea el mismo
+  aeródromo de salida o uno distinto (el METAR real de ese AD). obtenerMetarInicio()
+  se generalizó a obtenerMetar(cual) — misma lógica GPS→CheckWX→fallback SAWE,
+  ahora reutilizada para 'inicio' y 'fin'. Nueva variable metarFin (mismo
+  tratamiento que metarInicio: persistida en localStorage, viaja en el item,
+  se escribe en Firebase como metar_fin en la reserva). Se dispara al tocar
+  FINALIZAR VUELO, fire-and-forget, no bloquea. Mismo cambio en paralelo en
+  vuelo-piloto.html v4.39.
+
   v5.54 · 2026-08-29
   Mejora sobre v5.53 (pedido de Daniel: "¿no podemos confiar en GPS/red
   celular?" ante el caso de un vuelo que no arranca en SAWE): obtenerMetarInicio()
@@ -1586,14 +1596,15 @@ let session = null;
 let turnoActual = null;   // reserva seleccionada (o null)
 let tsInicio = null;      // ISO string — momento de START
 let tsFin = null;         // ISO string — momento de STOP
-let metarInicio = null;   // METAR crudo de SAWE al momento del START (v5.53), null si falló/no disponible
+let metarInicio = null;   // METAR crudo al momento del START (v5.53), null si falló/no disponible
+let metarFin = null;      // METAR crudo al momento del STOP (v5.55), null si falló/no disponible
 let guardadoExitoso = false; // true una vez confirmado y guardado — evita el aviso de "perder datos" al saltar a otro turno desde Pendientes
 let _cierreRestaurado = null; // borrador del formulario de cierre restaurado de localStorage, se aplica en mostrarCierre()
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.54'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.55'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1653,6 +1664,7 @@ function init(){
       tsInicio=est.tsInicio||null;
       tsFin=est.tsFin||null;
       metarInicio=est.metarInicio||null;
+      metarFin=est.metarFin||null;
       if(est.cAterr||est.cObs||est.tManualValor) _cierreRestaurado={cAterr:est.cAterr,cObs:est.cObs,tManualVisible:est.tManualVisible,tManualValor:est.tManualValor};
       // Si el vuelo seguía en curso con GPS activo, retoma el muestreo
       // (watchPosition se corta solo con la recarga de página).
@@ -1910,7 +1922,7 @@ function activarTurno(turno){
     if(!confirm('Hay un cierre de vuelo sin guardar. ¿Descartarlo y activar este turno?')) return;
   }
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
-  turnoActual=turno;tsInicio=null;tsFin=null;metarInicio=null;guardadoExitoso=false;
+  turnoActual=turno;tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   mostrarPantallaVuelo(turno);
   cambiarATab('vuelo');
@@ -1995,7 +2007,7 @@ function crearTurnoInSitu(persona){
     rol:persona.rol,
     esInSitu:true // sin `.key`: todavía no existe en Firebase
   };
-  tsInicio=null;tsFin=null;metarInicio=null;guardadoExitoso=false;
+  tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;guardadoExitoso=false;
   $('nt-buscar').value='';
   $('nt-resultados').innerHTML='';
   persistir();
@@ -2004,7 +2016,7 @@ function crearTurnoInSitu(persona){
 }
 
 $('btn-ver-vencidos').addEventListener('click',()=>cargarTabVuelo(true));
-$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];gpsGaps=[];localStorage.removeItem(LS_GPS_PUNTOS);localStorage.removeItem(LS_GPS_HUECOS);turnoActual=null;tsInicio=null;tsFin=null;metarInicio=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
+$('btn-cambiar-turno').addEventListener('click',()=>{ detenerTrackGPS();gpsPoints=[];gpsGaps=[];localStorage.removeItem(LS_GPS_PUNTOS);localStorage.removeItem(LS_GPS_HUECOS);turnoActual=null;tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;guardadoExitoso=false;localStorage.removeItem(LS);cargarTabVuelo(true); });
 $('btn-nuevo-vuelo').addEventListener('click',resetVuelo);
 $('btn-otro-vuelo').addEventListener('click',()=>{ resetVuelo();cargarTabVuelo(); });
 
@@ -2251,15 +2263,17 @@ function confirmarAccion(titulo,textoSi){
   });
 }
 
-// METAR al momento del START (v5.53, mejorado v5.54 — pedido de Daniel):
-// mismo endpoint/key que index.html, pero ahora prioriza la posición GPS real
-// (navigator.geolocation.getCurrentPosition, independiente del toggle de
-// traza) y busca la estación CheckWX más cercana a esas coordenadas — así un
-// vuelo que arranca en otro aeródromo (no SAWE) graba el METAR que corresponde
-// de verdad. Si el GPS falla/lo niegan/da timeout, o no hay estación dentro
-// del radio, cae al SAWE fijo como red de seguridad (comportamiento de v5.53).
-// Fire-and-forget: nunca bloquea el START ni el resto del flujo.
-async function obtenerMetarInicio(){
+// METAR al momento del START y del STOP (v5.53/v5.54, generalizado a
+// START+STOP en v5.55 — pedido de Daniel: grabar también el METAR de cierre,
+// sea el mismo aeródromo de salida o uno distinto). Mismo endpoint/key que
+// index.html, prioriza la posición GPS real (navigator.geolocation.
+// getCurrentPosition, independiente del toggle de traza) y busca la estación
+// CheckWX más cercana a esas coordenadas — así un vuelo que arranca o termina
+// en otro aeródromo (no SAWE) graba el METAR que corresponde de verdad. Si el
+// GPS falla/lo niegan/da timeout, o no hay estación dentro del radio, cae al
+// SAWE fijo como red de seguridad. Fire-and-forget: nunca bloquea START/STOP
+// ni el resto del flujo. cual: 'inicio' o 'fin'.
+async function obtenerMetar(cual){
   const KEY='05639bfe66b24b929b7b0d1aeb313c91';
   function extraerRaw(dato){
     if(typeof dato==='string') return dato;
@@ -2287,17 +2301,19 @@ async function obtenerMetarInicio(){
     if(!json.results||!json.data||!json.data.length)throw new Error('sin estación cercana');
     return extraerRaw(json.data[0]);
   }
+  let valor;
   try{
-    metarInicio=await metarPorGPS();
+    valor=await metarPorGPS();
   }catch(e){
-    console.warn('METAR por GPS no disponible, cae a SAWE fijo:',e);
+    console.warn('METAR por GPS no disponible ('+cual+'), cae a SAWE fijo:',e);
     try{
-      metarInicio=await metarPorICAO('SAWE');
+      valor=await metarPorICAO('SAWE');
     }catch(e2){
-      console.warn('No se pudo obtener METAR de inicio (ni GPS ni SAWE):',e2);
+      console.warn('No se pudo obtener METAR de '+cual+' (ni GPS ni SAWE):',e2);
       return;
     }
   }
+  if(cual==='inicio') metarInicio=valor; else metarFin=valor;
   persistir();
 }
 
@@ -2308,7 +2324,7 @@ $('btn-start-stop').addEventListener('click', async ()=>{
     if(!(await confirmarAccion('¿Iniciar el vuelo ahora?','▶ Sí, iniciar'))) return;
     tsInicio=new Date().toISOString();
     metarInicio=null;
-    obtenerMetarInicio(); // en segundo plano, no bloquea
+    obtenerMetar('inicio'); // en segundo plano, no bloquea
     if(gpsHabilitado){
       // Chequear candado ANTES de arrancar el GPS propio — si el alumno ya
       // está trackeando este vuelo desde vuelo-piloto.html, no arrancamos
@@ -2348,6 +2364,8 @@ $('btn-start-stop').addEventListener('click', async ()=>{
     // STOP — confirmar antes de grabar
     if(!(await confirmarAccion('¿Finalizar el vuelo ahora?','⏹ Sí, finalizar'))) return;
     tsFin=new Date().toISOString();
+    metarFin=null;
+    obtenerMetar('fin'); // en segundo plano, no bloquea
     detenerTrackGPS();
     liberarWakeLock(); // liberar wake lock al aterrizar
     if(gpsLockTomadoPorMi&&turnoActual?.key){
@@ -2391,7 +2409,7 @@ function cancelarVuelo(){
     update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:null}).catch(e=>console.warn('No se pudo soltar el candado GPS:',e));
     gpsLockTomadoPorMi=false;
   }
-  tsInicio=null; tsFin=null; metarInicio=null; guardadoExitoso=false;
+  tsInicio=null; tsFin=null; metarInicio=null; metarFin=null; guardadoExitoso=false;
   persistir();
   mostrarPantallaVuelo(turnoActual);
   toast('Vuelo cancelado — no se grabó nada');
@@ -2524,7 +2542,7 @@ async function guardar(){
     nombreMostrado: turnoActual?.nombre||'Vuelo manual',
     instructorNombre: session.nombre,
     horas, aterr, obs,
-    tsInicio, tsFin, metarInicio,
+    tsInicio, tsFin, metarInicio, metarFin,
     gpsPoints: [...gpsPoints],
     gpsGaps: [...gpsGaps],
     creadoTs: new Date().toISOString()
@@ -2592,6 +2610,7 @@ async function escribirPendiente(item){
     ts_despegue:              item.tsInicio,
     ts_aterrizaje:            item.tsFin,
     metar_inicio:             item.metarInicio||null,
+    metar_fin:                item.metarFin||null,
   };
   Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
   const tieneTraza=item.gpsPoints&&item.gpsPoints.length>1;
@@ -2703,7 +2722,7 @@ setInterval(()=>intentarSincronizarPendientes(),30000);
 
 function resetVuelo(){
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
-  tsInicio=null;tsFin=null;metarInicio=null;turnoActual=null;guardadoExitoso=false;
+  tsInicio=null;tsFin=null;metarInicio=null;metarFin=null;turnoActual=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   $('btn-start-stop').style.display='';
   $('btn-start-stop').textContent='▶ INICIAR VUELO';
@@ -2719,7 +2738,7 @@ function resetVuelo(){
 
 function persistir(){
   localStorage.setItem(LS,JSON.stringify({
-    turno:turnoActual,tsInicio,tsFin,metarInicio,gpsHabilitado,
+    turno:turnoActual,tsInicio,tsFin,metarInicio,metarFin,gpsHabilitado,
     // Borrador del formulario de cierre — así, si la app se cuelga esperando
     // conexión en CONFIRMAR (ver guardar()) y hay que recargarla, no se
     // pierde lo ya tipeado (antes solo se guardaban los timestamps).
