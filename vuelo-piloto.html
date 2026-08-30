@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.37 · 2026-08-29
+  Mismo cambio en paralelo que vuelo.html v5.53: al tocar INICIAR VUELO se
+  pide en paralelo (no bloquea) el METAR crudo de SAWE a CheckWX — mismo
+  endpoint/key que usa index.html. Se guarda en metarInicio (persistido en
+  localStorage junto con tsInicio/tsFin) y viaja con el item hasta
+  escribirPendiente(), que lo escribe en Firebase como metar_inicio en la
+  reserva. Si CheckWX falla o tarda, no bloquea nada — el campo queda null
+  y el vuelo se guarda igual.
+
   v4.36 · 2026-08-29
   Pedido de Daniel: el piloto ahora puede cargar tiempo/aterrizajes de un vuelo
   propio vencido que quedó SIN datos (ej. voló pero no usó la app en vivo ese
@@ -1405,11 +1414,12 @@ function conTimeout(promesa,ms=10000){
 let session = null;
 let tsInicio = null;
 let tsFin = null;
+let metarInicio = null; // METAR crudo de SAWE al momento del START (v4.37), null si falló/no disponible
 let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.36';
+const APP_VERSION = '4.37';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1496,6 +1506,7 @@ function init(){
     if(est){
       tsInicio=est.tsInicio||null;
       tsFin=est.tsFin||null;
+      metarInicio=est.metarInicio||null;
       if(est.avion) _avionRestaurado=est.avion; // se aplica en poblarAviones(), el <select> todavía no tiene opciones acá
       if(est.cAterr||est.cObs||est.tManualValor) _cierreRestaurado={cAterr:est.cAterr,cObs:est.cObs,tManualVisible:est.tManualVisible,tManualValor:est.tManualValor};
       if(tsInicio&&!tsFin&&est.gpsHabilitado){
@@ -2361,6 +2372,23 @@ function confirmarAccion(titulo,textoSi){
 }
 
 // ── START / STOP ──────────────────────────────────────────
+// METAR al momento del START (v4.37, pedido de Daniel) — mismo endpoint/key
+// que usa index.html. Fire-and-forget: no bloquea el START ni el resto del
+// flujo si CheckWX tarda o falla; si llega, se persiste y viaja con el vuelo.
+async function obtenerMetarInicio(){
+  try{
+    const KEY='05639bfe66b24b929b7b0d1aeb313c91';
+    const res=await fetch('https://api.checkwx.com/metar/SAWE/raw',{headers:{'X-API-Key':KEY}});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const json=await res.json();
+    if(!json.results||!json.data||!json.data.length)throw new Error('sin datos');
+    metarInicio=json.data[0];
+    persistir();
+  }catch(e){
+    console.warn('No se pudo obtener METAR de inicio:',e);
+  }
+}
+
 $('btn-start-stop').addEventListener('click',async()=>{
   if(!tsInicio){
     if(!$('p-avion').value){
@@ -2379,6 +2407,8 @@ $('btn-start-stop').addEventListener('click',async()=>{
     }
     if(!(await confirmarAccion('¿Iniciar el vuelo ahora?','▶ Sí, iniciar'))) return;
     tsInicio=new Date().toISOString();
+    metarInicio=null;
+    obtenerMetarInicio(); // en segundo plano, no bloquea
     $('p-avion').disabled=true;
     if(gpsHabilitado){ gpsPoints=[]; gpsGaps=[]; gpsUltimoPunto=0; _wakeLockWarnMostrado=false; iniciarTrackGPS(); adquirirWakeLock(); }
     persistir();
@@ -2422,7 +2452,7 @@ $('btn-start-stop').addEventListener('click',async()=>{
 function cancelarVuelo(){
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   liberarWakeLock();
-  tsInicio=null; tsFin=null; guardadoExitoso=false;
+  tsInicio=null; tsFin=null; metarInicio=null; guardadoExitoso=false;
   persistir();
   renderPantalla();
   toast('Vuelo cancelado — no se grabó nada');
@@ -2547,7 +2577,7 @@ async function guardar(){
     nombre: session.nombre,
     fecha: hoy(),
     avion, horas, aterr, obs,
-    tsInicio, tsFin,
+    tsInicio, tsFin, metarInicio,
     gpsPoints: [...gpsPoints],
     gpsGaps: [...gpsGaps],
     creadoTs: new Date().toISOString(),
@@ -2571,7 +2601,7 @@ async function guardar(){
   // próximo vuelo sin esperar la escritura real a Firebase.
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
   liberarWakeLock();
-  tsInicio=null; tsFin=null; guardadoExitoso=false;
+  tsInicio=null; tsFin=null; metarInicio=null; guardadoExitoso=false;
   localStorage.removeItem(LS);
   $('v-cierre').style.display='none';
   $('btn-cancelar-vuelo').style.display='none';
@@ -2618,6 +2648,7 @@ async function escribirPendiente(item){
     piloto_ts:           new Date().toISOString(),
     ts_despegue:         item.tsInicio,
     ts_aterrizaje:       item.tsFin,
+    metar_inicio:        item.metarInicio||null,
     ...(item.gpsPoints&&item.gpsPoints.length>1?{tiene_traza_gps:true}:{})
   };
   Object.keys(datosVuelo).forEach(k=>{ if(datosVuelo[k]===null) delete datosVuelo[k]; });
@@ -2730,14 +2761,14 @@ setInterval(()=>intentarSincronizarPendientes(),30000);
 $('btn-otro-vuelo').addEventListener('click',resetVuelo);
 function resetVuelo(){
   detenerTrackGPS(); gpsPoints=[]; gpsGaps=[]; localStorage.removeItem(LS_GPS_PUNTOS); localStorage.removeItem(LS_GPS_HUECOS);
-  tsInicio=null;tsFin=null;guardadoExitoso=false;
+  tsInicio=null;tsFin=null;metarInicio=null;guardadoExitoso=false;
   localStorage.removeItem(LS);
   renderPantalla();
 }
 
 function persistir(){
   localStorage.setItem(LS,JSON.stringify({
-    avion:$('p-avion').value,tsInicio,tsFin,gpsHabilitado,
+    avion:$('p-avion').value,tsInicio,tsFin,metarInicio,gpsHabilitado,
     // Borrador del formulario de cierre — así, si la app se cuelga esperando
     // conexión en CONFIRMAR (ver guardar()) y hay que recargarla, no se
     // pierde lo ya tipeado (antes solo se guardaban los timestamps).
