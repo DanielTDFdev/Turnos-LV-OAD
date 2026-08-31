@@ -1,5 +1,22 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.06
+  FECHA   : 2026-08-30
+  CAMBIOS : FIX reportado por Daniel con captura (2do round sobre el modal de
+            ANÁLISIS): (1) toques y despegues — solo se detectaba el valle más
+            afilado de tres; la desigualdad de "mínimo local" era estricta, y el
+            altímetro GPS cerca del piso suele repetir el mismo valor 2-3 muestras
+            seguidas (poca resolución vertical a baja altura), así que el piso de
+            un toque real era una MESETA que la desigualdad estricta descartaba
+            entera. Ahora es no-estricta (permite empate), el dedup existente
+            junta los puntos de una misma meseta en un solo toque. (2) franjas de
+            maniobra — seguían sin aparecer ni en los virajes reales: el umbral
+            (3°/s) es la definición de viraje ESTÁNDAR, más rápido que un viraje
+            de circuito a banqueo normal de instrucción — bajado a 1.5°/s. Además
+            el giro se medía entre puntos consecutivos (~6s), escala demasiado
+            corta donde el error de posición del GPS pesa mucho sobre el bearing
+            calculado — ahora usa 3 puntos de separación a cada lado (~12-18s de
+            ventana) para promediar ese ruido.
   VERSION : 8.05
   FECHA   : 2026-08-30
   CAMBIOS : FIX reportado por Daniel con captura del modal de ANÁLISIS: (1) toques y
@@ -3430,7 +3447,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.05</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.06</div>
   </div>
 
 </div>
@@ -11214,16 +11231,17 @@ let _ultimaTraza = null;
 // para reducir ruido GPS) con una subida de al menos TOQUE_PROMINENCIA_FT
 // ANTES y DESPUÉS, dentro de TOQUE_VENTANA_MIN — así un aterrizaje final (sin
 // subida después) NO cuenta como toque, y una bajada suave de crucero (sin
-// prominencia suficiente) tampoco. v8.05 FIX (reportado por Daniel con
-// captura): sin filtro de altura, cualquier pique intermedio durante el ASCENSO
-// inicial (ej. el vuelo sube, se topa con una racha/turbulencia, baja un rato y
-// vuelve a subir) también contaba como "toque" — aunque estuviera a 1000+ ft,
-// bien lejos del terreno. Ahora solo cuenta si el mínimo queda a menos de
-// TOQUE_ALTURA_MAX_FT del punto más bajo de TODO el vuelo (altMinTraza — en la
-// práctica, la elevación del aeródromo, porque el vuelo arranca y termina en
-// tierra). Dedup: dos mínimos a menos de 2min se funden en uno solo (el más
-// bajo). Aproximado a propósito — con GPS de celular la altitud tiene bastante
-// ruido, mejor un falso negativo ocasional que inundar de falsos positivos.
+// prominencia suficiente) tampoco. v8.05: filtro por altura (TOQUE_ALTURA_MAX_FT
+// del punto más bajo del vuelo). v8.06 FIX (reportado por Daniel con captura:
+// "3 valles a nivel de piso, solo detecta 1"): la comparación de mínimo local
+// era con desigualdad ESTRICTA (suaves[i]>=vecino ⇒ descartado) — el altímetro
+// GPS cerca del piso suele repetir el mismo valor en 2-3 muestras seguidas (poca
+// resolución vertical a baja altura), así que el "piso" de un toque real queda
+// como una MESETA, no un mínimo puntual, y la desigualdad estricta lo descartaba
+// entero salvo que fuera un valle muy afilado (por eso solo se detectó el más
+// profundo). Ahora es no-estricta (suaves[i]>vecino ⇒ descartado, permite
+// empate) — los varios puntos de una misma meseta pasan igual y el dedup de
+// siempre (candidatos a <2min se funden) los junta en un solo toque.
 const TOQUE_PROMINENCIA_FT = 100;
 const TOQUE_VENTANA_MIN = 4;
 const TOQUE_ALTURA_MAX_FT = 300;
@@ -11239,7 +11257,7 @@ function _detectarToques(segmentos, altMinTraza){
       return (a0+a+a2)/3;
     });
     for(let i=1;i<suaves.length-1;i++){
-      if(suaves[i]>=suaves[i-1] || suaves[i]>=suaves[i+1]) continue;
+      if(suaves[i]>suaves[i-1] || suaves[i]>suaves[i+1]) continue;
       if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
       let antesOk=false;
       for(let j=i-1;j>=0;j--){
@@ -11270,27 +11288,29 @@ function _detectarToques(segmentos, altMinTraza){
   return dedup;
 }
 
-// Crucero vs maniobra: régimen de giro (°/seg, sobre 3 puntos consecutivos).
-// Por encima de MANIOBRA_GIRO_DEG_S se considera viraje sostenido (maniobra);
-// por debajo, tramo recto (crucero). v8.05 FIX (reportado por Daniel: "no hay
-// virajes, pero sí franjas ámbar" — las franjas aparecían en el peor lugar
-// posible, taxi/parado en tierra): con el avión casi quieto, el rumbo entre dos
-// puntos GPS consecutivos es puro ruido de posición (unos pocos metros de error
-// alcanzan para que el bearing calculado salte 90°+), así que el giro/seg salía
-// altísimo sin que hubiera ningún viraje real — exactamente al revés de lo que
-// se buscaba mostrar. Ahora se exige además un desplazamiento mínimo entre p0 y
-// p2 (MANIOBRA_DIST_MIN_KM, ~30m — por debajo de eso el rumbo no es confiable);
-// si no se cumple, el tramo se clasifica 'crucero' sin importar el giro
-// calculado. Devuelve bandas [{tipo,t0,t1}] listas para pintar de fondo.
-const MANIOBRA_GIRO_DEG_S = 3;
+// Crucero vs maniobra: régimen de giro (°/seg). v8.05: se descartó el ruido de
+// taxi/tierra exigiendo un desplazamiento mínimo entre puntos. v8.06 FIX
+// (reportado por Daniel: "sigue sin mostrar franjas, ni en los virajes reales
+// del circuito"): dos problemas más. (1) MANIOBRA_GIRO_DEG_S=3°/s es la
+// definición de "viraje estándar" (rate 1, 180°/60s) — un viraje de circuito a
+// banqueo bajo/moderado (lo normal en instrucción) suele ir MÁS LENTO que eso,
+// así que casi nunca llegaba al umbral. Bajado a 1.5°/s. (2) el rumbo se
+// calculaba entre puntos consecutivos (~6s de separación total) — a esa escala
+// tan corta el error de posición del GPS (unos metros) pesa demasiado sobre el
+// bearing calculado, dando una medición ruidosa aun con buen desplazamiento.
+// Ahora usa MANIOBRA_STEP puntos de por medio a cada lado (~12-18s de ventana
+// según el muestreo) para promediar ese ruido y estimar el giro real con más
+// estabilidad. Devuelve bandas [{tipo,t0,t1}] listas para pintar de fondo.
+const MANIOBRA_GIRO_DEG_S = 1.5;
 const MANIOBRA_DIST_MIN_KM = 0.03;
+const MANIOBRA_STEP = 3;
 function _clasificarTramosVuelo(segmentos){
   const bandas=[];
   for(const seg of segmentos){
-    if(seg.tipo!=='real'||seg.pts.length<3) continue;
+    if(seg.tipo!=='real'||seg.pts.length<(MANIOBRA_STEP*2+1)) continue;
     let actual=null;
-    for(let i=1;i<seg.pts.length-1;i++){
-      const p0=seg.pts[i-1], p1=seg.pts[i], p2=seg.pts[i+1];
+    for(let i=MANIOBRA_STEP;i<seg.pts.length-MANIOBRA_STEP;i++){
+      const p0=seg.pts[i-MANIOBRA_STEP], p1=seg.pts[i], p2=seg.pts[i+MANIOBRA_STEP];
       const dTotalKm = _haversineKm(p0.lat,p0.lng,p2.lat,p2.lng);
       let tipo='crucero';
       if(dTotalKm>=MANIOBRA_DIST_MIN_KM){
