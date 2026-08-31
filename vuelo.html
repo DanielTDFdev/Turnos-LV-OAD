@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.58 · 2026-08-30
+  Pedido de Daniel: velocidad máxima en la barra de info del visor de mapa GPS
+  (💨 Vel. máx, junto a Puntos/Duración/Distancia/Alt. máx). Se deriva de
+  distancia/tiempo entre puntos consecutivos (nueva función calcVelMaxKt(),
+  con _haversineKm() propio) — SOLO sobre tramos 'real' (nunca sobre huecos
+  sin GPS), con techo de 250kt para descartar picos de ruido GPS. Mismo cambio
+  en paralelo en turnos.html v8.00/vuelo-piloto.html v4.42.
+
   v5.57 · 2026-08-30
   Pedido de Daniel: al tocar FINALIZAR VUELO había que scrollear para ver el
   formulario de cierre (tiempo/METAR/aterrizajes/obs/confirmar) — quedaba
@@ -1651,7 +1659,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.57'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.58'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3395,6 +3403,8 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('mi-distancia').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
     const altMaxFt = altMax * 3.28084;
     $('mi-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
+    const velMaxKt = calcVelMaxKt(segmentos);
+    $('mi-velmax').textContent = velMaxKt>0 ? `${Math.round(velMaxKt)} kt` : '—';
 
     const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
     if (huecosReales.length) {
@@ -3452,6 +3462,35 @@ function calcDistanciaKm(coords) {
     total += R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
   return total;
+}
+function _haversineKm(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+// v5.58 — pedido de Daniel: velocidad máxima en la barra de info del mapa. Se
+// deriva de distancia/tiempo entre pares de puntos consecutivos (no hay campo
+// de velocidad instantánea del GPS guardado) — SOLO dentro de tramos 'real' de
+// _segmentarPorHuecos (un hueco sin datos GPS daría una velocidad falsa
+// altísima al saltar de un punto a otro lejano). Techo de 250kt para
+// descartar picos de ruido GPS. Mismo cambio en paralelo en turnos.html v8.00/
+// vuelo-piloto.html v4.42.
+const VELMAX_TECHO_KT = 250;
+function calcVelMaxKt(segmentos){
+  let max = 0;
+  for(const seg of segmentos){
+    if(seg.tipo!=='real') continue;
+    for(let i=1;i<seg.pts.length;i++){
+      const p1=seg.pts[i-1], p2=seg.pts[i];
+      const dtH = (new Date(p2.ts)-new Date(p1.ts))/3600000;
+      if(dtH<=0) continue;
+      const dKm = _haversineKm(p1.lat,p1.lng,p2.lat,p2.lng);
+      const kt = (dKm*0.539957)/dtH;
+      if(kt<=VELMAX_TECHO_KT && kt>max) max=kt;
+    }
+  }
+  return max;
 }
 
 function cerrarModalMapa(){
@@ -3589,6 +3628,7 @@ if('serviceWorker' in navigator){
     <span>⏱ Duración: <span class="mv" id="mi-duracion">—</span></span>
     <span>📏 Distancia: <span class="mv" id="mi-distancia">—</span></span>
     <span>⬆ Alt. máx: <span class="mv" id="mi-alt">—</span></span>
+    <span>💨 Vel. máx: <span class="mv" id="mi-velmax">—</span></span>
     <span id="mi-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mi-huecos-txt">—</span></span>
   </div>
 </div>

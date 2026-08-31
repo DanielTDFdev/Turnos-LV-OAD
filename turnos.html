@@ -1,5 +1,15 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.00
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: velocidad máxima en la barra de info del visor de mapa
+            GPS (💨 Vel. máx, junto a Puntos/Duración/Distancia/Alt. máx). Se deriva de
+            distancia/tiempo entre puntos consecutivos (no hay velocidad instantánea
+            guardada en vuelo_tracks) — nueva función _calcVelMaxKt(segmentos), SOLO
+            sobre tramos 'real' (nunca sobre huecos sin GPS, donde el salto daría una
+            velocidad falsa altísima), con techo de 250kt para descartar picos de
+            ruido GPS. Mismo cambio en paralelo en vuelo.html v5.58/vuelo-piloto.html
+            v4.42 (triplicado de siempre del visor de mapa).
   VERSION : 7.99
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: en ningún lado se veía explícitamente que un turno
@@ -3350,7 +3360,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v7.99</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.00</div>
   </div>
 
 </div>
@@ -11084,6 +11094,28 @@ function _colorPorAltitud(alt, altMin, altMax){
   const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
   return `rgb(${r},${g},${b})`;
 }
+// v8.00 — pedido de Daniel: velocidad máxima en la barra de info del mapa. Se
+// deriva de distancia/tiempo entre pares de puntos consecutivos (no hay campo
+// de velocidad instantánea del GPS guardado en vuelo_tracks) — SOLO dentro de
+// tramos 'real' de _segmentarPorHuecos (un hueco sin datos GPS daría una
+// velocidad falsa altísima al saltar de un punto a otro lejano). Techo de 250kt
+// para descartar picos de ruido GPS (imposibles para LV-OAD/LV-ART/LV-MPH).
+const VELMAX_TECHO_KT = 250;
+function _calcVelMaxKt(segmentos){
+  let max = 0;
+  for(const seg of segmentos){
+    if(seg.tipo!=='real') continue;
+    for(let i=1;i<seg.pts.length;i++){
+      const p1=seg.pts[i-1], p2=seg.pts[i];
+      const dtH = (new Date(p2.ts)-new Date(p1.ts))/3600000;
+      if(dtH<=0) continue;
+      const dKm = _haversineKm(p1.lat,p1.lng,p2.lat,p2.lng);
+      const kt = (dKm*0.539957)/dtH;
+      if(kt<=VELMAX_TECHO_KT && kt>max) max=kt;
+    }
+  }
+  return max;
+}
 
 window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
   const modal = document.getElementById('modal-mapa-vuelo');
@@ -11173,6 +11205,8 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     document.getElementById('mv-dist').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
     const altMaxFt = altMax * 3.28084;
     document.getElementById('mv-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
+    const velMaxKt = _calcVelMaxKt(segmentos);
+    document.getElementById('mv-velmax').textContent = velMaxKt>0 ? `${Math.round(velMaxKt)} kt` : '—';
 
     const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
     if (huecosReales.length) {
@@ -11355,6 +11389,7 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
     <span>⏱ Duración: <span class="mv" id="mv-dur">—</span></span>
     <span>📏 Distancia: <span class="mv" id="mv-dist">—</span></span>
     <span>⬆ Alt. máx: <span class="mv" id="mv-alt">—</span></span>
+    <span>💨 Vel. máx: <span class="mv" id="mv-velmax">—</span></span>
     <span id="mv-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mv-huecos-txt">—</span></span>
   </div>
 </div>
