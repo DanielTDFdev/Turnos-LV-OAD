@@ -1,5 +1,26 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.20
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel (captura de la grilla, Pedir Turno de piloto particular):
+            reemplazado el dropdown "Hora de fin (exclusiva)" por selección directa en la
+            grilla — piloto en modo particular (avión≠LV-OAD) ahora "pinta" arrastrando
+            los slots consecutivos que quiere reservar, en vez de elegir primero 1 slot y
+            recién ahí ver un <select> con las horas de fin posibles. Funciona igual con
+            mouse (arrastre) y con el dedo en celular (mismo listener, vía
+            pointermove+elementFromPoint sobre coordenadas reales, no depende del target
+            del evento). Un simple tap/click sin arrastre sigue seleccionando 1 solo slot,
+            igual que antes. El arrastre se corta automáticamente al llegar a un slot ya
+            tomado o fuera de anticipación — no hace falta re-chequear al confirmar, el
+            propio recorrido del arrastre ya solo permite tramos libres y contiguos.
+            Mismo modelo de datos que antes (horaInicio/horaFin exclusivo en la reserva,
+            slotsTomados() sin cambios) — es un cambio de interacción, no de backend.
+            Nuevas funciones iniciarPintado/arrastrarPintado/pintarPreview/
+            finalizarPintado; selectSlot() se simplificó (ya no arma el <select>, queda
+            solo para el flujo de 1 slot con aprobación de instructor). #slot-fin-wrap
+            queda sin uso pero se deja en el HTML (referenciado por cancelarSeleccion) por
+            si se reutiliza más adelante. Sin cambios para alumno ni para piloto en modo
+            instrucción — siguen con el flujo de 1 slot de siempre.
   VERSION : 8.19
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel (captura de la grilla, "reservas que se adelantaron"): un
@@ -3283,7 +3304,9 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .day-btn-hoy-tag{font-size:11px;line-height:1.2;letter-spacing:.1em;color:var(--green);font-weight:700;margin-top:2px;}
 
 .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:.5rem}
-.slot{padding:12px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;cursor:pointer;background:var(--bg2);color:var(--text2);transition:all .15s;box-shadow:0 3px 0 rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.2);}
+.slot{padding:12px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);font-family:var(--font-mono);font-size:13px;cursor:pointer;background:var(--bg2);color:var(--text2);transition:all .15s;box-shadow:0 3px 0 rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.2);user-select:none;-webkit-user-select:none;}
+.slot.pintable{touch-action:none;}
+.slot.painting{border-color:var(--cyan);color:var(--cyan);background:rgba(0,200,212,.14);box-shadow:0 3px 0 rgba(0,0,0,.35),0 0 12px rgba(0,200,212,.2)}
 .slot:hover{border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.06);transform:translateY(-2px);box-shadow:0 5px 0 rgba(0,0,0,.35),0 6px 10px rgba(0,0,0,.25);}
 .slot:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.35);}
 .slot.selected{border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.1);box-shadow:0 3px 0 rgba(0,0,0,.35),0 0 12px rgba(240,165,0,.15)}
@@ -3613,7 +3636,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.19</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.20</div>
   </div>
 
 </div>
@@ -6636,20 +6659,39 @@ async function renderSlots(ds,data){
   // pendiente / SIN INSTRUCTOR). ALUMNO en LV-OAD: solo ve slots con instructor disponible
   // (sin cambios, nunca tiene este bypass).
   const pilotoLibre=requiereInstructor&&esPiloto;
-  const avail=horasParaDia(ds,selectedAvion).filter(h=>okAnticipacion(ds,h)&&(!requiereInstructor||pilotoLibre||slotsConInstructor.has(h)));
+  const horasDia=horasParaDia(ds,selectedAvion);
+  const avail=horasDia.filter(h=>okAnticipacion(ds,h)&&(!requiereInstructor||pilotoLibre||slotsConInstructor.has(h)));
   if(!avail.length){
     const sinDisp=requiereInstructor&&!pilotoLibre&&slotsConInstructor.size===0;
     grid.innerHTML='<div class="empty">//'+(sinDisp?' SIN INSTRUCTOR DISPONIBLE PARA ESTE DÍA':' SIN DISPONIBILIDAD (se requiere '+(requiereAnticipacionLarga()?'12 hs':'1 hora')+' de anticipación)')+'</div>';
     return;
   }
+  // v8.20: "pintar" varios slots consecutivos arrastrando, solo piloto+particular+avión
+  // distinto de LV-OAD (mismo caso que antes ofrecía el dropdown "Hora de fin exclusiva",
+  // ahora reemplazado por selección directa en la grilla — ver iniciarPintado/
+  // arrastrarPintado/finalizarPintado más abajo).
+  const modoPintado=esPiloto&&!esOAD&&selectedTipoVuelo==='particular';
+  // selectedSlotFin, cuando existe, es EXCLUSIVO (la hora siguiente a la última ocupada
+  // — mismo criterio que slotsTomados()/horasContinuacion()), así que el rango pintado
+  // como "selected" va de idxSel hasta idxFinExclusivo-1.
+  const idxSel=selectedSlot?horasDia.indexOf(selectedSlot):-1;
+  const idxFinExcl=selectedSlotFin?horasDia.indexOf(selectedSlotFin):(idxSel>=0?idxSel+1:-1);
   grid.innerHTML=avail.map(h=>{
-    const tk=taken.includes(h),sl=selectedSlot===h;
+    const tk=taken.includes(h);
+    const idxH=horasDia.indexOf(h);
+    const sl=idxSel>=0&&idxH>=idxSel&&idxH<=idxFinExcl-1;
     const sinInst=requiereInstructor&&!slotsConInstructor.has(h);
-    const cls='slot'+(tk?' taken':sl?' selected':'')+(sinInst&&!tk?' sin-instructor':'');
+    const cls='slot'+(tk?' taken':sl?' selected':'')+(sinInst&&!tk?' sin-instructor':'')+(modoPintado&&!tk?' pintable':'');
     const tip=(sinInst&&!tk)?' title="Sin instructor con horario cargado este día — podés reservar igual; quedará pendiente de aprobación"':'';
     return `<div class="${cls}" data-hora="${h}"${tip}>${h}</div>`;
   }).join('');
-  grid.querySelectorAll('.slot:not(.taken)').forEach(s=>s.addEventListener('click',()=>selectSlot(s.dataset.hora)));
+  if(modoPintado){
+    _pintHorasDia=horasDia;
+    _pintDisponibles=new Set(avail.filter(h=>!taken.includes(h)));
+    grid.querySelectorAll('.slot.pintable').forEach(s=>s.addEventListener('pointerdown',(e)=>{e.preventDefault();iniciarPintado(s.dataset.hora);}));
+  } else {
+    grid.querySelectorAll('.slot:not(.taken)').forEach(s=>s.addEventListener('click',()=>selectSlot(s.dataset.hora)));
+  }
 }
 
 function selectSlot(h){
@@ -6657,65 +6699,101 @@ function selectSlot(h){
   selectedSlotFin=null;
   get(ref(db,'reservas')).then(s=>renderSlots(selectedDay,s.val()));
   const rol=session?.rol||'alumno';
-  // v6.94: el bloque exclusivo de varios slots (vuelo largo sin instructor) solo tiene
-  // sentido para 'particular' — un pedido de 'instruccion' sigue el flujo simple de 1
-  // slot + aprobación, igual que un alumno, sin importar el avión.
-  if(rol==='piloto' && (selectedAvion||'LV-OAD')!=='LV-OAD' && selectedTipoVuelo==='particular'){
-    get(ref(db,'reservas')).then(snap=>{
-      const taken=slotsTomados(selectedDay,selectedAvion,snap.val());
-      const horas=horasParaDia(selectedDay,selectedAvion);
-      const idx=horas.indexOf(h);
-      const opcionesFin=[];
-      for(let i=idx+1;i<horas.length;i++){
-        if(taken.includes(horas[i]))break;
-        opcionesFin.push(horas[i]);
-      }
-      let finHtml='<div class="field" style="margin-top:.75rem"><label>Hora de fin (exclusiva)</label><select id="slot-fin-select" onchange="actualizarLabelRango()">';
-      finHtml+=`<option value="${h}">Solo ${h} hs (1 slot)</option>`;
-      opcionesFin.forEach(hf=>{
-        const slots=horas.indexOf(hf)-idx;
-        finHtml+=`<option value="${hf}">${hf} hs (${slots} slots)</option>`;
-      });
-      finHtml+='</select></div>';
-      document.getElementById('slot-fin-wrap').innerHTML=finHtml;
-      selectedSlotFin=h;
-      actualizarLabelRango();
-    });
-  } else {
-    document.getElementById('slot-fin-wrap').innerHTML='';
-    document.getElementById('confirm-label').textContent=selectedAvion+' — '+selectedDay+' a las '+h+' hs';
-    const esOAD=(selectedAvion||'LV-OAD')==='LV-OAD';
-    // v6.94: requiere instructor en LV-OAD (siempre) o en cualquier avión cuando el
-    // piloto eligió 'instruccion' — antes era esOAD a secas.
-    const requiereInstructor=esOAD||(rol==='piloto'&&selectedTipoVuelo==='instruccion');
-    const sinInst=requiereInstructor&&_slotsConInstructorFecha===selectedDay&&!_slotsConInstructorDia.has(h);
-    document.getElementById('confirm-nota').textContent=sinInst
-      ?'▸ No hay instructor con horario cargado este día. El turno se cargará igual y quedará pendiente de aprobación.'
-      :'▸ Requerirá aprobación del instructor.';
-  }
+  document.getElementById('confirm-label').textContent=selectedAvion+' — '+selectedDay+' a las '+h+' hs';
+  const esOAD=(selectedAvion||'LV-OAD')==='LV-OAD';
+  // v6.94: requiere instructor en LV-OAD (siempre) o en cualquier avión cuando el
+  // piloto eligió 'instruccion' — antes era esOAD a secas.
+  const requiereInstructor=esOAD||(rol==='piloto'&&selectedTipoVuelo==='instruccion');
+  const sinInst=requiereInstructor&&_slotsConInstructorFecha===selectedDay&&!_slotsConInstructorDia.has(h);
+  document.getElementById('confirm-nota').textContent=sinInst
+    ?'▸ No hay instructor con horario cargado este día. El turno se cargará igual y quedará pendiente de aprobación.'
+    :'▸ Requerirá aprobación del instructor.';
   document.getElementById('slot-confirm').style.display='block';
   hideEl('turno-err');hideEl('turno-ok');
 }
 
-window.actualizarLabelRango=function(){
-  const sel=document.getElementById('slot-fin-select');
-  if(!sel)return;
-  selectedSlotFin=sel.value;
-  const horas=horasParaDia(selectedDay,selectedAvion);
-  const idxIni=horas.indexOf(selectedSlot);
-  const idxFin=horas.indexOf(selectedSlotFin);
-  const count=idxFin>idxIni?(idxFin-idxIni):1;
-  const label=selectedSlotFin===selectedSlot
-    ?selectedAvion+' — '+selectedDay+' a las '+selectedSlot+' hs (1 slot)'
-    :selectedAvion+' — '+selectedDay+' de '+selectedSlot+' a '+selectedSlotFin+' hs ('+count+' slots)';
-  document.getElementById('confirm-label').textContent=label;
-  // v6.94: este selector de rango solo se muestra en modo 'particular' (ver selectSlot),
-  // así que siempre se aprueba automático — se deja explícito igual, por claridad.
-  document.getElementById('confirm-nota').textContent=selectedTipoVuelo==='instruccion'?'▸ Requerirá aprobación del instructor.':'▸ Se aprobará automáticamente al confirmar.';
-};
+// ── Selección por arrastre ("pintar" slots consecutivos) — v8.20 ───────────────────────
+// Reemplaza al viejo dropdown "Hora de fin (exclusiva)". Solo activo cuando modoPintado es
+// true (piloto, avión≠LV-OAD, tipo particular — ver renderSlots). _pintHorasDia es la
+// grilla completa de horas del día (para calcular índices/rango), _pintDisponibles el
+// subconjunto realmente seleccionable (pasa anticipación y no está tomado). _pintExtremo
+// guarda la ÚLTIMA hora OCUPADA del arrastre en curso (no la exclusiva) — se convierte a
+// horaFin exclusiva recién al finalizar, en finalizarPintado().
+let _pintActivo=false,_pintAnchor=null,_pintExtremo=null,_pintHorasDia=[],_pintDisponibles=new Set();
+
+function iniciarPintado(h){
+  _pintActivo=true;_pintAnchor=h;_pintExtremo=h;
+  pintarPreview();
+}
+
+function arrastrarPintado(h){
+  if(!_pintActivo)return;
+  const horas=_pintHorasDia;
+  const idxA=horas.indexOf(_pintAnchor),idxH=horas.indexOf(h);
+  if(idxA<0||idxH<0)return;
+  const dir=idxH>=idxA?1:-1;
+  let idxLimite=idxA;
+  for(let i=idxA+dir; dir>0?i<=idxH:i>=idxH; i+=dir){
+    if(!_pintDisponibles.has(horas[i]))break; // corta en el primer tomado o no disponible
+    idxLimite=i;
+  }
+  // La hora de fin se guarda EXCLUSIVA (ver finalizarPintado) — necesita una hora real
+  // siguiente a la última ocupada. Si el arrastre llega hasta la última hora del día no
+  // hay "hora siguiente" posible; se limita a la anteúltima (mismo límite que ya tenía el
+  // viejo dropdown, que nunca podía ofrecer esa opción como "Hora de fin").
+  if(dir>0&&idxLimite===horas.length-1&&idxLimite!==idxA){
+    idxLimite=(horas.length-2>=idxA)?horas.length-2:idxA;
+  }
+  const nuevoExtremo=horas[idxLimite];
+  if(nuevoExtremo===_pintExtremo)return;
+  _pintExtremo=nuevoExtremo;
+  pintarPreview();
+}
+
+function pintarPreview(){
+  const horas=_pintHorasDia;
+  const idxA=horas.indexOf(_pintAnchor),idxE=horas.indexOf(_pintExtremo);
+  const lo=Math.min(idxA,idxE),hi=Math.max(idxA,idxE);
+  document.querySelectorAll('#slots-grid .slot.pintable').forEach(el=>{
+    const i=horas.indexOf(el.dataset.hora);
+    el.classList.toggle('painting',i>=lo&&i<=hi);
+  });
+}
+
+function finalizarPintado(){
+  if(!_pintActivo)return;
+  _pintActivo=false;
+  const horas=_pintHorasDia;
+  const idxA=horas.indexOf(_pintAnchor),idxE=horas.indexOf(_pintExtremo);
+  const lo=Math.min(idxA,idxE),hi=Math.max(idxA,idxE);
+  selectedSlot=horas[lo];
+  selectedSlotFin=lo===hi?null:horas[hi+1]; // exclusiva — mismo criterio que slotsTomados()
+  const count=hi-lo+1;
+  document.getElementById('confirm-label').textContent=selectedSlotFin
+    ?selectedAvion+' — '+selectedDay+' de '+selectedSlot+' a '+selectedSlotFin+' hs ('+count+' slots)'
+    :selectedAvion+' — '+selectedDay+' a las '+selectedSlot+' hs (1 slot)';
+  document.getElementById('confirm-nota').textContent='▸ Se aprobará automáticamente al confirmar.';
+  document.getElementById('slot-confirm').style.display='block';
+  hideEl('turno-err');hideEl('turno-ok');
+  get(ref(db,'reservas')).then(s=>renderSlots(selectedDay,s.val()));
+}
+
+// pointermove/pointerup a nivel documento (una sola vez, no por render): usa
+// elementFromPoint con las coordenadas reales del puntero, así funciona igual para mouse
+// (drag) y touch (dedo) sin duplicar lógica — el touch tiene "captura implícita" que fija
+// el target del evento al elemento donde empezó el gesto, pero clientX/clientY siguen
+// siendo la posición real, por eso elementFromPoint sigue encontrando el slot correcto.
+document.addEventListener('pointermove',(e)=>{
+  if(!_pintActivo)return;
+  const el=document.elementFromPoint(e.clientX,e.clientY);
+  const slotEl=el&&el.closest('.slot.pintable');
+  if(slotEl&&slotEl.dataset.hora)arrastrarPintado(slotEl.dataset.hora);
+});
+document.addEventListener('pointerup',()=>{if(_pintActivo)finalizarPintado();});
+document.addEventListener('pointercancel',()=>{if(_pintActivo)finalizarPintado();});
 
 window.cancelarSeleccion=function(){
-  selectedSlot=null;selectedSlotFin=null;
+  selectedSlot=null;selectedSlotFin=null;_pintActivo=false;
   document.getElementById('slot-confirm').style.display='none';
   document.getElementById('slot-fin-wrap').innerHTML='';
   get(ref(db,'reservas')).then(s=>renderSlots(selectedDay,s.val()));
