@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.44 · 2026-08-30
+  Pedido de Daniel, mismo cambio en paralelo que turnos.html v8.02/vuelo.html
+  v5.60: flechas de sentido sobre la traza del visor de mapa GPS, cada 500m
+  (FLECHA_ESPACIADO_KM), color según el degradé de altitud de ese punto, 14px
+  (más grande que el ancho de línea de 3.5px) para que sobresalgan. Nunca
+  sobre huecos.
+
   v4.43 · 2026-08-30
   Mismo cambio en paralelo que vuelo.html v5.59/turnos.html v8.01 (pedido de
   Daniel): más stats derivados de la traza GPS en la barra de info — ⬇ Alt.
@@ -1492,7 +1499,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.43';
+const APP_VERSION = '4.44';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3446,6 +3453,44 @@ function _colorPorAltitud(alt, altMin, altMax){
   const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
   return `rgb(${r},${g},${b})`;
 }
+// v4.44 — pedido de Daniel, mismo cambio en paralelo que turnos.html v8.02/
+// vuelo.html v5.60: flechas de sentido sobre la traza, para entender el flujo
+// del vuelo a simple vista. _bearingDeg da el rumbo entre dos puntos;
+// _colocarFlechasDireccion camina un tramo 'real' (nunca huecos) acumulando
+// distancia con _haversineKm() y larga una flecha cada 500m
+// (FLECHA_ESPACIADO_KM), interpolando la posición exacta entre el par de
+// puntos que cruza el umbral. Cada flecha toma el color de _colorPorAltitud
+// de ese punto (mismo degradé de la polilínea) y es más grande que el ancho
+// de línea (14px vs 3.5px) para que sobresalga.
+function _bearingDeg(lat1,lon1,lat2,lon2){
+  const φ1=lat1*Math.PI/180, φ2=lat2*Math.PI/180, Δλ=(lon2-lon1)*Math.PI/180;
+  const y=Math.sin(Δλ)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+const FLECHA_ESPACIADO_KM = 0.5;
+function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
+  let acumulado = 0, siguienteUmbral = FLECHA_ESPACIADO_KM;
+  for(let i=1;i<seg.pts.length;i++){
+    const p1=seg.pts[i-1], p2=seg.pts[i];
+    const dKm = _haversineKm(p1.lat,p1.lng,p2.lat,p2.lng);
+    if(dKm<=0) continue;
+    while(acumulado+dKm >= siguienteUmbral){
+      const frac = (siguienteUmbral-acumulado)/dKm;
+      const lat = p1.lat+(p2.lat-p1.lat)*frac, lng = p1.lng+(p2.lng-p1.lng)*frac;
+      const bearing = _bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
+      const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
+      const color = _colorPorAltitud(altProm, altMinTraza, altMaxTraza);
+      const icon = L.divIcon({
+        html:`<svg width="14" height="14" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
+        className:'', iconSize:[14,14], iconAnchor:[7,7],
+      });
+      L.marker([lat,lng], {icon, interactive:false}).addTo(mapa);
+      siguienteUmbral += FLECHA_ESPACIADO_KM;
+    }
+    acumulado += dKm;
+  }
+}
 
 window.abrirMapa = async function(key, alumno, avion, hora) {
   const fmtTs = iso => {
@@ -3513,8 +3558,10 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
             color: _colorPorAltitud(altProm, altMinTraza, altMaxTraza), weight: 3.5, opacity: 0.9
           }).addTo(_leafletMap);
         }
+        _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, _leafletMap);
       } else {
         L.polyline(segCoords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_leafletMap);
+        _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, _leafletMap);
       }
     }
 

@@ -1,5 +1,22 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.03
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: modal de ANÁLISIS del vuelo, separado del mapa (para no
+            congestionarlo) — se abre con el botón "📊 Análisis" del visor de mapa,
+            reusando la traza ya cargada (_ultimaTraza, sin volver a pedirle nada a
+            Firebase). Contiene: (1) perfil de altitud/tiempo en SVG hecho a mano
+            (_renderChartAltitud, sin librería nueva — mismo criterio vanilla de
+            siempre), con franjas de fondo ámbar sobre los tramos de MANIOBRA
+            (_clasificarTramosVuelo — régimen de giro ≥3°/seg sostenido, sobre
+            _bearingDeg ya usado para las flechas); (2) toques y despegues
+            detectados (_detectarToques — mínimo local de altitud suavizada con
+            subida de ≥100ft antes Y después dentro de 4min, para no confundir el
+            aterrizaje final con un toque, con dedup de mínimos a <2min), marcados
+            como puntos amarillos sobre el gráfico y listados en texto con hora
+            ("N toques detectados — hh:mm, hh:mm..."). Ambos criterios documentados
+            como aproximados — el ruido de altitud del GPS de celular puede dar
+            falsos positivos/negativos.
   VERSION : 8.02
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: flechas de sentido sobre la traza del visor de mapa GPS,
@@ -3195,6 +3212,12 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 #mapa-vuelo-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#050d1a;z-index:10;font-family:var(--font-mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
 #modal-mapa-vuelo .map-info{display:flex;gap:24px;flex-wrap:wrap;padding:14px 16px;background:#0b1929;border-top:1px solid rgba(0,200,212,.1);flex:none;font-family:var(--font-mono);font-size:15px;color:var(--text3)}
 #modal-mapa-vuelo .map-info .mv{color:var(--text);font-weight:700;font-size:18px}
+/* v8.03 — modal de análisis, mismo patrón visual que #modal-mapa-vuelo (fondo
+   full-screen, .map-bar reusada) pero con scroll propio en el body en vez de
+   un mapa Leaflet. z-index más alto porque se abre ENCIMA del mapa (no lo
+   cierra), así el instructor puede volver atrás sin perder el mapa cargado. */
+#modal-analisis-vuelo{display:none;position:fixed;inset:0;background:#050d1a;z-index:1400;flex-direction:column}
+#modal-analisis-vuelo.open{display:flex}
 .btn-ver-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.25);border-radius:4px;color:var(--cyan);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;transition:all .15s;letter-spacing:.05em}
 .btn-ver-mapa:hover{background:rgba(0,200,212,.18)}
 .btn-export-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);border-radius:4px;color:var(--amber);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;margin-left:6px;transition:all .15s;letter-spacing:.05em}
@@ -3385,7 +3408,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.02</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.03</div>
   </div>
 
 </div>
@@ -11158,6 +11181,146 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
     acumulado += dKm;
   }
 }
+
+// v8.03 — pedido de Daniel: análisis del vuelo (perfil de altitud, tramos de
+// maniobra, toques y despegues) en un modal aparte, para no congestionar el
+// mapa. _ultimaTraza guarda lo último calculado en abrirMapaVuelo() para que
+// abrirAnalisisVuelo() no tenga que volver a pedirle nada a Firebase.
+let _ultimaTraza = null;
+
+// Toques y despegues: mínimo local de altitud (suavizada con media móvil de 3
+// para reducir ruido GPS) con una subida de al menos TOQUE_PROMINENCIA_FT
+// ANTES y DESPUÉS, dentro de TOQUE_VENTANA_MIN — así un aterrizaje final (sin
+// subida después) NO cuenta como toque, y una bajada suave de crucero (sin
+// prominencia suficiente) tampoco. Dedup: dos mínimos a menos de 2min se
+// funden en uno solo (el más bajo). Aproximado a propósito — con GPS de
+// celular la altitud tiene bastante ruido, mejor un falso negativo ocasional
+// que inundar de falsos positivos.
+const TOQUE_PROMINENCIA_FT = 100;
+const TOQUE_VENTANA_MIN = 4;
+function _detectarToques(segmentos){
+  const candidatos=[];
+  for(const seg of segmentos){
+    if(seg.tipo!=='real') continue;
+    const pts = seg.pts.filter(p=>p.alt!=null);
+    if(pts.length<5) continue;
+    const alts = pts.map(p=>p.alt);
+    const suaves = alts.map((a,i)=>{
+      const a0=alts[Math.max(0,i-1)], a2=alts[Math.min(alts.length-1,i+1)];
+      return (a0+a+a2)/3;
+    });
+    for(let i=1;i<suaves.length-1;i++){
+      if(suaves[i]>=suaves[i-1] || suaves[i]>=suaves[i+1]) continue;
+      let antesOk=false;
+      for(let j=i-1;j>=0;j--){
+        const dtMin=(new Date(pts[i].ts)-new Date(pts[j].ts))/60000;
+        if(dtMin>TOQUE_VENTANA_MIN) break;
+        if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ antesOk=true; break; }
+      }
+      if(!antesOk) continue;
+      let despuesOk=false;
+      for(let j=i+1;j<suaves.length;j++){
+        const dtMin=(new Date(pts[j].ts)-new Date(pts[i].ts))/60000;
+        if(dtMin>TOQUE_VENTANA_MIN) break;
+        if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ despuesOk=true; break; }
+      }
+      if(despuesOk) candidatos.push(pts[i]);
+    }
+  }
+  candidatos.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  const dedup=[];
+  for(const c of candidatos){
+    const ult=dedup[dedup.length-1];
+    if(ult && (new Date(c.ts)-new Date(ult.ts))/60000<2){
+      if(c.alt<ult.alt) dedup[dedup.length-1]=c;
+      continue;
+    }
+    dedup.push(c);
+  }
+  return dedup;
+}
+
+// Crucero vs maniobra: régimen de giro (°/seg, sobre 3 puntos consecutivos).
+// Por encima de MANIOBRA_GIRO_DEG_S se considera viraje sostenido (maniobra);
+// por debajo, tramo recto (crucero). Devuelve bandas [{tipo,t0,t1}] listas
+// para pintar de fondo en el gráfico.
+const MANIOBRA_GIRO_DEG_S = 3;
+function _clasificarTramosVuelo(segmentos){
+  const bandas=[];
+  for(const seg of segmentos){
+    if(seg.tipo!=='real'||seg.pts.length<3) continue;
+    let actual=null;
+    for(let i=1;i<seg.pts.length-1;i++){
+      const p0=seg.pts[i-1], p1=seg.pts[i], p2=seg.pts[i+1];
+      const b1=_bearingDeg(p0.lat,p0.lng,p1.lat,p1.lng);
+      const b2=_bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
+      let dB=Math.abs(b2-b1); if(dB>180) dB=360-dB;
+      const dtS=(new Date(p2.ts)-new Date(p0.ts))/1000;
+      const giro = dtS>0 ? dB/dtS : 0;
+      const tipo = giro>=MANIOBRA_GIRO_DEG_S ? 'maniobra' : 'crucero';
+      if(!actual || actual.tipo!==tipo){
+        if(actual) bandas.push(actual);
+        actual={tipo, t0:p1.ts, t1:p1.ts};
+      } else {
+        actual.t1=p1.ts;
+      }
+    }
+    if(actual) bandas.push(actual);
+  }
+  return bandas;
+}
+
+// Gráfico SVG altitud/tiempo — sin librería nueva, mismo criterio "vanilla"
+// del resto del proyecto. Franjas ámbar = maniobra; puntos amarillos = toques.
+function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
+  const W=680, H=220, PAD_L=42, PAD_R=10, PAD_T=10, PAD_B=22;
+  const validPts = puntos.filter(p=>p.alt!=null);
+  if(validPts.length<2) return '<div style="font-family:var(--font-mono);font-size:12px;color:var(--text3)">// Sin datos de altitud suficientes para graficar.</div>';
+  const t0 = new Date(validPts[0].ts).getTime();
+  const t1 = new Date(validPts[validPts.length-1].ts).getTime();
+  const durMs = (t1-t0)||1;
+  const altMin = altMinTraza ?? Math.min(...validPts.map(p=>p.alt));
+  const altMax = altMaxTraza ?? Math.max(...validPts.map(p=>p.alt));
+  const rango = (altMax-altMin)||1;
+  const xOf = ts => PAD_L + ((new Date(ts).getTime()-t0)/durMs)*(W-PAD_L-PAD_R);
+  const yOf = alt => PAD_T + (1-((alt-altMin)/rango))*(H-PAD_T-PAD_B);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid var(--border)">`;
+  for(const b of bandas){
+    if(b.tipo!=='maniobra') continue;
+    const x1=xOf(b.t0), x2=xOf(b.t1);
+    svg += `<rect x="${x1.toFixed(1)}" y="${PAD_T}" width="${Math.max(1,x2-x1).toFixed(1)}" height="${H-PAD_T-PAD_B}" fill="rgba(240,165,0,.16)"/>`;
+  }
+  const pathD = validPts.map((p,i)=>`${i===0?'M':'L'} ${xOf(p.ts).toFixed(1)} ${yOf(p.alt).toFixed(1)}`).join(' ');
+  svg += `<path d="${pathD}" fill="none" stroke="#00c8d4" stroke-width="1.6"/>`;
+  for(const t of toques){
+    svg += `<circle cx="${xOf(t.ts).toFixed(1)}" cy="${yOf(t.alt).toFixed(1)}" r="4.5" fill="#f0a500" stroke="#000" stroke-width="0.6"/>`;
+  }
+  svg += `<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${H-PAD_B}" stroke="var(--border)" stroke-width="1"/>`;
+  svg += `<line x1="${PAD_L}" y1="${H-PAD_B}" x2="${W-PAD_R}" y2="${H-PAD_B}" stroke="var(--border)" stroke-width="1"/>`;
+  svg += `<text x="${PAD_L-4}" y="${PAD_T+8}" text-anchor="end" font-size="9" style="fill:var(--text3);font-family:monospace">${Math.round(altMax*3.28084)}ft</text>`;
+  svg += `<text x="${PAD_L-4}" y="${H-PAD_B}" text-anchor="end" font-size="9" style="fill:var(--text3);font-family:monospace">${Math.round(altMin*3.28084)}ft</text>`;
+  svg += `</svg>`;
+  return svg;
+}
+
+window.abrirAnalisisVuelo = function(){
+  if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
+  const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora} = _ultimaTraza;
+  document.getElementById('analisis-sub').textContent = (nombre?`${nombre} — ${avion}`:avion) + (hora?` · Turno ${hora} hs`:'');
+  const bandas = _clasificarTramosVuelo(segmentos);
+  const toques = _detectarToques(segmentos);
+  const fmtT = iso => { const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
+  document.getElementById('analisis-toques-resumen').textContent = toques.length
+    ? `🟡 ${toques.length} toque${toques.length!==1?'s':''} y despegue${toques.length!==1?'s':''} detectado${toques.length!==1?'s':''} — ${toques.map(t=>fmtT(t.ts)).join(', ')}`
+    : '// Sin toques y despegues detectados en este vuelo.';
+  document.getElementById('analisis-chart-wrap').innerHTML = _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques);
+  document.getElementById('modal-analisis-vuelo').classList.add('open');
+};
+window.cerrarAnalisisVuelo = function(){
+  document.getElementById('modal-analisis-vuelo').classList.remove('open');
+};
+
 // v8.00 — pedido de Daniel: velocidad máxima en la barra de info del mapa. Se
 // deriva de distancia/tiempo entre pares de puntos consecutivos (no hay campo
 // de velocidad instantánea del GPS guardado en vuelo_tracks) — SOLO dentro de
@@ -11216,6 +11379,7 @@ function _calcDistMaxOrigenNm(puntos){
 }
 
 window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
+  _ultimaTraza = null; // v8.03: se repuebla recién si carga bien — evita que "📊 Análisis" abra con datos de un vuelo anterior si este falla
   const modal = document.getElementById('modal-mapa-vuelo');
   document.getElementById('mapa-vuelo-title').textContent = nombre ? `${nombre} — ${avion}` : avion;
   document.getElementById('mapa-vuelo-sub').textContent = hora ? `Turno ${hora} hs` : '';
@@ -11313,6 +11477,10 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     document.getElementById('mv-desc').textContent = vario.desc<0 ? `${Math.round(vario.desc)} ft/min` : '—';
     const distMaxOrigenNm = _calcDistMaxOrigenNm(puntos);
     document.getElementById('mv-distorigen').textContent = `${distMaxOrigenNm.toFixed(distMaxOrigenNm < 1 ? 2 : 1)} nm`;
+    // v8.03: guardamos la traza ya procesada para que "📊 Análisis" no tenga
+    // que volver a pedirle nada a Firebase — reusa exactamente lo que ya se
+    // calculó acá (puntos, segmentos, altMinTraza/altMaxTraza).
+    _ultimaTraza = { puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora };
 
     const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
     if (huecosReales.length) {
@@ -11472,6 +11640,7 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
       <div class="map-sub" id="mapa-vuelo-sub"></div>
       <div class="map-sub" id="mapa-vuelo-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
     </div>
+    <button onclick="abrirAnalisisVuelo()" id="btn-abrir-analisis" style="background:transparent;border:1px solid rgba(240,165,0,.4);border-radius:var(--radius);color:var(--amber);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer;margin-right:8px">📊 Análisis</button>
     <button onclick="cerrarMapaVuelo()" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--text3);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer">✕ Cerrar</button>
   </div>
   <div class="map-leaflet-wrap">
@@ -11501,6 +11670,30 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
     <span>🔽 Descenso máx: <span class="mv" id="mv-desc">—</span></span>
     <span>📡 Dist. máx. despegue: <span class="mv" id="mv-distorigen">—</span></span>
     <span id="mv-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mv-huecos-txt">—</span></span>
+  </div>
+</div>
+
+<!-- v8.03 — pedido de Daniel: modal de ANÁLISIS separado del mapa (para no
+     congestionarlo), con perfil de altitud/tiempo, tramos de maniobra
+     (virajes) pintados como franjas de fondo, y toques y despegues
+     detectados marcados sobre el gráfico + listados en texto. Se abre desde
+     el botón "📊 Análisis" del visor de mapa, reusando la traza ya cargada
+     (_ultimaTraza) sin volver a pedirle nada a Firebase. -->
+<div id="modal-analisis-vuelo">
+  <div class="map-bar">
+    <div>
+      <div class="map-title">ANÁLISIS DEL VUELO</div>
+      <div class="map-sub" id="analisis-sub"></div>
+    </div>
+    <button onclick="cerrarAnalisisVuelo()" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--text3);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer">✕ Cerrar</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px">
+    <div id="analisis-toques-resumen" style="font-family:var(--font-mono);font-size:13px;color:var(--text);margin-bottom:10px"></div>
+    <div id="analisis-chart-wrap"></div>
+    <div style="margin-top:12px;font-family:var(--font-mono);font-size:10px;color:var(--text3);line-height:1.6">
+      🟧 franja = tramo con maniobra (viraje sostenido) · resto del gráfico = crucero.<br>
+      🟡 punto = toque y despegue detectado (aproximado — puede haber falsos positivos si el GPS es impreciso cerca de la pista).
+    </div>
   </div>
 </div>
 
