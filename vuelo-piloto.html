@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.47 · 2026-08-30
+  FIX reportado por Daniel con captura de celular, mismo cambio en paralelo
+  que vuelo.html v5.63: (1) barra de info de flex-wrap a grilla de 2 columnas,
+  fuente de 16/19px a 12/14px. (2) botón "📊 Análisis" sacado del header
+  (competía con #map-alt-legend) y convertido en botón flotante propio,
+  esquina inferior izquierda.
+
   v4.46 · 2026-08-30
   Pedido de Daniel, mismo cambio en paralelo que turnos.html v8.11/vuelo.html
   v5.62: líneas de grilla en el eje Y (altitud) del gráfico de análisis, mismo
@@ -1102,6 +1109,23 @@ select:disabled{opacity:.55}
   box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
 }
 .btn-map-close-float:active{transform:scale(.93)}
+
+/* v4.47 FIX (reportado por Daniel con captura de celular), mismo cambio en
+   paralelo que vuelo.html v5.63: el botón "📊 Análisis" vivía adentro de
+   .map-modal-header, compitiendo por espacio con el título/subtítulo — en
+   pantallas angostas terminaba pegado/tapado contra #map-alt-legend. Se saca
+   del header y pasa a ser un botón flotante propio, esquina inferior
+   izquierda (mismo patrón que .btn-map-close-float del otro lado). */
+.btn-analisis-float{
+  position:absolute;z-index:20;
+  left:14px;bottom:14px;
+  width:56px;height:56px;border-radius:50%;
+  background:#f0a500;border:none;color:#000;
+  font-size:22px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
+}
+.btn-analisis-float:active{transform:scale(.93)}
 .spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
 .spinner-btn{width:56px;height:56px;border:none;border-radius:12px;font-size:28px;font-weight:700;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);-webkit-tap-highlight-color:transparent}
 .spinner-btn.minus{background:var(--gray2);border-radius:12px 0 0 12px}
@@ -1115,9 +1139,12 @@ select:disabled{opacity:.55}
    competían directo contra el header/botón de afuera y ganaban, tapándolos.
    isolation:isolate encierra todo lo de Leaflet en su propio contexto. */
 #map-leaflet{width:100%;height:100%;isolation:isolate}
-.map-info-bar{padding:14px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:26px;flex-wrap:wrap;flex:none}
-.map-info-bar span{font-family:var(--mono);font-size:16px;color:var(--gray)}
-.map-info-bar .mv{color:var(--white);font-weight:700;font-size:19px}
+/* v4.47 FIX (mismo cambio en paralelo que vuelo.html v5.63, reportado por
+   Daniel: "los stats tienen más relevancia que el mapa en sí"): grilla de 2
+   columnas en vez de flex-wrap, fuente de 16/19px a 12/14px. */
+.map-info-bar{padding:8px 16px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);flex:none;display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.map-info-bar>span{font-family:var(--mono);font-size:12px;color:var(--gray);padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.map-info-bar .mv{color:var(--white);font-weight:700;font-size:14px}
 .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
 
 /* ── Cancelar vuelo: long-press (v4.10, pedido de Daniel — el click directo
@@ -1522,7 +1549,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.46';
+const APP_VERSION = '4.47';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3968,7 +3995,6 @@ if('serviceWorker' in navigator){
         <div class="map-sub" id="map-modal-sub"></div>
         <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
       </div>
-      <button class="btn-map-close" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" style="border-color:rgba(240,165,0,.4);color:var(--amber);margin-right:8px">📊 Análisis</button>
       <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
     </div>
     <div class="map-loading" id="map-loading">
@@ -3976,6 +4002,7 @@ if('serviceWorker' in navigator){
       <span>Cargando traza...</span>
     </div>
     <div id="map-leaflet"></div>
+    <button class="btn-analisis-float" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" title="Análisis">📊</button>
     <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
     <div id="map-alt-legend" style="display:none;position:absolute;right:10px;top:10px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--gray);pointer-events:none">
       <div style="margin-bottom:4px;color:var(--white);font-weight:700">ALTITUD</div>

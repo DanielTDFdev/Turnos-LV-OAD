@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.63 · 2026-08-30
+  FIX reportado por Daniel con captura de celular ("se ve muy mal, los stats
+  tienen más relevancia que el mapa, el botón de análisis tapado por la
+  leyenda de altitud"): (1) barra de info (.map-info-bar) de flex-wrap a
+  grilla de 2 columnas, fuente de 16/19px a 12/14px — los 9 stats ocupan una
+  fracción del alto de antes. (2) botón "📊 Análisis" sacado del header (ahí
+  competía con #map-alt-legend por la esquina superior derecha) y convertido
+  en botón flotante propio (.btn-analisis-float), esquina inferior izquierda,
+  mismo patrón que el flotante rojo de Cerrar pero del otro lado.
+
   v5.62 · 2026-08-30
   Pedido de Daniel, mismo cambio en paralelo que turnos.html v8.11: líneas de
   grilla en el eje Y (altitud) del gráfico de análisis, mismo espaciado
@@ -1321,6 +1331,25 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 }
 .btn-map-close-float:active{transform:scale(.93)}
 
+/* v5.63 FIX (reportado por Daniel con captura de celular): el botón "📊
+   Análisis" vivía adentro de .map-modal-header, compitiendo por espacio con
+   el título/subtítulo (que en un nombre largo ocupa 2-3 líneas) — en pantallas
+   angostas terminaba pegado/tapado contra #map-alt-legend, que flota
+   independiente en la esquina superior derecha DEL MAPA. Se saca del header
+   por completo y pasa a ser un botón flotante propio, mismo patrón que
+   .btn-map-close-float pero en la esquina inferior IZQUIERDA — ya no compite
+   con nada de arriba. */
+.btn-analisis-float{
+  position:absolute;z-index:20;
+  left:14px;bottom:14px;
+  width:56px;height:56px;border-radius:50%;
+  background:#f0a500;border:none;color:#000;
+  font-size:22px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
+}
+.btn-analisis-float:active{transform:scale(.93)}
+
 /* Spinner de aterrizajes */
 .spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
 .spinner-btn{width:56px;height:56px;border:none;border-radius:12px;font-size:28px;font-weight:700;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);-webkit-tap-highlight-color:transparent}
@@ -1338,9 +1367,15 @@ textarea{resize:none;min-height:80px;line-height:1.5}
    todo lo de Leaflet en su propio contexto — de ahora en más nada de adentro
    puede "escaparse" y competir con hermanos de #map-container. */
 #map-leaflet{width:100%;height:100%;isolation:isolate}
-.map-info-bar{padding:14px 18px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);display:flex;gap:26px;flex-wrap:wrap;flex:none}
-.map-info-bar span{font-family:var(--mono);font-size:16px;color:var(--gray)}
-.map-info-bar .mv{color:var(--white);font-weight:700;font-size:19px}
+/* v5.63 FIX (reportado por Daniel con captura de celular: "los stats tienen
+   más relevancia que el mapa en sí"): con 9 stats a font-size 16/19px y flex-
+   wrap, cada uno terminaba en su propia línea en una pantalla angosta — la
+   barra de info medía más que el mapa. Pasa a grilla de 2 columnas, fuente
+   bien más chica (12/14px en vez de 16/19px) y un separador sutil por fila —
+   mismos 9 datos, una fracción del alto. */
+.map-info-bar{padding:8px 16px;background:var(--bg2);border-top:1px solid rgba(0,200,212,.1);flex:none;display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.map-info-bar>span{font-family:var(--mono);font-size:12px;color:var(--gray);padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.map-info-bar .mv{color:var(--white);font-weight:700;font-size:14px}
 .map-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10;font-family:var(--mono);font-size:12px;color:var(--cyan);flex-direction:column;gap:12px}
 .btn-traza{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.1);border:1px solid rgba(0,200,212,.3);border-radius:6px;color:var(--cyan);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.06em;margin-top:8px;transition:all .15s}
 .btn-traza:active{background:rgba(0,200,212,.2)}
@@ -1703,7 +1738,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.62'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.63'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3896,7 +3931,6 @@ if('serviceWorker' in navigator){
         <div class="map-sub" id="map-modal-sub"></div>
         <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
       </div>
-      <button class="btn-map-close" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" style="border-color:rgba(240,165,0,.4);color:var(--amber);margin-right:8px">📊 Análisis</button>
       <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
     </div>
     <div class="map-loading" id="map-loading">
@@ -3904,6 +3938,7 @@ if('serviceWorker' in navigator){
       <span>Cargando traza...</span>
     </div>
     <div id="map-leaflet"></div>
+    <button class="btn-analisis-float" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" title="Análisis">📊</button>
     <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
     <!-- v5.51: leyenda de colores por altitud — pedido de Daniel, estilo Pilotfy.
          Se puebla en JS (alt mín/máx REALES del vuelo) porque la escala es relativa
