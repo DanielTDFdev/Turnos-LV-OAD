@@ -1,5 +1,26 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.30
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel: (1) se saca la pestaña separada "Inst / Admin" del login —
+            "el rol ya lo tiene el propio login del usuario". Login unificado en un único
+            campo usuario/email + contraseña (el que antes era solo de alumno): loginAlumno()
+            ahora prueba primero como alumno/piloto (por email o username) y, solo si no
+            existe ahí, como instructor/admin (por username — esas cuentas no tienen email
+            real). El rol resultante lo determina el registro que efectivamente coincida,
+            no una pestaña elegida a mano. Se eliminó la función loginInstructor() y sus
+            campos propios (inst-user/inst-pass/login-err2/btn-login-inst) — todo unificado
+            sobre al-login-email/al-login-pass/login-err/btn-login-al. El login simulado
+            ('*', v8.28/v8.29) sigue funcionando igual, ahora sobre el único campo: sirve
+            tanto para simular un alumno/piloto como un instructor. (2) Checkbox "Recordar
+            usuario" (al-recordar-user) junto al campo de login: si está tildado al loguear
+            con éxito, guarda el identificador tal como se tipeó (incluido el '*' de login
+            simulado, si lo tenía) en localStorage (lvoad-recordar-user) — a propósito en
+            localStorage y no sessionStorage, tiene que sobrevivir el cierre del navegador.
+            Nuevas guardarUsuarioRecordado()/aplicarUsuarioRecordado(); esta última se llama
+            al arrancar la app (si no hay sesión restaurada) y en logout(), para que el
+            campo quede prellenado con el checkbox tildado la próxima vez. Si el checkbox
+            está destildado al loguear, se borra cualquier valor guardado.
   VERSION : 8.29
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel sobre el login simulado de v8.28: "que no quede registro en
@@ -3794,7 +3815,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.29</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.30</div>
   </div>
 
 </div>
@@ -3827,11 +3848,14 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div style="display:flex;gap:6px;margin-bottom:1.25rem">
         <button class="nav-btn-icon active" id="tab-btn-alumno"     onclick="switchLoginTab('alumno')"><img src="repo_fotos/piloto_icon.png" alt="">Ingresar</button>
         <button class="nav-btn-icon"        id="tab-btn-registro"   onclick="switchLoginTab('registro')"><img src="repo_fotos/registro_icon.png" alt="">Registrarme</button>
-        <button class="nav-btn-icon"        id="tab-btn-instructor" onclick="switchLoginTab('instructor')"><img src="repo_fotos/instructor_icon.png" alt="">Inst / Admin</button>
       </div>
       <div id="tab-alumno">
         <div class="field"><label>Email o usuario</label><input type="text" id="al-login-email" placeholder="tu@email.com o tu usuario" autocapitalize="off" autocomplete="username"></div>
         <div class="field"><label>Contraseña</label><input type="password" id="al-login-pass" placeholder="••••••••" autocomplete="new-password"></div>
+        <label style="display:flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:11px;color:var(--text2);margin:-.15rem 0 .6rem;cursor:pointer">
+          <input type="checkbox" id="al-recordar-user" style="width:14px;height:14px;accent-color:var(--cyan);cursor:pointer">
+          Recordar usuario
+        </label>
         <div id="login-err" class="error"></div>
         <button id="btn-login-al" data-label="INGRESAR" class="primary" style="width:100%;margin-top:.5rem" onclick="loginAlumno()">INGRESAR</button>
         <div style="text-align:center;margin-top:1rem"><button class="link-btn" onclick="switchLoginTab('olvide')">Olvidé mi contraseña</button></div>
@@ -3855,12 +3879,6 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <div id="olvide-ok" class="success-msg"></div>
         <button id="btn-olvide" data-label="ENVIAR" class="primary" style="width:100%;margin-top:.5rem" onclick="olvideClave()">ENVIAR CONTRASEÑA TEMPORAL</button>
         <div style="text-align:center;margin-top:1rem"><button class="link-btn" onclick="switchLoginTab('alumno')">← Volver al login</button></div>
-      </div>
-      <div id="tab-instructor" style="display:none">
-        <div class="field"><label>Usuario</label><input type="text" id="inst-user" placeholder="usuario" autocomplete="off"></div>
-        <div class="field"><label>Contraseña</label><input type="password" id="inst-pass" placeholder="••••••••" autocomplete="new-password"></div>
-        <div id="login-err2" class="error"></div>
-        <button id="btn-login-inst" data-label="INGRESAR" class="primary" style="width:100%;margin-top:.5rem" onclick="loginInstructor()">INGRESAR</button>
       </div>
     </div>
     <div class="login-copyright">© 2026 — by DAC</div>
@@ -5645,16 +5663,17 @@ window.guardarAeronaveModal=async function(){
 // del usuario en el login normal (ej. "mrodriguez*" entra como mrodriguez). La contraseña
 // que se tipea en ese caso NO es la del usuario simulado — se valida acá contra las
 // cuentas admin/administrador (las únicas que quedan en password plano, nunca se migran a
-// Firebase Auth — ver nota en loginInstructor), como un "sudo": hace falta la contraseña
-// de un admin real para poder simular a cualquiera. Devuelve el username admin que
-// coincidió ('admin'/'administrador') o null si ninguna coincide. Se reusa tal cual desde
-// loginAlumno() y loginInstructor().
+// Firebase Auth), como un "sudo": hace falta la contraseña de un admin real para poder
+// simular a cualquiera. Devuelve el username admin que coincidió ('admin'/'administrador')
+// o null si ninguna coincide. v8.30: se reusa tal cual desde el único login unificado
+// (loginAlumno(), que ahora prueba primero alumno y después instructor/admin — antes
+// había dos funciones separadas, ver comentario en loginAlumno()).
 async function verificarPasswordAdmin(pass){
   for(const u of ['admin','administrador']){
     const rec=await fbGet('instructores/'+u);
     if(rec&&rec.pass===pass) return u;
   }
-  if(pass==='admin123') return 'admin'; // mismo acceso de emergencia que loginInstructor
+  if(pass==='admin123') return 'admin'; // mismo acceso de emergencia del login normal
   return null;
 }
 // Banner persistente mientras hay una sesión simulada activa — para que quede clarísimo
@@ -5894,9 +5913,9 @@ window.toggleOcultarCancelados=function(){
 
 // ── LOGIN ──────────────────────────────────────────────────────
 window.switchLoginTab=function(tab){
-  ['alumno','registro','instructor','olvide'].forEach(t=>{const e=document.getElementById('tab-'+t);if(e)e.style.display=t===tab?'block':'none';});
-  ['alumno','registro','instructor'].forEach(t=>{const b=document.getElementById('tab-btn-'+t);if(b)b.classList.toggle('active',t===tab);});
-  ['login-err','login-err2','reg-err','reg-ok'].forEach(id=>hideEl(id));
+  ['alumno','registro','olvide'].forEach(t=>{const e=document.getElementById('tab-'+t);if(e)e.style.display=t===tab?'block':'none';});
+  ['alumno','registro'].forEach(t=>{const b=document.getElementById('tab-btn-'+t);if(b)b.classList.toggle('active',t===tab);});
+  ['login-err','reg-err','reg-ok'].forEach(id=>hideEl(id));
 };
 
 let _registrando=false;
@@ -5933,13 +5952,16 @@ window.registrarAlumno=async function(){
 
 window.loginAlumno=async function(){
   hideEl('login-err');
-  let id=val('al-login-email').toLowerCase(),pass=val('al-login-pass');
+  const idOriginal=val('al-login-email'),pass=val('al-login-pass');
+  let id=idOriginal.toLowerCase();
   if(!id||!pass){showErr('login-err','Completá usuario/email y contraseña.');return;}
   setLoading('btn-login-al',true);
   try{
-    // v8.29: pedido de Daniel — sin ningún registro en auditoría para el login simulado,
-    // ni éxito ni fallo. A partir de acá, todo await registrarAuditoria(...) de este
-    // bloque queda condicionado a !simulando.
+    // v8.30: pedido de Daniel — se saca la pestaña separada "Inst/Admin". Un único campo
+    // usuario/email para TODOS los roles: primero se busca como alumno/piloto (por email
+    // o username) y, solo si no existe ahí, como instructor/admin (por username — nunca
+    // por email, esas cuentas no tienen uno real). El rol lo determina el registro que
+    // efectivamente coincida, no una pestaña que el usuario elige a mano.
     let simulando=false,adminSimulador=null;
     if(id.endsWith('*')){
       id=id.slice(0,-1);
@@ -5949,6 +5971,8 @@ window.loginAlumno=async function(){
       }
       simulando=true;
     }
+
+    // ── Intento 1: alumno/piloto ──────────────────────────────────────
     let alumno=null,k=null;
     if(id.includes('@')){
       k=ek(id); alumno=await fbGet('alumnos/'+k);
@@ -5958,61 +5982,156 @@ window.loginAlumno=async function(){
         if((a.username||'').toLowerCase()===id){alumno=a;k=key;break;}
       }
     }
-    if(!alumno){
-      if(!simulando) await registrarAuditoria('login','alumno','fallo','Identificador no encontrado — '+id);
-      showErr('login-err','Usuario/email o contraseña incorrectos.');return;
-    }
-    // Verificación: primero Firebase Auth (si ya está migrado), con fallback a password plano.
-    // Si el alumno aún no está migrado y la password plana coincide, se crea su cuenta de Auth (perezosa).
-    // v8.28: en login simulado se salta esta verificación entera — ya se autorizó arriba
-    // con la contraseña del admin, la del alumno no interviene para nada.
-    let okLogin=simulando;
-    if(!simulando){
-      if(alumno.authMigrado){
-        try{ await signInWithEmailAndPassword(auth,alumno.email,pass); okLogin=true; }
-        catch(_){ okLogin=false; }
+    if(alumno){
+      // Verificación: primero Firebase Auth (si ya está migrado), con fallback a password
+      // plano (y migración perezosa). En login simulado se salta entera — ya se autorizó
+      // arriba con la contraseña del admin, la del alumno no interviene para nada.
+      let okLogin=simulando;
+      if(!simulando){
+        if(alumno.authMigrado){
+          try{ await signInWithEmailAndPassword(auth,alumno.email,pass); okLogin=true; }
+          catch(_){ okLogin=false; }
+        }
+        if(!okLogin && alumno.pass!=null && alumno.pass===pass){
+          okLogin=true;
+          if(!alumno.authMigrado) await authMigrarAlumno(k,alumno.email,pass);
+        }
       }
-      if(!okLogin && alumno.pass!=null && alumno.pass===pass){
-        okLogin=true;
-        if(!alumno.authMigrado) await authMigrarAlumno(k,alumno.email,pass);
+      if(!okLogin){
+        // Encontrado como alumno pero contraseña incorrecta: es esta cuenta, no tiene
+        // sentido seguir buscando en /instructores con el mismo id.
+        await registrarAuditoria('login',alumno.rol||'alumno','fallo','Contraseña incorrecta — '+id);
+        showErr('login-err','Usuario/email o contraseña incorrectos.');return;
       }
-    }
-    if(!okLogin){
-      await registrarAuditoria('login',alumno.rol||'alumno','fallo','Contraseña incorrecta — '+id);
-      showErr('login-err','Usuario/email o contraseña incorrectos.');return;
-    }
-    if(alumno.estado_login==='suspendido'){
-      if(!simulando) await registrarAuditoria('login',alumno.rol||'alumno','bloqueado','Acceso suspendido — '+id);
-      showErr('login-err','⚠ Tu acceso está suspendido. Comunicate con administración.');
+      if(alumno.estado_login==='suspendido'){
+        if(!simulando) await registrarAuditoria('login',alumno.rol||'alumno','bloqueado','Acceso suspendido — '+id);
+        showErr('login-err','⚠ Tu acceso está suspendido. Comunicate con administración.');
+        return;
+      }
+      if(alumno.estado==='pendiente_aprobacion'){
+        if(!simulando) await registrarAuditoria('login','pendiente','exito',alumno.nombre+' ('+id+')');
+        showScreen('pendiente-screen');
+        return;
+      }
+      // Un login simulado nunca fuerza cambio de contraseña del alumno — sería pisarle
+      // la clave real sin que se entere. Se salta directo con lo que ya tenga.
+      if(alumno.pass_temporal && !simulando){
+        const cambiada=await forzarCambioClave('alumnos/'+k);
+        if(!cambiada){showErr('login-err','Para ingresar tenés que cambiar la contraseña temporal.');return;}
+      }
+      if(!simulando) await registrarAuditoria('login',alumno.rol||'alumno','exito',alumno.nombre+' ('+id+')');
+      guardarUsuarioRecordado(idOriginal);
+      const rol=alumno.rol||'alumno';
+      session={tipo:'alumno',rol,nombre:alumno.nombre,email:alumno.email,emailKey:k,username:alumno.username||'',simuladoPor:simulando?adminSimulador:null};
+      guardarSesion();
+      setNavUser(alumno.nombre,rol);
+      await loadConfig();
+      showScreen('alumno-screen');
+      renderBannerVencimientoAlumno(alumno);
+      initAvionSelector();
+      showAlumnoTab('mis-turnos');
+      suscribirReservas();
+      startSessionTimeout();
+      if(simulando) mostrarBannerSimulacion(alumno.nombre,adminSimulador);
       return;
     }
-    if(alumno.estado==='pendiente_aprobacion'){
-      if(!simulando) await registrarAuditoria('login','pendiente','exito',alumno.nombre+' ('+id+')');
-      showScreen('pendiente-screen');
-      return;
+
+    // ── Intento 2: instructor/admin (solo por username) ────────────────
+    if(!id.includes('@')){
+      const data=await fbGet('instructores');
+      let found=null;
+      if(data)for(const[key,i]of Object.entries(data))if((i.user||'').toLowerCase()===id){found={...i,key};break;}
+
+      // Verificación de password: Auth primero (si ya migrado), fallback a plano +
+      // migración perezosa. admin/administrador quedan en password plano (acceso
+      // administrativo/emergencia), nunca se migran. En login simulado se salta entera.
+      let okLogin=simulando;
+      if(!simulando){
+        if(found && found.user!=='admin' && found.user!=='administrador'){
+          const instEmail=authEmailInstructor(found.user);
+          if(found.authMigrado){
+            try{ await signInWithEmailAndPassword(auth,instEmail,pass); okLogin=true; }catch(_){ okLogin=false; }
+          }
+          if(!okLogin && found.pass!=null && found.pass===pass){
+            okLogin=true;
+            if(!found.authMigrado) await authMigrarInstructor(found.key,instEmail,pass);
+          }
+        } else if(found){
+          okLogin = found.pass===pass;
+        }
+        // admin siempre accesible con clave fija (acceso de emergencia)
+        if(!okLogin && id==='admin' && pass==='admin123'){
+          if(!await fbGet('instructores/admin'))await fbSet('instructores/admin',{user:'admin',pass:'admin123',nombre:'Instructor'});
+          found={user:'admin',pass:'admin123',nombre:'Instructor',key:'admin'};
+          okLogin=true;
+        }
+      }
+
+      if(found && okLogin){
+        // Cambio de clave forzado por admin (pass_temporal). No aplica al acceso de
+        // emergencia admin ni a un login simulado.
+        if(found.pass_temporal && found.user!=='admin' && !simulando){
+          const cambiada=await forzarCambioClave('instructores/'+found.key);
+          if(!cambiada){showErr('login-err','Para ingresar tenés que cambiar la contraseña temporal.');return;}
+        }
+        if(!simulando) await registrarAuditoria('login','instructor','exito',found.nombre+' ('+found.user+')');
+        guardarUsuarioRecordado(idOriginal);
+        // administrador tiene acceso completo (excepto Zona Peligrosa y edición de horarios)
+        const soloUsuarios=found.soloUsuarios===true&&found.user!=='admin'&&found.user!=='administrador';
+        session={tipo:'instructor',nombre:found.nombre,user:found.user,soloUsuarios,simuladoPor:simulando?adminSimulador:null};
+        guardarSesion();
+        setNavUser(found.nombre,'instructor');
+        await loadConfig();
+        buildCalAvionTabs();
+        showScreen('instructor-screen');
+        actualizarLinkReporte();
+        if(soloUsuarios){
+          showInstTab('config');showCfgTab('usuarios');
+          chequearVuelosPendientesInstructor(found.nombre); // único caso sin listener de reservas — ver nota v8.16
+        }else{
+          showInstTab('reservas');
+          suscribirReservas(); // el banner se actualiza solo dentro del onValue — ver v8.16
+        }
+        suscribirPendientes();
+        startSessionTimeout();
+        const instPerfilUser=document.getElementById('inst-perfil-user');
+        const instPerfilNombre=document.getElementById('inst-perfil-user-label');
+        if(instPerfilUser) instPerfilUser.value=found.user||'';
+        if(instPerfilNombre) instPerfilNombre.value=found.nombre||'';
+        if(simulando) mostrarBannerSimulacion(found.nombre,adminSimulador);
+        return;
+      }
     }
-    // v8.28: un login simulado nunca fuerza cambio de contraseña del alumno — sería
-    // pisarle la clave real sin que se entere. Se salta directo con lo que ya tenga.
-    if(alumno.pass_temporal && !simulando){
-      const cambiada=await forzarCambioClave('alumnos/'+k);
-      if(!cambiada){showErr('login-err','Para ingresar tenés que cambiar la contraseña temporal.');return;}
-    }
-    if(!simulando) await registrarAuditoria('login',alumno.rol||'alumno','exito',alumno.nombre+' ('+id+')');
-    const rol=alumno.rol||'alumno';
-    session={tipo:'alumno',rol,nombre:alumno.nombre,email:alumno.email,emailKey:k,username:alumno.username||'',simuladoPor:simulando?adminSimulador:null};
-    guardarSesion();
-    setNavUser(alumno.nombre,rol);
-    await loadConfig();
-    showScreen('alumno-screen');
-    renderBannerVencimientoAlumno(alumno);
-    initAvionSelector();
-    showAlumnoTab('mis-turnos');
-    suscribirReservas();
-    startSessionTimeout();
-    if(simulando) mostrarBannerSimulacion(alumno.nombre,adminSimulador);
+
+    // No coincidió ni como alumno/piloto ni como instructor/admin.
+    if(!simulando) await registrarAuditoria('login','alumno','fallo','Identificador no encontrado — '+id);
+    showErr('login-err','Usuario/email o contraseña incorrectos.');
   }catch(e){showErr('login-err','Error al iniciar sesión.');console.error(e);}
   finally{setLoading('btn-login-al',false);}
 };
+
+// ── "Recordar usuario" (v8.30) ──────────────────────────────────────────
+// Persistido en localStorage (no sessionStorage — a propósito, tiene que sobrevivir el
+// cierre del navegador, a diferencia de la sesión). Guarda el identificador TAL COMO se
+// tipeó (incluido el '*' de login simulado, si lo tenía — útil para Daniel si repite la
+// misma simulación seguido). Se guarda solo al loguear con éxito, nunca en un intento
+// fallido, y se borra si el checkbox está destildado.
+function guardarUsuarioRecordado(idOriginal){
+  try{
+    const chk=document.getElementById('al-recordar-user');
+    if(chk&&chk.checked) localStorage.setItem('lvoad-recordar-user',idOriginal);
+    else localStorage.removeItem('lvoad-recordar-user');
+  }catch(e){}
+}
+function aplicarUsuarioRecordado(){
+  try{
+    const u=localStorage.getItem('lvoad-recordar-user');
+    if(!u)return;
+    const campo=document.getElementById('al-login-email'),chk=document.getElementById('al-recordar-user');
+    if(campo) campo.value=u;
+    if(chk) chk.checked=true;
+  }catch(e){}
+}
 
 window.olvideClave=async function(){
   hideEl('olvide-err');hideEl('olvide-ok');
@@ -6067,99 +6186,6 @@ function forzarCambioClave(dbPath){
     }
   });
 }
-
-window.loginInstructor=async function(){
-  hideEl('login-err2');
-  let user=val('inst-user'),pass=val('inst-pass');
-  if(!user||!pass){showErr('login-err2','Completá usuario y contraseña.');return;}
-  setLoading('btn-login-inst',true);
-  try{
-    // v8.28: '*' al final del usuario = login simulado (ver verificarPasswordAdmin) —
-    // no tiene sentido simular a admin/administrador (ya son la cuenta más privilegiada),
-    // así que ese caso se rechaza directo.
-    let simulando=false,adminSimulador=null;
-    if(user.endsWith('*')){
-      user=user.slice(0,-1);
-      if(user.toLowerCase()==='admin'||user.toLowerCase()==='administrador'){
-        showErr('login-err2','No se puede simular una cuenta admin.');return;
-      }
-      adminSimulador=await verificarPasswordAdmin(pass);
-      if(!adminSimulador){
-        showErr('login-err2','Usuario o contraseña incorrectos.');return;
-      }
-      simulando=true;
-    }
-    const data=await fbGet('instructores');
-    // Buscar por usuario (sin comparar password todavía)
-    let found=null;
-    if(data)for(const[k,i]of Object.entries(data))if((i.user||'').toLowerCase()===user.toLowerCase()){found={...i,key:k};break;}
-
-    // Verificación de password: Auth primero (si ya está migrado), fallback a plano + migración perezosa.
-    // admin/administrador quedan en password plano (acceso administrativo/emergencia), no se migran.
-    // v8.28: en login simulado se salta esta verificación entera — ya se autorizó arriba
-    // con la contraseña del admin, la del instructor simulado no interviene para nada.
-    let okLogin=simulando;
-    if(!simulando){
-      if(found && found.user!=='admin' && found.user!=='administrador'){
-        const instEmail=authEmailInstructor(found.user);
-        if(found.authMigrado){
-          try{ await signInWithEmailAndPassword(auth,instEmail,pass); okLogin=true; }catch(_){ okLogin=false; }
-        }
-        if(!okLogin && found.pass!=null && found.pass===pass){
-          okLogin=true;
-          if(!found.authMigrado) await authMigrarInstructor(found.key,instEmail,pass);
-        }
-      } else if(found){
-        okLogin = found.pass===pass;
-      }
-
-      // admin siempre accesible con clave fija (acceso de emergencia)
-      if(!okLogin && user==='admin' && pass==='admin123'){
-        if(!await fbGet('instructores/admin'))await fbSet('instructores/admin',{user:'admin',pass:'admin123',nombre:'Instructor'});
-        found={user:'admin',pass:'admin123',nombre:'Instructor',key:'admin'};
-        okLogin=true;
-      }
-    }
-
-    if(!found || !okLogin){
-      // v8.29: sin auditoría para login simulado — ni siquiera cuando el objetivo no
-      // existe (found null pero okLogin true por la contraseña admin válida).
-      if(!simulando) await registrarAuditoria('login','instructor','fallo','Usuario o contraseña incorrectos — '+user);
-      showErr('login-err2','Usuario o contraseña incorrectos.');return;
-    }
-    // Cambio de clave forzado por admin (pass_temporal). No aplica al acceso de emergencia admin
-    // ni a un login simulado (no tiene sentido pisarle la clave real al instructor simulado).
-    if(found.pass_temporal && found.user!=='admin' && !simulando){
-      const cambiada=await forzarCambioClave('instructores/'+found.key);
-      if(!cambiada){showErr('login-err2','Para ingresar tenés que cambiar la contraseña temporal.');return;}
-    }
-    if(!simulando) await registrarAuditoria('login','instructor','exito',found.nombre+' ('+found.user+')');
-    // administrador tiene acceso completo (excepto Zona Peligrosa y edición de horarios)
-    const soloUsuarios=found.soloUsuarios===true&&found.user!=='admin'&&found.user!=='administrador';
-    session={tipo:'instructor',nombre:found.nombre,user:found.user,soloUsuarios,simuladoPor:simulando?adminSimulador:null};
-    guardarSesion();
-    setNavUser(found.nombre,'instructor');
-    await loadConfig();
-    buildCalAvionTabs();
-    showScreen('instructor-screen');
-    actualizarLinkReporte();
-    if(soloUsuarios){
-      showInstTab('config');showCfgTab('usuarios');
-      chequearVuelosPendientesInstructor(found.nombre); // único caso sin listener de reservas — ver nota v8.16
-    }else{
-      showInstTab('reservas');
-      suscribirReservas(); // el banner se actualiza solo dentro del onValue — ver v8.16
-    }
-    suscribirPendientes();
-    startSessionTimeout();
-    const instPerfilUser=document.getElementById('inst-perfil-user');
-    const instPerfilNombre=document.getElementById('inst-perfil-user-label');
-    if(instPerfilUser) instPerfilUser.value=found.user||'';
-    if(instPerfilNombre) instPerfilNombre.value=found.nombre||'';
-    if(simulando) mostrarBannerSimulacion(found.nombre,adminSimulador);
-  }catch(e){showErr('login-err2','Error al iniciar sesión.');console.error(e);}
-  finally{setLoading('btn-login-inst',false);}
-};
 
 // v8.14→v8.16: pedido de Daniel — avisar al instructor de vuelos VENCIDOS donde figura
 // como instructor (aprobado_por||instructor, mismo criterio que ya usa la fila OBS.
@@ -6309,7 +6335,7 @@ window.logout=function(){
   document.getElementById('hero-callsign').textContent='TURNOS';
   document.getElementById('nav-brand').textContent='◈ ACCESO AL SISTEMA';
   document.getElementById('nav-user-area').style.display='none';
-  showScreen('login-screen');switchLoginTab('alumno');
+  showScreen('login-screen');switchLoginTab('alumno');aplicarUsuarioRecordado();
 };
 
 // ── TIMEOUT DE SESIÓN ──────────────────────────────────────────
@@ -11280,7 +11306,7 @@ async function restoreSession(){
   if(!await fbGet('instructores/administrador')){
     await fbSet('instructores/administrador',{user:'administrador',pass:'Aer0club',nombre:'Administrador',soloUsuarios:true});
   }
-  if(!await restoreSession()) switchLoginTab('alumno');
+  if(!await restoreSession()){ switchLoginTab('alumno'); aplicarUsuarioRecordado(); }
 })();
 
 
