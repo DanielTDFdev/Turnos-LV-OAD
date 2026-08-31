@@ -1,5 +1,12 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.04
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: el eje X del gráfico de altitud (modal de ANÁLISIS,
+            _renderChartAltitud) no tenía marcas de hora — no quedaba claro que era
+            tiempo. Se agregan 5 ticks parejos (0/25/50/75/100% de la duración) con
+            hora UTC hh:mm, mismo criterio fmtT que ya usa el resto del visor
+            (getUTCHours/Minutes). PAD_B de 22 a 30 para que entren los ticks + texto.
   VERSION : 8.03
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: modal de ANÁLISIS del vuelo, separado del mapa (para no
@@ -3408,7 +3415,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.03</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.04</div>
   </div>
 
 </div>
@@ -11273,7 +11280,7 @@ function _clasificarTramosVuelo(segmentos){
 // Gráfico SVG altitud/tiempo — sin librería nueva, mismo criterio "vanilla"
 // del resto del proyecto. Franjas ámbar = maniobra; puntos amarillos = toques.
 function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
-  const W=680, H=220, PAD_L=42, PAD_R=10, PAD_T=10, PAD_B=22;
+  const W=680, H=220, PAD_L=42, PAD_R=10, PAD_T=10, PAD_B=30;
   const validPts = puntos.filter(p=>p.alt!=null);
   if(validPts.length<2) return '<div style="font-family:var(--font-mono);font-size:12px;color:var(--text3)">// Sin datos de altitud suficientes para graficar.</div>';
   const t0 = new Date(validPts[0].ts).getTime();
@@ -11284,22 +11291,35 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
   const rango = (altMax-altMin)||1;
   const xOf = ts => PAD_L + ((new Date(ts).getTime()-t0)/durMs)*(W-PAD_L-PAD_R);
   const yOf = alt => PAD_T + (1-((alt-altMin)/rango))*(H-PAD_T-PAD_B);
+  // v8.04 — pedido de Daniel: el eje X no tenía marcas de hora, no quedaba claro
+  // que era tiempo. 5 ticks parejos (0/25/50/75/100% de la duración), hora UTC
+  // hh:mm — mismo criterio que fmtT() del resto del visor (getUTCHours/Minutes,
+  // ver nota de v7.60 sobre por qué no usar toLocaleTimeString acá).
+  const fmtTickT = ms => { const d=new Date(ms); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
+  const ejeYBase = H-PAD_B;
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid var(--border)">`;
   for(const b of bandas){
     if(b.tipo!=='maniobra') continue;
     const x1=xOf(b.t0), x2=xOf(b.t1);
-    svg += `<rect x="${x1.toFixed(1)}" y="${PAD_T}" width="${Math.max(1,x2-x1).toFixed(1)}" height="${H-PAD_T-PAD_B}" fill="rgba(240,165,0,.16)"/>`;
+    svg += `<rect x="${x1.toFixed(1)}" y="${PAD_T}" width="${Math.max(1,x2-x1).toFixed(1)}" height="${ejeYBase-PAD_T}" fill="rgba(240,165,0,.16)"/>`;
   }
   const pathD = validPts.map((p,i)=>`${i===0?'M':'L'} ${xOf(p.ts).toFixed(1)} ${yOf(p.alt).toFixed(1)}`).join(' ');
   svg += `<path d="${pathD}" fill="none" stroke="#00c8d4" stroke-width="1.6"/>`;
   for(const t of toques){
     svg += `<circle cx="${xOf(t.ts).toFixed(1)}" cy="${yOf(t.alt).toFixed(1)}" r="4.5" fill="#f0a500" stroke="#000" stroke-width="0.6"/>`;
   }
-  svg += `<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${H-PAD_B}" stroke="var(--border)" stroke-width="1"/>`;
-  svg += `<line x1="${PAD_L}" y1="${H-PAD_B}" x2="${W-PAD_R}" y2="${H-PAD_B}" stroke="var(--border)" stroke-width="1"/>`;
+  svg += `<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${ejeYBase}" stroke="var(--border)" stroke-width="1"/>`;
+  svg += `<line x1="${PAD_L}" y1="${ejeYBase}" x2="${W-PAD_R}" y2="${ejeYBase}" stroke="var(--border)" stroke-width="1"/>`;
+  for(let f=0; f<=1; f+=0.25){
+    const ms = t0 + durMs*f;
+    const x = PAD_L + f*(W-PAD_L-PAD_R);
+    svg += `<line x1="${x.toFixed(1)}" y1="${ejeYBase}" x2="${x.toFixed(1)}" y2="${ejeYBase+4}" stroke="var(--border)" stroke-width="1"/>`;
+    const anchor = f===0?'start':f===1?'end':'middle';
+    svg += `<text x="${x.toFixed(1)}" y="${H-4}" text-anchor="${anchor}" font-size="9" style="fill:var(--text3);font-family:monospace">${fmtTickT(ms)}</text>`;
+  }
   svg += `<text x="${PAD_L-4}" y="${PAD_T+8}" text-anchor="end" font-size="9" style="fill:var(--text3);font-family:monospace">${Math.round(altMax*3.28084)}ft</text>`;
-  svg += `<text x="${PAD_L-4}" y="${H-PAD_B}" text-anchor="end" font-size="9" style="fill:var(--text3);font-family:monospace">${Math.round(altMin*3.28084)}ft</text>`;
+  svg += `<text x="${PAD_L-4}" y="${ejeYBase}" text-anchor="end" font-size="9" style="fill:var(--text3);font-family:monospace">${Math.round(altMin*3.28084)}ft</text>`;
   svg += `</svg>`;
   return svg;
 }
