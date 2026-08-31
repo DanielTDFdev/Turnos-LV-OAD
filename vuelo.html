@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.62 · 2026-08-30
+  Pedido de Daniel, mismo cambio en paralelo que turnos.html v8.11: líneas de
+  grilla en el eje Y (altitud) del gráfico de análisis, mismo espaciado
+  0/25/50/75/100% que el eje X — punteadas, con label de ft, al fondo del SVG.
+
   v5.61 · 2026-08-30
   Pedido de Daniel: modal de ANÁLISIS del vuelo, mismo feature que turnos.html
   v8.03-v8.10 (portado tal cual, con los mismos parámetros finales tras varias
@@ -1698,7 +1703,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.61'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.62'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3736,6 +3741,13 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
   const ejeYBase = H-PAD_B;
 
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid var(--gray2)">`;
+  for(let f=0; f<=1; f+=0.25){
+    const alt = altMin + (1-f)*rango;
+    const y = PAD_T + f*(ejeYBase-PAD_T);
+    svg += `<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W-PAD_R}" y2="${y.toFixed(1)}" stroke="var(--gray2)" stroke-width="1" stroke-dasharray="2,3" opacity="0.5"/>`;
+    const ty = f===0 ? PAD_T+8 : f===1 ? ejeYBase : y+3;
+    svg += `<text x="${PAD_L-4}" y="${ty.toFixed(1)}" text-anchor="end" font-size="9" style="fill:var(--gray);font-family:monospace">${Math.round(alt*3.28084)}ft</text>`;
+  }
   for(const b of bandas){
     if(b.tipo!=='maniobra') continue;
     const x1=xOf(b.t0), x2=xOf(b.t1);
@@ -3755,8 +3767,6 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
     const anchor = f===0?'start':f===1?'end':'middle';
     svg += `<text x="${x.toFixed(1)}" y="${H-4}" text-anchor="${anchor}" font-size="9" style="fill:var(--gray);font-family:monospace">${fmtTickT(ms)}</text>`;
   }
-  svg += `<text x="${PAD_L-4}" y="${PAD_T+8}" text-anchor="end" font-size="9" style="fill:var(--gray);font-family:monospace">${Math.round(altMax*3.28084)}ft</text>`;
-  svg += `<text x="${PAD_L-4}" y="${ejeYBase}" text-anchor="end" font-size="9" style="fill:var(--gray);font-family:monospace">${Math.round(altMin*3.28084)}ft</text>`;
   svg += `</svg>`;
   return svg;
 }
