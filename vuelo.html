@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.59 · 2026-08-30
+  Pedido de Daniel: más stats derivados de la traza GPS en la barra de info
+  (los de análisis visual — perfil de altitud, toques y despegues, etc. —
+  quedan pendientes para una ventana/modal aparte, a definir). Nuevos: ⬇ Alt.
+  mín, 🔼 Ascenso máx / 🔽 Descenso máx en ft/min (calcVarioMaxFtMin — mismo
+  criterio que Vel. máx: solo tramos 'real', techo de 3000ft/min), 📡 Dist.
+  máx. despegue en nm (calcDistMaxOrigenNm — distancia máxima entre cualquier
+  punto de la traza y el primer punto GPS; no es una derivada así que no
+  necesita filtrar por huecos ni techo). Mismo cambio en paralelo en
+  turnos.html v8.01/vuelo-piloto.html v4.43.
+
   v5.58 · 2026-08-30
   Pedido de Daniel: velocidad máxima en la barra de info del visor de mapa GPS
   (💨 Vel. máx, junto a Puntos/Duración/Distancia/Alt. máx). Se deriva de
@@ -1659,7 +1670,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.58'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.59'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3403,8 +3414,14 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('mi-distancia').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
     const altMaxFt = altMax * 3.28084;
     $('mi-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
+    $('mi-altmin').textContent = altMinTraza!=null ? `${Math.round(altMinTraza*3.28084)} ft` : '—';
     const velMaxKt = calcVelMaxKt(segmentos);
     $('mi-velmax').textContent = velMaxKt>0 ? `${Math.round(velMaxKt)} kt` : '—';
+    const vario = calcVarioMaxFtMin(segmentos);
+    $('mi-asc').textContent = vario.asc>0 ? `+${Math.round(vario.asc)} ft/min` : '—';
+    $('mi-desc').textContent = vario.desc<0 ? `${Math.round(vario.desc)} ft/min` : '—';
+    const distMaxOrigenNm = calcDistMaxOrigenNm(puntos);
+    $('mi-distorigen').textContent = `${distMaxOrigenNm.toFixed(distMaxOrigenNm < 1 ? 2 : 1)} nm`;
 
     const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
     if (huecosReales.length) {
@@ -3489,6 +3506,39 @@ function calcVelMaxKt(segmentos){
       const kt = (dKm*0.539957)/dtH;
       if(kt<=VELMAX_TECHO_KT && kt>max) max=kt;
     }
+  }
+  return max;
+}
+// v5.59 — pedido de Daniel: más stats derivados de la traza GPS en la barra de
+// info. Ascenso/descenso máx (ft/min): mismo criterio que la velocidad —
+// SOLO tramos 'real' (nunca huecos) y techo de 3000ft/min para descartar
+// saltos de altitud GPS ruidosos. Distancia máx. al punto de despegue: NO
+// necesita filtrar por huecos/techo — no es una derivada (no se dispara con
+// un salto puntual de GPS), se calcula sobre TODOS los puntos.
+const VARIO_TECHO_FTMIN = 3000;
+function calcVarioMaxFtMin(segmentos){
+  let asc=0, desc=0;
+  for(const seg of segmentos){
+    if(seg.tipo!=='real') continue;
+    for(let i=1;i<seg.pts.length;i++){
+      const p1=seg.pts[i-1], p2=seg.pts[i];
+      if(p1.alt==null||p2.alt==null) continue;
+      const dtMin = (new Date(p2.ts)-new Date(p1.ts))/60000;
+      if(dtMin<=0) continue;
+      const ftMin = ((p2.alt-p1.alt)*3.28084)/dtMin;
+      if(Math.abs(ftMin)>VARIO_TECHO_FTMIN) continue;
+      if(ftMin>asc) asc=ftMin;
+      if(ftMin<desc) desc=ftMin;
+    }
+  }
+  return {asc,desc};
+}
+function calcDistMaxOrigenNm(puntos){
+  const p0=puntos[0];
+  let max=0;
+  for(const p of puntos){
+    const d=_haversineKm(p0.lat,p0.lng,p.lat,p.lng)*0.539957;
+    if(d>max) max=d;
   }
   return max;
 }
@@ -3628,7 +3678,11 @@ if('serviceWorker' in navigator){
     <span>⏱ Duración: <span class="mv" id="mi-duracion">—</span></span>
     <span>📏 Distancia: <span class="mv" id="mi-distancia">—</span></span>
     <span>⬆ Alt. máx: <span class="mv" id="mi-alt">—</span></span>
+    <span>⬇ Alt. mín: <span class="mv" id="mi-altmin">—</span></span>
     <span>💨 Vel. máx: <span class="mv" id="mi-velmax">—</span></span>
+    <span>🔼 Ascenso máx: <span class="mv" id="mi-asc">—</span></span>
+    <span>🔽 Descenso máx: <span class="mv" id="mi-desc">—</span></span>
+    <span>📡 Dist. máx. despegue: <span class="mv" id="mi-distorigen">—</span></span>
     <span id="mi-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mi-huecos-txt">—</span></span>
   </div>
 </div>

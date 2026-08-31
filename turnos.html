@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.01
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: más stats derivados de la traza GPS en la barra de info
+            del visor de mapa (los de análisis visual — perfil de altitud, toques y
+            despegues, etc. — quedan pendientes para una ventana/modal aparte, a
+            definir). Nuevos: ⬇ Alt. mín (ya se calculaba altMinTraza para la leyenda,
+            solo faltaba mostrarlo), 🔼 Ascenso máx / 🔽 Descenso máx en ft/min
+            (_calcVarioMaxFtMin — mismo criterio que Vel. máx: solo tramos 'real',
+            techo de 3000ft/min para descartar saltos de altitud GPS ruidosos), 📡
+            Dist. máx. despegue en nm (_calcDistMaxOrigenNm — distancia máxima entre
+            cualquier punto de la traza y el primer punto GPS; a diferencia de
+            velocidad/vario NO es una derivada así que no necesita filtrar por huecos
+            ni techo, se calcula sobre todos los puntos).
   VERSION : 8.00
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: velocidad máxima en la barra de info del visor de mapa
@@ -3360,7 +3373,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.00</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.01</div>
   </div>
 
 </div>
@@ -11116,6 +11129,40 @@ function _calcVelMaxKt(segmentos){
   }
   return max;
 }
+// v8.01 — pedido de Daniel: más stats derivados de la traza GPS en la barra de
+// info. Ascenso/descenso máx (ft/min): mismo criterio que la velocidad —
+// SOLO tramos 'real' (nunca huecos) y techo de 3000ft/min para descartar
+// saltos de altitud GPS ruidosos (imposibles para LV-OAD/LV-ART/LV-MPH).
+// Distancia máx. al punto de despegue: NO necesita filtrar por huecos/techo —
+// no es una derivada (no se dispara con un salto puntual de GPS como sí le
+// pasa a velocidad/vario), así que se calcula sobre TODOS los puntos.
+const VARIO_TECHO_FTMIN = 3000;
+function _calcVarioMaxFtMin(segmentos){
+  let asc=0, desc=0;
+  for(const seg of segmentos){
+    if(seg.tipo!=='real') continue;
+    for(let i=1;i<seg.pts.length;i++){
+      const p1=seg.pts[i-1], p2=seg.pts[i];
+      if(p1.alt==null||p2.alt==null) continue;
+      const dtMin = (new Date(p2.ts)-new Date(p1.ts))/60000;
+      if(dtMin<=0) continue;
+      const ftMin = ((p2.alt-p1.alt)*3.28084)/dtMin;
+      if(Math.abs(ftMin)>VARIO_TECHO_FTMIN) continue;
+      if(ftMin>asc) asc=ftMin;
+      if(ftMin<desc) desc=ftMin;
+    }
+  }
+  return {asc,desc};
+}
+function _calcDistMaxOrigenNm(puntos){
+  const p0=puntos[0];
+  let max=0;
+  for(const p of puntos){
+    const d=_haversineKm(p0.lat,p0.lng,p.lat,p.lng)*0.539957;
+    if(d>max) max=d;
+  }
+  return max;
+}
 
 window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
   const modal = document.getElementById('modal-mapa-vuelo');
@@ -11205,8 +11252,14 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     document.getElementById('mv-dist').textContent = `${distNm.toFixed(distNm < 1 ? 2 : 1)} nm`;
     const altMaxFt = altMax * 3.28084;
     document.getElementById('mv-alt').textContent = isFinite(altMax) ? `${Math.round(altMaxFt)} ft` : '—';
+    document.getElementById('mv-altmin').textContent = altMinTraza!=null ? `${Math.round(altMinTraza*3.28084)} ft` : '—';
     const velMaxKt = _calcVelMaxKt(segmentos);
     document.getElementById('mv-velmax').textContent = velMaxKt>0 ? `${Math.round(velMaxKt)} kt` : '—';
+    const vario = _calcVarioMaxFtMin(segmentos);
+    document.getElementById('mv-asc').textContent = vario.asc>0 ? `+${Math.round(vario.asc)} ft/min` : '—';
+    document.getElementById('mv-desc').textContent = vario.desc<0 ? `${Math.round(vario.desc)} ft/min` : '—';
+    const distMaxOrigenNm = _calcDistMaxOrigenNm(puntos);
+    document.getElementById('mv-distorigen').textContent = `${distMaxOrigenNm.toFixed(distMaxOrigenNm < 1 ? 2 : 1)} nm`;
 
     const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
     if (huecosReales.length) {
@@ -11389,7 +11442,11 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
     <span>⏱ Duración: <span class="mv" id="mv-dur">—</span></span>
     <span>📏 Distancia: <span class="mv" id="mv-dist">—</span></span>
     <span>⬆ Alt. máx: <span class="mv" id="mv-alt">—</span></span>
+    <span>⬇ Alt. mín: <span class="mv" id="mv-altmin">—</span></span>
     <span>💨 Vel. máx: <span class="mv" id="mv-velmax">—</span></span>
+    <span>🔼 Ascenso máx: <span class="mv" id="mv-asc">—</span></span>
+    <span>🔽 Descenso máx: <span class="mv" id="mv-desc">—</span></span>
+    <span>📡 Dist. máx. despegue: <span class="mv" id="mv-distorigen">—</span></span>
     <span id="mv-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mv-huecos-txt">—</span></span>
   </div>
 </div>
