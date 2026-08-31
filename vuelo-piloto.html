@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.49 · 2026-08-30
+  Mismo cambio en paralelo que vuelo.html v5.65/turnos.html v8.13 (pedido de
+  Daniel): METAR de inicio/fin en el modal de ANÁLISIS. btnTraza()/abrirMapa()
+  extendidos con metarInicio/metarFin (escapados con _escInline). Bloque
+  nuevo (#analisis-metar), oculto si el turno no tiene ninguno de los dos.
+
   v4.48 · 2026-08-30
   FIX reportado por Daniel con captura de celular, mismo cambio en paralelo
   que vuelo.html v5.64: #map-alt-legend de top:10px a top:76px (mismo origen
@@ -1556,7 +1562,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.48';
+const APP_VERSION = '4.49';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3146,7 +3152,7 @@ async function cargarLibro(){
         </div>
         ${(r.metar_inicio||r.metar_fin)?`<div class="vr-obs" style="white-space:pre-line">${[r.metar_inicio?'🌤 INI '+escObs(r.metar_inicio):'',r.metar_fin?'🌤 FIN '+escObs(r.metar_fin):''].filter(Boolean).join('\n')}</div>`:''}
         ${obsVisible?`<div class="vr-obs">${escObs(obsVisible)}</div>`:''}
-        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora)+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
+        ${r.tiene_traza_gps&&r.key?btnTraza(r.key,r.nombre,r.avion,r.hora,r.metar_inicio,r.metar_fin)+btnExportGPS(r.key,r.nombre,r.avion,r.fecha):''}
       </div>`;
     }).join('');
   }catch(e){
@@ -3318,11 +3324,13 @@ $('btn-rep-excel').addEventListener('click',descargarReporteExcel);
 // v3.9: escapa también comilla doble — nombre viene de /alumnos (Firebase
 // .write:true sin auth) y sin esto rompía el atributo onclick="..." → XSS.
 function _escInline(s){ return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
-function btnTraza(key, nombre, avion, hora) {
+function btnTraza(key, nombre, avion, hora, metarInicio, metarFin) {
   const n = _escInline(nombre);
   const av = _escInline(avion||'—');
   const h  = _escInline(hora);
-  return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}')">🗺 Ver recorrido GPS</button>`;
+  const mi = _escInline(metarInicio||'');
+  const mf = _escInline(metarFin||'');
+  return `<button class="btn-traza" onclick="abrirMapa('${key}','${n}','${av}','${h}','${mi}','${mf}')">🗺 Ver recorrido GPS</button>`;
 }
 
 function btnExportGPS(key, nombre, avion, fecha) {
@@ -3549,7 +3557,7 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
   }
 }
 
-window.abrirMapa = async function(key, alumno, avion, hora) {
+window.abrirMapa = async function(key, alumno, avion, hora, metarInicio, metarFin) {
   _ultimaTraza = null; // v4.45: se repuebla recién si carga bien
   const fmtTs = iso => {
     if(!iso) return '—';
@@ -3662,7 +3670,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('mi-desc').textContent = vario.desc<0 ? `${Math.round(vario.desc)} ft/min` : '—';
     const distMaxOrigenNm = calcDistMaxOrigenNm(puntos);
     $('mi-distorigen').textContent = `${distMaxOrigenNm.toFixed(distMaxOrigenNm < 1 ? 2 : 1)} nm`;
-    _ultimaTraza = { puntos, segmentos, altMinTraza, altMaxTraza, nombre:alumno, avion, hora };
+    _ultimaTraza = { puntos, segmentos, altMinTraza, altMaxTraza, nombre:alumno, avion, hora, metarInicio:metarInicio||null, metarFin:metarFin||null };
 
     const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
     if (huecosReales.length) {
@@ -3931,7 +3939,7 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
 
 window.abrirAnalisisVuelo = function(){
   if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
-  const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora} = _ultimaTraza;
+  const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora, metarInicio, metarFin} = _ultimaTraza;
   $('analisis-sub').textContent = (nombre?`${nombre} — ${avion}`:avion) + (hora?` · Turno ${hora} hs`:'');
   const bandas = _clasificarTramosVuelo(segmentos, altMinTraza);
   const toques = _detectarToques(segmentos, altMinTraza);
@@ -3939,6 +3947,16 @@ window.abrirAnalisisVuelo = function(){
   $('analisis-toques-resumen').textContent = toques.length
     ? `${toques.length} toque${toques.length!==1?'s':''} y despegue${toques.length!==1?'s':''} detectado${toques.length!==1?'s':''} — ${toques.map(t=>fmtT(t.ts)).join(', ')}`
     : '// Sin toques y despegues detectados en este vuelo.';
+  const escMetar = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  if(metarInicio || metarFin){
+    $('analisis-metar').innerHTML = [
+      metarInicio ? `🌤 INICIO — ${escMetar(metarInicio)}` : '',
+      metarFin ? `🌤 FIN — ${escMetar(metarFin)}` : ''
+    ].filter(Boolean).map(l=>`<div>${l}</div>`).join('');
+    $('analisis-metar').style.display = 'block';
+  } else {
+    $('analisis-metar').style.display = 'none';
+  }
   $('analisis-chart-wrap').innerHTML = _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques);
   $('modal-analisis-vuelo').classList.add('open');
 };
@@ -4054,6 +4072,7 @@ if('serviceWorker' in navigator){
   </div>
   <div style="flex:1;overflow-y:auto;padding:16px">
     <div id="analisis-toques-resumen" style="font-family:var(--mono);font-size:13px;color:var(--white);margin-bottom:10px"></div>
+    <div id="analisis-metar" style="display:none;font-family:var(--mono);font-size:12px;color:var(--gray);background:rgba(0,200,212,.06);border:1px solid rgba(0,200,212,.2);border-radius:8px;padding:8px 12px;margin-bottom:10px;line-height:1.6"></div>
     <div id="analisis-chart-wrap"></div>
     <div style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--gray);line-height:1.9">
       <span style="display:inline-block;width:11px;height:11px;background:rgba(240,165,0,.32);border:1px solid rgba(240,165,0,.5);border-radius:2px;vertical-align:-1px;margin-right:4px"></span>
