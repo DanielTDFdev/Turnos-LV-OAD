@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.48 · 2026-08-30
+  FIX reportado por Daniel con captura de celular, mismo cambio en paralelo
+  que vuelo.html v5.64: #map-alt-legend de top:10px a top:76px (mismo origen
+  que .map-modal-header, con nombre largo nacía debajo/detrás del header).
+  Sacado el botón "✕ Cerrar" del header (ya está el flotante rojo) y su
+  addEventListener sobre el id ahora inexistente.
+
   v4.47 · 2026-08-30
   FIX reportado por Daniel con captura de celular, mismo cambio en paralelo
   que vuelo.html v5.63: (1) barra de info de flex-wrap a grilla de 2 columnas,
@@ -1549,7 +1556,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.47';
+const APP_VERSION = '4.48';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3943,7 +3950,6 @@ function cerrarModalMapa(){
   $('map-modal').classList.remove('open');
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
 }
-$('btn-map-close').addEventListener('click', cerrarModalMapa);
 $('btn-map-close-float').addEventListener('click', cerrarModalMapa);
 
 // ── CHEQUEO DE VERSIÓN ────────────────────────────────────
@@ -3995,7 +4001,6 @@ if('serviceWorker' in navigator){
         <div class="map-sub" id="map-modal-sub"></div>
         <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
       </div>
-      <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
     </div>
     <div class="map-loading" id="map-loading">
       <div class="spinner"></div>
@@ -4004,7 +4009,13 @@ if('serviceWorker' in navigator){
     <div id="map-leaflet"></div>
     <button class="btn-analisis-float" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" title="Análisis">📊</button>
     <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
-    <div id="map-alt-legend" style="display:none;position:absolute;right:10px;top:10px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--gray);pointer-events:none">
+    <!-- v4.48 FIX (reportado por Daniel con captura de celular), mismo cambio
+         en paralelo que vuelo.html v5.64: top:10px se medía desde el mismo
+         origen que .map-modal-header (position:absolute, top:0) — con nombre
+         largo la leyenda nacía debajo/detrás del header. top:76px (mismo
+         offset que .leaflet-top). Botón "✕ Cerrar" del header sacado (ya
+         está el flotante rojo). -->
+    <div id="map-alt-legend" style="display:none;position:absolute;right:10px;top:76px;z-index:1000;background:rgba(10,12,16,.82);border:1px solid rgba(0,200,212,.25);border-radius:8px;padding:8px 10px;font-family:var(--mono);font-size:10px;color:var(--gray);pointer-events:none">
       <div style="margin-bottom:4px;color:var(--white);font-weight:700">ALTITUD</div>
       <div style="display:flex;align-items:center;gap:6px">
         <span id="mal-max">—</span>
