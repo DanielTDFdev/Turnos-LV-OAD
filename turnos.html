@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.02
+  FECHA   : 2026-08-30
+  CAMBIOS : Pedido de Daniel: flechas de sentido sobre la traza del visor de mapa GPS,
+            para entender el flujo del vuelo a simple vista. Nuevas _bearingDeg() y
+            _colocarFlechasDireccion() — recorren cada tramo 'real' (nunca huecos)
+            acumulando distancia con _haversineKm() y largan una flecha cada 500m
+            (FLECHA_ESPACIADO_KM), interpolando la posición exacta entre el par de
+            puntos que cruza el umbral. Cada flecha toma el color de _colorPorAltitud
+            de ese punto (mismo degradé que ya tenía la polilínea) y es más grande
+            que el ancho de línea (14px vs 3.5px) para que sobresalga y se note. Solo
+            en turnos.html por ahora — Daniel quiere probarlo acá antes de replicarlo
+            en vuelo.html/vuelo-piloto.html.
   VERSION : 8.01
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: más stats derivados de la traza GPS en la barra de info
@@ -3373,7 +3385,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.01</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.02</div>
   </div>
 
 </div>
@@ -11107,6 +11119,45 @@ function _colorPorAltitud(alt, altMin, altMax){
   const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
   return `rgb(${r},${g},${b})`;
 }
+// v8.02 — pedido de Daniel: flechas de sentido sobre la traza, para entender el
+// flujo del vuelo a simple vista (un circuito, ida y vuelta por el mismo tramo,
+// etc.). _bearingDeg da el rumbo entre dos puntos; _colocarFlechasDireccion
+// camina un tramo 'real' acumulando distancia (mismo _haversineKm de siempre)
+// y larga una flecha cada FLECHA_ESPACIADO_KM (500m, interpolando la posición
+// exacta entre el par de puntos que cruza el umbral) — NUNCA sobre huecos, para
+// no marcar dirección donde no hay datos GPS reales. Cada flecha toma el color
+// de _colorPorAltitud de ESE punto del tramo (mismo criterio que el degradé de
+// la polilínea), pero un poco más grande que el ancho de línea (14px vs 3.5px)
+// para que sobresalga y se note incluso sobre el propio trazo.
+function _bearingDeg(lat1,lon1,lat2,lon2){
+  const φ1=lat1*Math.PI/180, φ2=lat2*Math.PI/180, Δλ=(lon2-lon1)*Math.PI/180;
+  const y=Math.sin(Δλ)*Math.cos(φ2);
+  const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+const FLECHA_ESPACIADO_KM = 0.5;
+function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
+  let acumulado = 0, siguienteUmbral = FLECHA_ESPACIADO_KM;
+  for(let i=1;i<seg.pts.length;i++){
+    const p1=seg.pts[i-1], p2=seg.pts[i];
+    const dKm = _haversineKm(p1.lat,p1.lng,p2.lat,p2.lng);
+    if(dKm<=0) continue;
+    while(acumulado+dKm >= siguienteUmbral){
+      const frac = (siguienteUmbral-acumulado)/dKm;
+      const lat = p1.lat+(p2.lat-p1.lat)*frac, lng = p1.lng+(p2.lng-p1.lng)*frac;
+      const bearing = _bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
+      const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
+      const color = _colorPorAltitud(altProm, altMinTraza, altMaxTraza);
+      const icon = L.divIcon({
+        html:`<svg width="14" height="14" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
+        className:'', iconSize:[14,14], iconAnchor:[7,7],
+      });
+      L.marker([lat,lng], {icon, interactive:false}).addTo(mapa);
+      siguienteUmbral += FLECHA_ESPACIADO_KM;
+    }
+    acumulado += dKm;
+  }
+}
 // v8.00 — pedido de Daniel: velocidad máxima en la barra de info del mapa. Se
 // deriva de distancia/tiempo entre pares de puntos consecutivos (no hay campo
 // de velocidad instantánea del GPS guardado en vuelo_tracks) — SOLO dentro de
@@ -11216,8 +11267,10 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
             color: _colorPorAltitud(altProm, altMinTraza, altMaxTraza), weight: 3.5, opacity: 0.9
           }).addTo(_mapaVueloLeaflet);
         }
+        _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, _mapaVueloLeaflet);
       } else {
         L.polyline(segCoords, { color: '#00c8d4', weight: 3, opacity: 0.9 }).addTo(_mapaVueloLeaflet);
+        _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, _mapaVueloLeaflet);
       }
     }
 
