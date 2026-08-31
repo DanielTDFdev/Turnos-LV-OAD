@@ -1,5 +1,24 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.19
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel (captura de la grilla, "reservas que se adelantaron"): un
+            turno estado==='aprobado' con datos de vuelo ya cargados (tiempo/aterrizajes)
+            pero con hora todavía futura — se adelantó, voló antes de lo agendado, sin
+            haber llegado a estado==='vencido' — ahora se pinta violeta y se marca
+            "volado", igual que un vencido con datos. Nueva esAdelantado(r); claseVencido()
+            devuelve un tooltip propio para este caso ("VOLÓ ANTES DE LA HORA AGENDADA", no
+            dice "VENCIDO" de algo que en rigor no venció por horario); nueva
+            claseBadgeEstado(r) para el color del badge donde antes se armaba
+            'badge-'+r.estado a mano (Log del Alumno, modal de detalle, Consultas — los 3
+            actualizados). En renderTodasReservas/renderVistaSemana, venc se chequea ANTES
+            que aprobPil (piloto particular) — antes nunca podían coincidir (aprobPil
+            requiere estado==='aprobado', venc requería estado==='vencido'), ahora si un
+            piloto particular se adelanta también se ve violeta, no azul. En
+            renderVistaSemana, estiloExtra (tachado) suma esAdelantado() al criterio — en
+            renderTodasReservas el tachado es por columna/día pasado (no por estado), no
+            se tocó: un adelantado con fecha futura queda violeta pero sin tachar, lo cual
+            de hecho ayuda a distinguirlo de un vencido real a simple vista.
   VERSION : 8.18
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel (captura de la grilla semanal): el badge de iniciales del
@@ -3594,7 +3613,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.18</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.19</div>
   </div>
 
 </div>
@@ -7120,16 +7139,40 @@ function datosVueloDe(r){
   const aterr=r.obs_privada_aterrizajes!=null?r.obs_privada_aterrizajes:r.piloto_aterrizajes;
   return{horas,aterr,tieneVuelo:horas!=null||aterr!=null};
 }
-// v7.46: texto del badge de estado — igual a r.estado salvo el caso especial
-// 'vencido' CON datos de vuelo cargados, que pasa a mostrar "volado" (mismo
-// badge-vencido/color violeta, solo cambia la etiqueta). Los demás estados
-// (pendiente/aprobado/cancelado/vencido sin datos) respetan la convención de siempre.
+// v8.19: pedido de Daniel (captura de la grilla) — un turno estado==='aprobado' con
+// datos de vuelo YA cargados se adelantó: voló antes de la hora agendada, sin haber
+// llegado todavía a estado==='vencido' (su horario nominal sigue siendo futuro). Se
+// asume que el dato cargado es cierto (mismo criterio "se asume que fueron cargados
+// correctamente" que ya rige en vuelo-piloto.html/reporte.html) y se lo trata visualmente
+// como 'vencido' (voló): violeta, badge "volado" — ver claseVencido()/textoBadgeEstado()/
+// claseBadgeEstado() más abajo y su uso en renderTodasReservas/renderVistaSemana.
+function esAdelantado(r){
+  return r.estado==='aprobado'&&datosVueloDe(r).tieneVuelo;
+}
+// v7.46/v8.19: texto del badge de estado — igual a r.estado salvo dos casos especiales
+// que muestran "volado": 'vencido' CON datos de vuelo cargados (de siempre), y
+// 'aprobado' adelantado (v8.19, ver esAdelantado). Los demás estados (pendiente/
+// aprobado sin datos/cancelado/vencido sin datos) respetan la convención de siempre.
 function textoBadgeEstado(r){
-  return(r.estado==='vencido'&&datosVueloDe(r).tieneVuelo)?'volado':r.estado;
+  if(r.estado==='vencido'&&datosVueloDe(r).tieneVuelo) return 'volado';
+  if(esAdelantado(r)) return 'volado';
+  return r.estado;
+}
+// v8.19: clase CSS del badge (badge-pendiente/badge-aprobado/etc.) — normalmente
+// coincide con r.estado, salvo el caso adelantado, que toma el violeta de badge-vencido
+// (mismo color que un vencido con datos) para que texto "volado" y color coincidan.
+// Usar en cualquier lugar donde antes se armaba 'badge-'+r.estado a mano.
+function claseBadgeEstado(r){
+  return esAdelantado(r)?'vencido':r.estado;
 }
 function claseVencido(r){
   const autoAprobPiloto=tipoVueloDe(r)==='particular';
   const fueAprobado=!!(r.aprobado_por||r.instructor)||autoAprobPiloto;
+  // v8.19: caso adelantado — mismo violeta que 'vencido (voló)', tooltip distinto para
+  // no decir "VENCIDO" de un turno que en rigor todavía no venció por horario.
+  if(esAdelantado(r)){
+    return {cls:'vencido',tip:' — VOLÓ ANTES DE LA HORA AGENDADA'+((r.aprobado_por||r.instructor)?' (aprobó '+(r.aprobado_por||r.instructor)+')':'')};
+  }
   return fueAprobado
     ?{cls:'vencido',tip:autoAprobPiloto&&!(r.aprobado_por||r.instructor)?' — VENCIDO (voló, turno de piloto autoaprobado)':' — VENCIDO (voló, aprobado por '+(r.aprobado_por||r.instructor)+')'}
     :{cls:'vencido-sin-confirmar',tip:' — VENCIDO (sin confirmar: ningún instructor lo aprobó a tiempo)'};
@@ -7290,10 +7333,14 @@ async function renderTodasReservas(data){
         // el mismo proceso real de aprobación.
         const aprobPil=(r.rol==='piloto')&&r.estado==='aprobado'&&tipoVueloDe(r)==='particular';
         const coincideDisp=r.estado==='pendiente'&&dispCompleta[r.fecha]?.misHoras?.has(r.hora);
-        const venc=r.estado==='vencido'?claseVencido(r):null;
-        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
+        // v8.19: venc ahora también cubre 'aprobado' adelantado (ver esAdelantado) —
+        // venc chequeado ANTES que aprobPil en colorCls/tipSin para que un piloto
+        // particular adelantado también se vea violeta (antes aprobPil ganaba siempre
+        // que estado==='aprobado', pero eso nunca podía coincidir con venc hasta ahora).
+        const venc=(r.estado==='vencido'||esAdelantado(r))?claseVencido(r):null;
+        const colorCls=(sinInst?'sin-instructor':(venc?venc.cls:(aprobPil?'aprobado-piloto':r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
         const accStyle='border-left-color:'+accColorForAvion(r.avion||'LV-OAD')+';';
-        const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(aprobPil?' — turno de piloto (particular)':(venc?venc.tip:''));
+        const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(venc?venc.tip:(aprobPil?' — turno de piloto (particular)':''));
         const tipDisp=coincideDisp?' — ✓ Coincide con tu disponibilidad':'';
         const tipQuien=r.estado==='pendiente'?tipQuienesPueden(dispCompleta,r.fecha,r.hora):'';
         const badge=coincideDisp?'<span class="mi-disp-badge" title="Coincide con tu disponibilidad">★</span>':'';
@@ -7446,11 +7493,16 @@ async function renderVistaSemana(){
         const aprobPil=(r.rol==='piloto')&&r.estado==='aprobado'&&tipoVueloDe(r)==='particular';
         const coincideDisp=r.estado==='pendiente'&&dispCompleta[ds]?.misHoras?.has(r.hora);
         // v6.16: color por ESTADO igual que vista LISTA; matricula visible en el bloque
-        const venc=r.estado==='vencido'?claseVencido(r):null;
-        const colorCls=(sinInst?'sin-instructor':(aprobPil?'aprobado-piloto':(venc?venc.cls:r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
+        // v8.19: venc también cubre 'aprobado' adelantado, chequeado antes que aprobPil
+        // — ver nota completa en renderTodasReservas.
+        const venc=(r.estado==='vencido'||esAdelantado(r))?claseVencido(r):null;
+        const colorCls=(sinInst?'sin-instructor':(venc?venc.cls:(aprobPil?'aprobado-piloto':r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
         const accStyle='border-left-color:'+accColorForAvion(r.avion||'LV-OAD')+';';
-        const estiloExtra=(r.estado==='cancelado'||r.estado==='vencido')?'text-decoration:line-through;':'';
-        const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(aprobPil?' — turno de piloto (particular)':(venc?venc.tip:''));
+        // v8.19: adelantado también se tacha, igual que vencido — acá estiloExtra ya es
+        // estado-driven (a diferencia de LISTA, que tacha por columna/día pasado), así
+        // que suma natural para mantener el mismo criterio dentro de esta vista.
+        const estiloExtra=(r.estado==='cancelado'||r.estado==='vencido'||esAdelantado(r))?'text-decoration:line-through;':'';
+        const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(venc?venc.tip:(aprobPil?' — turno de piloto (particular)':''));
         const tipDisp=coincideDisp?' — ✓ Coincide con tu disponibilidad':'';
         const tipQuien=r.estado==='pendiente'?tipQuienesPueden(dispCompleta,ds,r.hora):'';
         const badge=coincideDisp?'<span class="mi-disp-badge" title="Coincide con tu disponibilidad">★</span>':'';
@@ -7692,7 +7744,7 @@ function renderObsPublicasAlumno(){
     const head=document.createElement('div');
     head.style.cssText='display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.05em;margin-bottom:.3rem';
     const izq=document.createElement('span'); izq.textContent=fmtFechaLinda(r.fecha)+' — '+(r.hora||'')+' hs — '+(r.avion||'LV-OAD');
-    const badge=document.createElement('span'); badge.className='badge badge-'+r.estado; badge.style.fontSize='9px'; badge.textContent=textoBadgeEstado(r);
+    const badge=document.createElement('span'); badge.className='badge badge-'+claseBadgeEstado(r); badge.style.fontSize='9px'; badge.textContent=textoBadgeEstado(r);
     head.appendChild(izq); head.appendChild(badge);
     div.appendChild(head);
     const horasVal=r.obs_privada_tiempo_vuelo!=null?r.obs_privada_tiempo_vuelo:r.piloto_tiempo_vuelo;
@@ -8313,7 +8365,7 @@ window.abrirModal=function(key){
   else{obsRow.style.display='none';}
   const _sinInstBadge=(r.sinInstructor&&r.estado==='pendiente')
     ?` <span class="badge" style="background:rgba(224,82,156,.14);color:var(--pink);border:1px solid rgba(224,82,156,.45)">sin instructor</span>`:'';
-  document.getElementById('md-estado').innerHTML=`<span class="badge badge-${r.estado}">${textoBadgeEstado(r)}</span>`+_sinInstBadge;
+  document.getElementById('md-estado').innerHTML=`<span class="badge badge-${claseBadgeEstado(r)}">${textoBadgeEstado(r)}</span>`+_sinInstBadge;
   // v7.46: fila VUELO — si el turno tiene tiempo y/o aterrizajes cargados, se muestran
   // acá directo (antes solo se veían entrando a "VER LOG DEL ALUMNO"). Si además tiene
   // traza GPS, se agregan los mismos tres botones que ya existen en Log del Alumno.
@@ -10417,7 +10469,7 @@ function renderConsultaDetalle(lista){
       <td style="padding:7px 8px;color:var(--cyan)">${r.avion||'LV-OAD'}</td>
       <td style="padding:7px 8px;color:var(--text)">${r.nombre}</td>
       <td style="padding:7px 8px;color:var(--text2);font-size:11px">${r.email}</td>
-      <td style="padding:7px 8px"><span class="badge badge-${r.estado}">${r.estado}</span></td>
+      <td style="padding:7px 8px"><span class="badge badge-${claseBadgeEstado(r)}">${textoBadgeEstado(r)}</span></td>
       <td style="padding:7px 8px;color:var(--text3);font-size:11px">${r.obs||'—'}</td>
       <td style="padding:7px 8px;text-align:right"><span style="font-family:var(--font-mono);font-size:10px;color:var(--text3);letter-spacing:.08em">EDITAR</span></td>
     </tr>`).join('')}
