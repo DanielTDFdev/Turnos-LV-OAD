@@ -1,5 +1,27 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.16
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel ("prefiero el banner persistente"): reemplaza el popup
+            automático de v8.14/v8.15 por un banner persistente en instructor-screen
+            (#banner-vuelos-pendientes-inst, mismo patrón visual que #banner-pendientes
+            de usuarios nuevos) — se recalcula en cada onValue de suscribirReservas()
+            mientras el instructor navega la app, no solo al loguearse, reusando el mismo
+            dataFresh (sin fetch extra, mismo criterio de v8.15). Botón "VER VUELOS →"
+            abre el modal con la lista (mostrarModalVuelosPendientesInstructor, sin
+            cambios) desde la lista ya calculada, sin volver a filtrar. Reset a oculto en
+            logout(), mismo patrón que banner-pendientes.
+  VERSION : 8.15
+  FECHA   : 2026-08-31
+  CAMBIOS : Optimización pedida por Daniel sobre v8.14: el aviso de vuelos pendientes al
+            loguearse un instructor hacía su propio fbGet('reservas') en paralelo al fetch
+            que suscribirReservas() ya hace para el calendario — dos bajadas completas del
+            nodo /reservas en el mismo login. Ahora el camino normal (instructor sin
+            soloUsuarios) reusa el dataFresh que ya trae el onValue de suscribirReservas
+            (flag _nombreChequeoPendientesInst, se resuelve una sola vez y se limpia).
+            chequearVuelosPendientesInstructor() con fetch propio queda solo para el caso
+            soloUsuarios, que no llama a suscribirReservas — único caso donde de verdad
+            hace falta pedirlo aparte.
   VERSION : 8.14
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel: al loguearse un instructor, si tiene vuelos vencidos
@@ -3549,7 +3571,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.14</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.16</div>
   </div>
 
 </div>
@@ -3775,6 +3797,16 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <span id="banner-pendientes-txt" style="font-family:var(--font-mono);font-size:12px;color:var(--amber);letter-spacing:.08em;flex:1;min-width:160px"></span>
     <button onclick="showInstTab('config');showCfgTab('usuarios');" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;padding:5px 14px;border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.1);white-space:nowrap">VER USUARIOS →</button>
     <button onclick="document.getElementById('banner-pendientes').style.display='none'" style="font-size:14px;padding:2px 8px;border:none;background:none;color:var(--amber);opacity:.6" title="Cerrar">✕</button>
+  </div>
+  <!-- BANNER VUELOS SIN DATOS (v8.16) — persistente mientras el instructor navega
+       instructor-screen, se actualiza en cada onValue de suscribirReservas() (ver
+       actualizarBannerVuelosPendientesInstructor). Reemplaza el popup automático de
+       v8.14/v8.15 — pedido de Daniel. -->
+  <div id="banner-vuelos-pendientes-inst" style="display:none;margin-bottom:1rem;padding:.85rem 1.1rem;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.35);border-left:3px solid var(--amber);border-radius:var(--radius);align-items:center;gap:12px;flex-wrap:wrap;">
+    <span style="font-size:18px;line-height:1">⚠️</span>
+    <span id="banner-vuelos-pendientes-inst-txt" style="font-family:var(--font-mono);font-size:12px;color:var(--amber);letter-spacing:.08em;flex:1;min-width:160px"></span>
+    <button onclick="mostrarModalVuelosPendientesInstructorDesdeBanner()" style="font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;padding:5px 14px;border-color:var(--amber);color:var(--amber);background:rgba(240,165,0,.1);white-space:nowrap">VER VUELOS →</button>
+    <button onclick="document.getElementById('banner-vuelos-pendientes-inst').style.display='none'" style="font-size:14px;padding:2px 8px;border:none;background:none;color:var(--amber);opacity:.6" title="Cerrar">✕</button>
   </div>
   <!-- BANNER PARÁMETROS INVÁLIDOS (v7.43) — admin/administrador+instructor, quien puede
        llegar a Config→Parámetros. No tiene botón de cerrar a propósito: se apaga solo
@@ -5807,44 +5839,82 @@ window.loginInstructor=async function(){
     buildCalAvionTabs();
     showScreen('instructor-screen');
     actualizarLinkReporte();
-    if(soloUsuarios){showInstTab('config');showCfgTab('usuarios');}
-    else{showInstTab('reservas');suscribirReservas();}
+    if(soloUsuarios){
+      showInstTab('config');showCfgTab('usuarios');
+      chequearVuelosPendientesInstructor(found.nombre); // único caso sin listener de reservas — ver nota v8.16
+    }else{
+      showInstTab('reservas');
+      suscribirReservas(); // el banner se actualiza solo dentro del onValue — ver v8.16
+    }
     suscribirPendientes();
     startSessionTimeout();
     const instPerfilUser=document.getElementById('inst-perfil-user');
     const instPerfilNombre=document.getElementById('inst-perfil-user-label');
     if(instPerfilUser) instPerfilUser.value=found.user||'';
     if(instPerfilNombre) instPerfilNombre.value=found.nombre||'';
-    chequearVuelosPendientesInstructor(found.nombre);
   }catch(e){showErr('login-err2','Error al iniciar sesión.');console.error(e);}
   finally{setLoading('btn-login-inst',false);}
 };
 
-// v8.14: pedido de Daniel — al loguearse un instructor, avisarle si tiene vuelos
-// VENCIDOS donde figura como instructor (aprobado_por||instructor, mismo criterio
-// que ya usa la fila OBS. POST-VUELO del modal de detalle) sin tiempo de vuelo,
-// aterrizajes ni observación cargados. Solo evalúa desde FECHA_EVAL_PENDIENTES_INST
-// — hay vuelos viejos de cuando arrancó el sistema, sin datos, a propósito no
-// completados retroactivamente. Fire-and-forget: no bloquea el login, corre después
-// de mostrar la pantalla de instructor. No se llama desde restoreSession() a propósito
-// — solo en un login real, para no repetir el aviso en cada recarga de pestaña.
+// v8.14→v8.16: pedido de Daniel — avisar al instructor de vuelos VENCIDOS donde figura
+// como instructor (aprobado_por||instructor, mismo criterio que ya usa la fila OBS.
+// POST-VUELO del modal de detalle) sin tiempo de vuelo, aterrizajes ni observación
+// cargados. Solo evalúa desde FECHA_EVAL_PENDIENTES_INST — hay vuelos viejos de cuando
+// arrancó el sistema, sin datos, a propósito no completados retroactivamente.
+// v8.16 (pedido de Daniel, "prefiero el banner persistente"): reemplaza el popup
+// automático de v8.14/v8.15 — Daniel prefirió un banner siempre visible mientras el
+// instructor navega la app (mismo patrón que #banner-pendientes de usuarios nuevos) en
+// vez de un modal forzado una sola vez al loguearse. El banner se recalcula en CADA
+// onValue de suscribirReservas (no solo al login) — reusa el mismo dataFresh que ya baja
+// para el calendario, mismo criterio de "sin fetch extra" que v8.15. El modal con la
+// lista de vuelos (mostrarModalVuelosPendientesInstructor) sigue existiendo tal cual,
+// ahora se abre desde el botón "VER VUELOS →" del banner en vez de solo.
 const FECHA_EVAL_PENDIENTES_INST='2026-07-01';
+let _pendientesInstructorActual=[];
+
+function filtrarVuelosPendientesInstructor(nombreInstructor,data){
+  if(!data) return [];
+  return Object.entries(data)
+    .map(([key,r])=>({key,...r}))
+    .filter(r=>{
+      if(r.estado!=='vencido') return false;
+      if(!r.fecha||r.fecha<FECHA_EVAL_PENDIENTES_INST) return false;
+      const aprobador=r.aprobado_por||r.instructor||'';
+      if(aprobador!==nombreInstructor) return false;
+      const tieneDatos=r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.obs_privada||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null;
+      return !tieneDatos;
+    })
+    .sort((a,b)=>a.fecha===b.fecha?(a.hora||'').localeCompare(b.hora||''):a.fecha.localeCompare(b.fecha));
+}
+
+// Actualiza el banner persistente en #instructor-screen. Guarda la lista en
+// _pendientesInstructorActual para que el botón "VER VUELOS →" del banner pueda abrir
+// el modal de detalle sin volver a filtrar/pedir nada.
+function actualizarBannerVuelosPendientesInstructor(pendientes){
+  _pendientesInstructorActual=pendientes;
+  const banner=document.getElementById('banner-vuelos-pendientes-inst');
+  const txt=document.getElementById('banner-vuelos-pendientes-inst-txt');
+  if(!banner||!txt) return;
+  if(pendientes.length>0){
+    txt.textContent=pendientes.length===1
+      ?'// TENÉS 1 VUELO SIN TIEMPO/ATERRIZAJES CARGADOS'
+      :'// TENÉS '+pendientes.length+' VUELOS SIN TIEMPO/ATERRIZAJES CARGADOS';
+    banner.style.display='flex';
+  } else {
+    banner.style.display='none';
+  }
+}
+window.mostrarModalVuelosPendientesInstructorDesdeBanner=function(){
+  if(_pendientesInstructorActual.length) mostrarModalVuelosPendientesInstructor(_pendientesInstructorActual);
+};
+
+// Único camino con fetch propio — solo para soloUsuarios (no hay listener de reservas activo,
+// así que el banner de este caso queda estático hasta el próximo login; aceptable, soloUsuarios
+// no llega a las pantallas donde importaría verlo actualizarse en vivo).
 async function chequearVuelosPendientesInstructor(nombreInstructor){
   try{
     const data=await fbGet('reservas');
-    if(!data) return;
-    const pendientes=Object.entries(data)
-      .map(([key,r])=>({key,...r}))
-      .filter(r=>{
-        if(r.estado!=='vencido') return false;
-        if(!r.fecha||r.fecha<FECHA_EVAL_PENDIENTES_INST) return false;
-        const aprobador=r.aprobado_por||r.instructor||'';
-        if(aprobador!==nombreInstructor) return false;
-        const tieneDatos=r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.obs_privada||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null;
-        return !tieneDatos;
-      })
-      .sort((a,b)=>a.fecha===b.fecha?(a.hora||'').localeCompare(b.hora||''):a.fecha.localeCompare(b.fecha));
-    if(pendientes.length) mostrarModalVuelosPendientesInstructor(pendientes);
+    actualizarBannerVuelosPendientesInstructor(filtrarVuelosPendientesInstructor(nombreInstructor,data));
   }catch(e){ console.error('chequearVuelosPendientesInstructor',e); }
 }
 
@@ -5906,6 +5976,7 @@ window.logout=function(){
   if(unsubReservas){unsubReservas();unsubReservas=null;}
   if(_unsubPendientes){_unsubPendientes();_unsubPendientes=null;}
   const banner=document.getElementById('banner-pendientes');if(banner)banner.style.display='none';
+  const bvpi=document.getElementById('banner-vuelos-pendientes-inst');if(bvpi)bvpi.style.display='none';
   const bturnos=document.getElementById('banner-turnos-pend');if(bturnos)bturnos.style.display='none';
   session=null;selectedDay=null;selectedSlot=null;selectedAvion=null;selectedSlotFin=null;selectedTipoVuelo=null;
   try{sessionStorage.removeItem('lvoad-session');}catch(e){}
@@ -8610,6 +8681,11 @@ function suscribirReservas(){
     if(session?.tipo==='alumno'){window._misTurnosData=dataFresh;renderMisTurnos(dataFresh);}
     if(session?.tipo==='instructor')renderTodasReservas(dataFresh);
     if(selectedDay&&selectedAvion)renderSlots(selectedDay,dataFresh);
+    // v8.16: banner persistente — se recalcula en cada actualización de /reservas mientras
+    // el instructor esté logueado, reusando este mismo dataFresh (sin fetch extra).
+    if(session?.tipo==='instructor'){
+      actualizarBannerVuelosPendientesInstructor(filtrarVuelosPendientesInstructor(session.nombre,dataFresh));
+    }
   });
 }
 
