@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.51 · 2026-08-31
+  Pedido de Daniel ("poné todas las protecciones posibles en los botones") tras
+  investigar un caso real en vuelo.html (ver changelog de v5.66 de ese archivo,
+  mismo día): guardia contra reentradas en btn-start-stop y btn-confirmar — el
+  handler de ninguno de los dos bloqueaba un doble toque o un toque mientras la
+  invocación anterior todavía esperaba confirmarAccion()/escribía. Mismo patrón
+  _startStopBusy/_guardarBusy + disabled + try/finally que se aplicó en vuelo.html.
+  Esta app ya tenía el fix del selector de avión sin elegir (p-avion, v3.1) — no
+  hizo falta portarlo, era el otro archivo el que le faltaba.
+
   v4.50 · 2026-08-31
   Pedido de Daniel — banner de vuelos propios (rol piloto) sin tiempo de vuelo,
   aterrizajes u observación cargados, mismo concepto que el banner de
@@ -1593,7 +1603,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.50';
+const APP_VERSION = '4.51';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2620,7 +2630,16 @@ function actualizarMetarUI(){
   else card.style.display='none';
 }
 
+// v4.51: pedido de Daniel tras revisar un caso real en vuelo.html (mismo bug de
+// clase, portado el fix acá también por prevención) — guardia contra reentradas:
+// el handler es async y nada bloqueaba un doble toque o un toque mientras la
+// invocación anterior todavía esperaba confirmarAccion()/escribía.
+let _startStopBusy=false;
 $('btn-start-stop').addEventListener('click',async()=>{
+  if(_startStopBusy) return;
+  _startStopBusy=true;
+  $('btn-start-stop').disabled=true;
+  try{
   if(!tsInicio){
     if(!$('p-avion').value){
       pintarEstadoAvion();
@@ -2661,6 +2680,10 @@ $('btn-start-stop').addEventListener('click',async()=>{
     actualizarEstado('finalizado');
     $('btn-start-stop').style.display='none';
     mostrarCierre();
+  }
+  } finally {
+    _startStopBusy=false;
+    $('btn-start-stop').disabled=false;
   }
 });
 
@@ -2790,7 +2813,16 @@ $('btn-edit-t').addEventListener('click',()=>{
 // y la app queda libre para el próximo vuelo de inmediato. La sincronización
 // real a Firebase pasa en segundo plano (intentarSincronizarPendientes) y
 // se reintenta sola. Ver esa función y escribirPendiente() más abajo.
-$('btn-confirmar').addEventListener('click',guardar);
+// v4.51: mismo criterio que btn-start-stop — guardia contra doble click/doble
+// toque en CONFIRMAR Y GUARDAR.
+let _guardarBusy=false;
+$('btn-confirmar').addEventListener('click', async ()=>{
+  if(_guardarBusy) return;
+  _guardarBusy=true;
+  $('btn-confirmar').disabled=true;
+  try{ await guardar(); }
+  finally{ _guardarBusy=false; $('btn-confirmar').disabled=false; }
+});
 
 async function guardar(){
   const tManual=$('t-manual').style.display!=='none';

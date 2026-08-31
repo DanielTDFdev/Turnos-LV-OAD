@@ -2,6 +2,30 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.66 · 2026-08-31
+  Pedido de Daniel — caso real: un instructor reportó que INICIAR VUELO "no
+  reaccionó" y que al tocar de nuevo le preguntó si quería finalizar/cancelar; el
+  vuelo terminó cargado a mano y mal atribuido a otro avión (LV-OAD en vez de
+  LV-ART). Investigación: descartada la contaminación automática entre
+  vuelo.html/vuelo-piloto.html (matchean por criterios distintos y mutuamente
+  excluyentes — instructor/aprobado_por acá, email allá — un turno de piloto
+  particular autoaprobado nunca tiene instructor/aprobado_por, así que nunca
+  podía aparecer en la lista de este instructor). Dos fixes:
+  (1) btn-start-stop y btn-confirmar (CONFIRMAR Y GUARDAR) no tenían guardia
+      contra reentradas — el handler es async y nada bloqueaba un doble toque o
+      un toque mientras la invocación anterior todavía esperaba confirmarAccion()
+      /escribía. Guardia _startStopBusy/_guardarBusy + disabled del botón, con
+      try/finally para cubrir todos los return tempranos.
+  (2) nt-avion (selector de avión de "Iniciar turno sin reserva previa") arrancaba
+      con LV-OAD preseleccionado, primera opción del <select> estático — mismo
+      bug que ya se había encontrado y arreglado en vuelo-piloto.html v3.1
+      (2026-08-09, selector p-avion) pero nunca portado acá. Ahora placeholder
+      vacío obligatorio + resalte ámbar + aviso (pintarEstadoNtAvion), y el click
+      en un resultado de búsqueda corta con un toast si no se eligió avión.
+      Sospecha fundada de que esto es lo que produjo el caso real: al abandonar
+      el flujo en vivo por la confusión de (1), el instructor probablemente
+      terminó usando este flujo manual sin notar el dropdown sin cambiar.
+
   v5.65 · 2026-08-30
   Pedido de Daniel, mismo cambio en paralelo que turnos.html v8.13: METAR de
   inicio/fin en el modal de ANÁLISIS, si el turno los tiene. btnTraza()/
@@ -1151,6 +1175,9 @@ input,textarea,select{
 }
 input:focus,textarea:focus,select:focus{border-color:var(--cyan)}
 textarea{resize:none;min-height:80px;line-height:1.5}
+/* v5.66: mismo patrón que vuelo-piloto.html v3.1 — resalta un <select> sin elegir
+   todavía (placeholder value=""), para el fix de nt-avion (ver más abajo). */
+select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,.25)}
 
 .btn{
   width:100%;padding:18px;border:none;border-radius:12px;
@@ -1550,11 +1577,13 @@ textarea{resize:none;min-height:80px;line-height:1.5}
 
       <div id="v-nuevo-wrap" style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(0,200,212,.15)">
         <span class="label">Iniciar turno sin reserva previa</span>
-        <select id="nt-avion" style="margin-bottom:10px">
+        <select id="nt-avion" style="margin-bottom:6px">
+          <option value="" disabled selected>— Elegí el avión —</option>
           <option value="LV-OAD">LV-OAD</option>
           <option value="LV-ART">LV-ART</option>
           <option value="LV-MPH">LV-MPH</option>
         </select>
+        <div id="nt-avion-warn" style="display:none;font-family:var(--mono);font-size:11px;color:var(--amber);margin-bottom:10px;font-weight:700">⚠ ELEGÍ EL AVIÓN — no quedó seleccionado ninguno todavía</div>
         <input type="text" id="nt-buscar" placeholder="Buscar alumno o piloto por nombre..." autocomplete="off">
         <div id="nt-resultados" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto"></div>
       </div>
@@ -1758,7 +1787,7 @@ let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si 
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.65'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.66'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1970,6 +1999,7 @@ async function cargarTabVuelo(forzar=false){
           : `<div class="empty-libro" style="padding:24px 0">Ningún turno para este momento.<br>Tenés ${vencidosViejos.length} turno${vencidosViejos.length>1?'s':''} vencido${vencidosViejos.length>1?'s':''} sin cerrar de hoy.</div>`;
       $('btn-ver-vencidos').style.display=vencidosViejos.length?'':'none';
       $('v-nuevo-wrap').style.display='block';
+      pintarEstadoNtAvion();
       mostrarVista('lista');
     } else if(!forzar&&vigentes.filter(r=>r._diffAbs===vigentes[0]._diffAbs).length===1){
       // Caso normal: un único turno es el más cercano a la hora actual — entrada directa
@@ -2118,6 +2148,24 @@ async function cargarAlumnosParaBusqueda(){
   return _alumnosCache;
 }
 
+// v5.66: pedido de Daniel — mismo bug que ya se había encontrado y arreglado en
+// vuelo-piloto.html v3.1 (2026-08-09), nunca portado acá: nt-avion arrancaba con
+// LV-OAD preseleccionado (primera <option> del <select> estático) — un instructor
+// que usa "Iniciar turno sin reserva previa" para un vuelo en otro avión, sin
+// tocar el dropdown a propósito, podía terminar registrando todo como LV-OAD sin
+// darse cuenta. Ahora la primera opción es un placeholder vacío (disabled) y hay
+// que elegir explícito — pintarEstadoNtAvion() resalta en ámbar + aviso mientras
+// siga sin elegir, y crearTurnoInSitu() corta con un toast si se toca un resultado
+// de búsqueda sin haber elegido avión.
+function pintarEstadoNtAvion(){
+  const sel=$('nt-avion');
+  const vacio=!sel.value;
+  sel.classList.toggle('sin-elegir',vacio);
+  $('nt-avion-warn').style.display=vacio?'block':'none';
+  return vacio;
+}
+$('nt-avion').addEventListener('change',pintarEstadoNtAvion);
+
 $('nt-buscar').addEventListener('input',async ()=>{
   const q=$('nt-buscar').value.trim().toLowerCase();
   const cont=$('nt-resultados');
@@ -2140,7 +2188,9 @@ $('nt-buscar').addEventListener('input',async ()=>{
   cont.querySelectorAll('.turno-item').forEach(el=>{
     el.addEventListener('click',()=>{
       const p=match.find(x=>x.key===el.dataset.key);
-      if(p) crearTurnoInSitu(p);
+      if(!p) return;
+      if(pintarEstadoNtAvion()){ toast('⚠ Elegí el avión antes de continuar'); return; }
+      crearTurnoInSitu(p);
     });
   });
 });
@@ -2490,7 +2540,20 @@ function actualizarMetarUI(){
 }
 
 // START / STOP
+// v5.66: pedido de Daniel tras un caso real (instructor reportó "no reaccionó al
+// tocar INICIAR, al tocar de nuevo preguntó si quería finalizar/cancelar") — el
+// handler es async y no bloqueaba reentradas: un doble toque, o un toque mientras
+// la primera invocación todavía estaba esperando confirmarAccion()/escribiendo,
+// podía disparar una SEGUNDA ejecución que ya veía tsInicio seteado y caía en la
+// rama STOP, sin que el instructor llegara a registrar el cambio visual del botón
+// en el medio. Guardia _startStopBusy + disabled, con try/finally para cubrir
+// todos los return tempranos de las dos ramas.
+let _startStopBusy=false;
 $('btn-start-stop').addEventListener('click', async ()=>{
+  if(_startStopBusy) return;
+  _startStopBusy=true;
+  $('btn-start-stop').disabled=true;
+  try{
   if(!tsInicio){
     // START — confirmar antes de grabar (evita un toque accidental)
     if(!(await confirmarAccion('¿Iniciar el vuelo ahora?','▶ Sí, iniciar'))) return;
@@ -2548,6 +2611,10 @@ $('btn-start-stop').addEventListener('click', async ()=>{
     actualizarEstado('finalizado');
     $('btn-start-stop').style.display='none';
     mostrarCierre();
+  }
+  } finally {
+    _startStopBusy=false;
+    $('btn-start-stop').disabled=false;
   }
 });
 
@@ -2688,7 +2755,18 @@ $('btn-edit-t').addEventListener('click',()=>{
 // y la app queda libre para el próximo turno de inmediato. La sincronización
 // real a Firebase pasa en segundo plano (intentarSincronizarPendientes) y se
 // reintenta sola. Ver esa función y escribirPendiente() más abajo.
-$('btn-confirmar').addEventListener('click',guardar);
+// v5.66: mismo criterio que btn-start-stop — guardia contra doble click/doble
+// toque en CONFIRMAR Y GUARDAR (agregarPendiente() es sync pero dos clicks en el
+// mismo tick del event loop podían encolar el mismo vuelo dos veces, generando
+// una reserva duplicada al sincronizar).
+let _guardarBusy=false;
+$('btn-confirmar').addEventListener('click', async ()=>{
+  if(_guardarBusy) return;
+  _guardarBusy=true;
+  $('btn-confirmar').disabled=true;
+  try{ await guardar(); }
+  finally{ _guardarBusy=false; $('btn-confirmar').disabled=false; }
+});
 
 async function guardar(){
   const tManual=$('t-manual').style.display!=='none';
