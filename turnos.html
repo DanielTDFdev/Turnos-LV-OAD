@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.08
+  FECHA   : 2026-08-30
+  CAMBIOS : FIX reportado por Daniel con captura del gráfico (ahora se pintaba TODO,
+            incluso el taxeo en tierra al principio y al final): dos causas.
+            (1) el taxeo en tierra tiene giro real alto — un giro cerrado sobre la
+            calle de rodaje, con radio chico, da velocidad angular alta aunque el
+            avión vaya despacio (ω=v/r), y el filtro de distancia mínima no alcanzaba
+            a filtrarlo porque a velocidad de taxeo igual se cubren esos ~30m. Ahora
+            _clasificarTramosVuelo() recibe altMinTraza y excluye directamente por
+            altura (MANIOBRA_ALTURA_MIN_FT, 150ft sobre el punto más bajo del vuelo) —
+            por debajo de eso el tramo es 'crucero' sin calcular giro ni entrar al
+            percentil, el taxeo nunca compite por el "top X%". (2) con la mediana de
+            giro real (~0.11°/s, confirmado por consola: vuelo mayormente derecho) tan
+            pegada a 0, el top 30% incluía demasiado — MANIOBRA_PERCENTIL de 30% a 10%.
   VERSION : 8.07
   FECHA   : 2026-08-30
   CAMBIOS : FIX reportado por Daniel con captura del trazado (rulo apretado + ocho
@@ -3462,7 +3476,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.07</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.08</div>
   </div>
 
 </div>
@@ -11306,25 +11320,25 @@ function _detectarToques(segmentos, altMinTraza){
 // Crucero vs maniobra: régimen de giro (°/seg). v8.05: se descartó el ruido de
 // taxi/tierra exigiendo un desplazamiento mínimo entre puntos. v8.06: ventana
 // más ancha (MANIOBRA_STEP) para que el ruido de posición GPS pese menos sobre
-// el bearing calculado. v8.07 FIX (reportado por Daniel con captura del
-// trazado — rulo apretado y ocho bien visibles, pero cero franjas ámbar pase
-// lo que pase con el umbral en °/s): dos rondas ajustando un número fijo
-// (3°/s → 1.5°/s) sin resultado visible es señal de que el problema no es EL
-// número sino la idea de usar un umbral absoluto — distintos GPS de celular y
-// estilos de vuelo dan escalas de giro distintas, y adivinar a ciegas no
-// escala. Cambio de enfoque: se calcula el giro en TODOS los puntos del vuelo
-// primero, y se marca 'maniobra' el percentil más alto (top MANIOBRA_PERCENTIL,
-// hoy 30%) — así el umbral se autocalibra por vuelo en vez de depender de un
-// número fijo. MANIOBRA_GIRO_DEG_S ahora es un piso absoluto aparte (no el
-// umbral principal): si el vuelo entero fue prácticamente recto, ni el "top
-// 30%" alcanza ese piso y no se pinta nada (correcto — no hay nada que
-// marcar). console.log con min/mediana/máx/umbral calculado, para poder
-// afinar MANIOBRA_PERCENTIL con datos reales si hiciera falta.
+// el bearing calculado. v8.07: percentil en vez de umbral absoluto (se
+// autocalibra por vuelo). v8.08 FIX (reportado por Daniel con captura: ahora
+// se pintaba TODO, incluso el taxeo en tierra al principio y al final): dos
+// causas. (1) el taxeo en tierra tiene giro real alto — un giro cerrado sobre
+// la calle de rodaje, con radio chico, da velocidad angular alta aunque el
+// avión vaya despacio (ω=v/r: radio chico compensa velocidad baja) — el filtro
+// de distancia mínima (MANIOBRA_DIST_MIN_KM) no alcanza a filtrarlo porque a
+// velocidad de taxeo igual se cubren esos ~30m. Ahora se excluye directamente
+// por altura: por debajo de MANIOBRA_ALTURA_MIN_FT sobre el punto más bajo del
+// vuelo (altMinTraza — tierra), el tramo es 'crucero' sin calcular giro ni
+// entrar al percentil, así el taxeo nunca compite por el "top X%". (2) con la
+// mediana de giro real (~0.11°/s, vuelo mayormente derecho) tan pegada a 0, el
+// top 30% terminaba incluyendo demasiado — bajado a MANIOBRA_PERCENTIL=10%.
 const MANIOBRA_GIRO_DEG_S = 0.8; // piso absoluto — por debajo de esto ni el top del vuelo cuenta como maniobra
-const MANIOBRA_PERCENTIL = 0.30; // top 30% de giro del vuelo → maniobra
+const MANIOBRA_PERCENTIL = 0.10; // top 10% de giro EN VUELO (ya excluido el taxeo) → maniobra
 const MANIOBRA_DIST_MIN_KM = 0.03;
 const MANIOBRA_STEP = 3;
-function _clasificarTramosVuelo(segmentos){
+const MANIOBRA_ALTURA_MIN_FT = 150; // por debajo de esto sobre el punto más bajo del vuelo, se asume tierra/taxeo — nunca cuenta como maniobra de vuelo
+function _clasificarTramosVuelo(segmentos, altMinTraza){
   const porTramo = [];
   const todosLosGiros = [];
   for(const seg of segmentos){
@@ -11332,17 +11346,18 @@ function _clasificarTramosVuelo(segmentos){
     const arr=[];
     for(let i=MANIOBRA_STEP;i<seg.pts.length-MANIOBRA_STEP;i++){
       const p0=seg.pts[i-MANIOBRA_STEP], p1=seg.pts[i], p2=seg.pts[i+MANIOBRA_STEP];
+      const enTierra = altMinTraza!=null && p1.alt!=null && (p1.alt-altMinTraza)*3.28084 < MANIOBRA_ALTURA_MIN_FT;
       const dTotalKm = _haversineKm(p0.lat,p0.lng,p2.lat,p2.lng);
       let giro=0;
-      if(dTotalKm>=MANIOBRA_DIST_MIN_KM){
+      if(!enTierra && dTotalKm>=MANIOBRA_DIST_MIN_KM){
         const b1=_bearingDeg(p0.lat,p0.lng,p1.lat,p1.lng);
         const b2=_bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
         let dB=Math.abs(b2-b1); if(dB>180) dB=360-dB;
         const dtS=(new Date(p2.ts)-new Date(p0.ts))/1000;
         giro = dtS>0 ? dB/dtS : 0;
       }
-      arr.push({ts:p1.ts, giro});
-      todosLosGiros.push(giro);
+      arr.push({ts:p1.ts, giro, enTierra});
+      if(!enTierra) todosLosGiros.push(giro);
     }
     porTramo.push(arr);
   }
@@ -11350,7 +11365,7 @@ function _clasificarTramosVuelo(segmentos){
   const ordenados = [...todosLosGiros].sort((a,b)=>a-b);
   const pctIdx = Math.min(ordenados.length-1, Math.floor(ordenados.length*(1-MANIOBRA_PERCENTIL)));
   const umbral = Math.max(MANIOBRA_GIRO_DEG_S, ordenados[pctIdx]);
-  console.log('[análisis vuelo] giro °/s — min:', ordenados[0].toFixed(2),
+  console.log('[análisis vuelo] giro °/s (solo en vuelo, sobre '+MANIOBRA_ALTURA_MIN_FT+'ft) — min:', ordenados[0].toFixed(2),
     'mediana:', ordenados[Math.floor(ordenados.length/2)].toFixed(2),
     'máx:', ordenados[ordenados.length-1].toFixed(2),
     'umbral usado (top '+Math.round(MANIOBRA_PERCENTIL*100)+'%):', umbral.toFixed(2));
@@ -11423,7 +11438,7 @@ window.abrirAnalisisVuelo = function(){
   if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
   const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora} = _ultimaTraza;
   document.getElementById('analisis-sub').textContent = (nombre?`${nombre} — ${avion}`:avion) + (hora?` · Turno ${hora} hs`:'');
-  const bandas = _clasificarTramosVuelo(segmentos);
+  const bandas = _clasificarTramosVuelo(segmentos, altMinTraza);
   const toques = _detectarToques(segmentos, altMinTraza);
   const fmtT = iso => { const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
   document.getElementById('analisis-toques-resumen').textContent = toques.length
