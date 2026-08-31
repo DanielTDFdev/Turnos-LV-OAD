@@ -3,28 +3,26 @@
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
   v5.66 · 2026-08-31
-  Pedido de Daniel — caso real: un instructor reportó que INICIAR VUELO "no
-  reaccionó" y que al tocar de nuevo le preguntó si quería finalizar/cancelar; el
-  vuelo terminó cargado a mano y mal atribuido a otro avión (LV-OAD en vez de
-  LV-ART). Investigación: descartada la contaminación automática entre
-  vuelo.html/vuelo-piloto.html (matchean por criterios distintos y mutuamente
-  excluyentes — instructor/aprobado_por acá, email allá — un turno de piloto
-  particular autoaprobado nunca tiene instructor/aprobado_por, así que nunca
-  podía aparecer en la lista de este instructor). Dos fixes:
-  (1) btn-start-stop y btn-confirmar (CONFIRMAR Y GUARDAR) no tenían guardia
-      contra reentradas — el handler es async y nada bloqueaba un doble toque o
-      un toque mientras la invocación anterior todavía esperaba confirmarAccion()
-      /escribía. Guardia _startStopBusy/_guardarBusy + disabled del botón, con
-      try/finally para cubrir todos los return tempranos.
-  (2) nt-avion (selector de avión de "Iniciar turno sin reserva previa") arrancaba
-      con LV-OAD preseleccionado, primera opción del <select> estático — mismo
-      bug que ya se había encontrado y arreglado en vuelo-piloto.html v3.1
-      (2026-08-09, selector p-avion) pero nunca portado acá. Ahora placeholder
-      vacío obligatorio + resalte ámbar + aviso (pintarEstadoNtAvion), y el click
-      en un resultado de búsqueda corta con un toast si no se eligió avión.
-      Sospecha fundada de que esto es lo que produjo el caso real: al abandonar
-      el flujo en vivo por la confusión de (1), el instructor probablemente
-      terminó usando este flujo manual sin notar el dropdown sin cambiar.
+  Pedido de Daniel — caso real: un vuelo de piloto en LV-ART quedó sin datos, y en
+  Firebase apareció un turno nuevo, autoasignado (sin instructor) en LV-OAD, a
+  nombre de ese mismo piloto, con los datos reales del vuelo. Causa raíz
+  confirmada en vuelo-piloto.html (la app del PILOTO, no esta): la restauración
+  de estado desde localStorage aplicaba el avión guardado SIEMPRE que existiera,
+  sin importar si había un vuelo genuinamente en curso ni cuán vieja fuera esa
+  selección — una elección sin arrancar, de una sesión sin relación, podía
+  colarse en silencio en la siguiente. Ver detalle completo y fix (
+  RESTAURAR_AVION_MAX_MS) en el changelog de vuelo-piloto.html v4.51, mismo día.
+  Acá, mismo patrón portado por prevención sobre turnoActual/nt-avion (RESTAURAR_
+  TURNO_MAX_MS, 3 horas — un vuelo realmente en curso se sigue restaurando
+  siempre). Además — descartadas como causa de ESTE caso puntual, pero protecciones
+  válidas igual, pedido explícito de Daniel ("todas las protecciones posibles"):
+  (1) guardia contra reentradas en btn-start-stop y btn-confirmar — ninguno de
+      los dos bloqueaba un doble toque o un toque mientras la invocación anterior
+      todavía esperaba confirmarAccion()/escribía.
+  (2) nt-avion (selector de "Iniciar turno sin reserva previa") arrancaba con
+      LV-OAD preseleccionado — mismo bug que ya se había arreglado en
+      vuelo-piloto.html v3.1 (selector p-avion) pero nunca portado acá. Ahora
+      placeholder vacío obligatorio + resalte ámbar + aviso.
 
   v5.65 · 2026-08-30
   Pedido de Daniel, mismo cambio en paralelo que turnos.html v8.13: METAR de
@@ -1786,6 +1784,12 @@ let _cierreRestaurado = null; // borrador del formulario de cierre restaurado de
 let vistaActual = 'loading'; // 'loading' | 'lista' | 'vuelo' — para saber si el auto-refresh puede tocar la pantalla sin interrumpir
 const LS = 'acrg-vuelo-v2';
 const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
+// v5.66: umbral para invalidar un turnoActual restaurado de localStorage que NO
+// corresponde a un vuelo realmente en curso (ver init()). Mismo fix que
+// vuelo-piloto.html v4.51 — caso real confirmado por Daniel, ver changelog del
+// header. Un vuelo genuinamente iniciado (tsInicio) se restaura siempre, sin
+// límite de tiempo.
+const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
 const APP_VERSION = '5.66'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
@@ -1840,10 +1844,24 @@ function init(){
   }catch{}
 
   // Restaurar vuelo en curso desde localStorage
+  // v5.66 FIX (caso real confirmado por Daniel — ver changelog del header): antes
+  // turnoActual se restauraba SIEMPRE que est.turno existiera, sin importar si
+  // había un vuelo genuinamente en curso ni cuán vieja fuera esa selección. El
+  // caso "in situ elegido pero sin arrancar" (crearTurnoInSitu) llama a
+  // persistir() ANTES de tocar INICIAR, a propósito, para sobrevivir un reload
+  // accidental en ese momento exacto — pero si el instructor cerraba la pestaña
+  // sin loguear "Salir" en vez de recargarla, esa selección (persona + AVIÓN)
+  // quedaba pegada en localStorage sin límite de tiempo, lista para colarse en
+  // la sesión siguiente, sin relación, sin ningún aviso visual. Fix: un vuelo
+  // REALMENTE en curso (est.tsInicio) se restaura siempre — es información real
+  // sin guardar. Una selección sin arrancar todavía solo se restaura si es
+  // reciente (RESTAURAR_TURNO_MAX_MS); más vieja que eso, se descarta y
+  // cargarTabVuelo() arranca de cero con la detección normal.
   try{
     const est=JSON.parse(localStorage.getItem(LS)||'null');
     if(est){
-      turnoActual=est.turno||null;
+      const turnoVigente=est.turno&&(est.tsInicio||!est.ts||(Date.now()-est.ts)<RESTAURAR_TURNO_MAX_MS);
+      turnoActual=turnoVigente?est.turno:null;
       tsInicio=est.tsInicio||null;
       tsFin=est.tsFin||null;
       metarInicio=est.metarInicio||null;
@@ -2996,7 +3014,8 @@ function persistir(){
     cAterr:$('c-aterr')?.value||'',
     cObs:$('c-obs')?.value||'',
     tManualVisible:$('t-manual')?.style.display!=='none',
-    tManualValor:$('t-manual')?.value||''
+    tManualValor:$('t-manual')?.value||'',
+    ts: Date.now() // v5.66: para poder invalidar una restauración vieja de turno sin vuelo iniciado
   }));
 }
 
