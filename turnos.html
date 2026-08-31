@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.14
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel: al loguearse un instructor, si tiene vuelos vencidos
+            donde figura como instructor (aprobado_por||instructor) sin tiempo de
+            vuelo/aterrizajes/obs cargados, popup propio (modal, no alert()) avisando
+            la cantidad y listándolos — cada fila abre directo el modal de detalle del
+            turno (mismo abrirModal() de siempre) para completarlos con el flujo ya
+            existente ("✎ CARGAR TIEMPO / ATERRIZAJES", ver v7.90/v7.91). Solo evalúa
+            desde FECHA_EVAL_PENDIENTES_INST='2026-07-01' — hay vuelos viejos de
+            cuando arrancó el sistema sin datos cargados a propósito, no tiene sentido
+            arrastrarlos. Se dispara únicamente en loginInstructor() (login real), no
+            en restoreSession() (recarga de pestaña) — para no repetir el aviso cada
+            vez que el instructor refresca la página con la sesión ya abierta.
   VERSION : 8.13
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: METAR de inicio/fin en el modal de ANÁLISIS, si el
@@ -3536,7 +3549,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.13</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.14</div>
   </div>
 
 </div>
@@ -4060,6 +4073,21 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button id="confirm-simple-btn-no" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius);cursor:pointer">Volver</button>
         <button id="confirm-simple-btn-si" class="danger" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px">Sí</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v8.14: aviso al loguear un instructor — vuelos vencidos donde figura como
+       instructor sin tiempo/aterrizajes/obs cargados (ver chequearVuelosPendientesInstructor). -->
+  <div class="modal-overlay" id="modal-vuelos-pendientes-inst" style="z-index:1100">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-title" style="color:var(--amber)">⚠ Vuelos sin datos cargados</div>
+      <div style="font-family:var(--font-mono);font-size:12px;color:var(--text2);margin-bottom:.85rem;letter-spacing:.03em;line-height:1.5">
+        Tenés <span id="mvpi-count" style="color:var(--amber)"></span> vuelo(s) vencido(s) desde el 01/07/2026 donde figurás como instructor sin tiempo de vuelo, aterrizajes u observación cargados. Tocá uno para completarlo.
+      </div>
+      <div id="mvpi-lista" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:1rem"></div>
+      <div style="display:flex;justify-content:flex-end">
+        <button id="mvpi-btn-cerrar" style="font-family:var(--font-mono);font-size:12px;padding:7px 16px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:var(--radius);cursor:pointer">Cerrar</button>
       </div>
     </div>
   </div>
@@ -5787,9 +5815,66 @@ window.loginInstructor=async function(){
     const instPerfilNombre=document.getElementById('inst-perfil-user-label');
     if(instPerfilUser) instPerfilUser.value=found.user||'';
     if(instPerfilNombre) instPerfilNombre.value=found.nombre||'';
+    chequearVuelosPendientesInstructor(found.nombre);
   }catch(e){showErr('login-err2','Error al iniciar sesión.');console.error(e);}
   finally{setLoading('btn-login-inst',false);}
 };
+
+// v8.14: pedido de Daniel — al loguearse un instructor, avisarle si tiene vuelos
+// VENCIDOS donde figura como instructor (aprobado_por||instructor, mismo criterio
+// que ya usa la fila OBS. POST-VUELO del modal de detalle) sin tiempo de vuelo,
+// aterrizajes ni observación cargados. Solo evalúa desde FECHA_EVAL_PENDIENTES_INST
+// — hay vuelos viejos de cuando arrancó el sistema, sin datos, a propósito no
+// completados retroactivamente. Fire-and-forget: no bloquea el login, corre después
+// de mostrar la pantalla de instructor. No se llama desde restoreSession() a propósito
+// — solo en un login real, para no repetir el aviso en cada recarga de pestaña.
+const FECHA_EVAL_PENDIENTES_INST='2026-07-01';
+async function chequearVuelosPendientesInstructor(nombreInstructor){
+  try{
+    const data=await fbGet('reservas');
+    if(!data) return;
+    const pendientes=Object.entries(data)
+      .map(([key,r])=>({key,...r}))
+      .filter(r=>{
+        if(r.estado!=='vencido') return false;
+        if(!r.fecha||r.fecha<FECHA_EVAL_PENDIENTES_INST) return false;
+        const aprobador=r.aprobado_por||r.instructor||'';
+        if(aprobador!==nombreInstructor) return false;
+        const tieneDatos=r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.obs_privada||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null;
+        return !tieneDatos;
+      })
+      .sort((a,b)=>a.fecha===b.fecha?(a.hora||'').localeCompare(b.hora||''):a.fecha.localeCompare(b.fecha));
+    if(pendientes.length) mostrarModalVuelosPendientesInstructor(pendientes);
+  }catch(e){ console.error('chequearVuelosPendientesInstructor',e); }
+}
+
+function mostrarModalVuelosPendientesInstructor(pendientes){
+  const overlay=document.getElementById('modal-vuelos-pendientes-inst');
+  const lista=document.getElementById('mvpi-lista');
+  const countEl=document.getElementById('mvpi-count');
+  if(!overlay||!lista||!countEl) return;
+  countEl.textContent=pendientes.length;
+  lista.innerHTML='';
+  pendientes.forEach(r=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:12px;color:var(--text2)';
+    row.innerHTML=`<span>${fmtFechaLinda(r.fecha)} · ${r.hora||''} hs · ${r.avion||'LV-OAD'}</span><span style="color:var(--amber)">${r.nombre||''} ▸</span>`;
+    row.onclick=async()=>{
+      if(!_reservasCache[r.key]){
+        try{ const fresh=await fbGet('reservas/'+r.key); if(fresh) _reservasCache[r.key]={...fresh,key:r.key}; }catch(e){ console.error(e); }
+      }
+      cerrarModalVuelosPendientesInstructor();
+      if(_reservasCache[r.key]) window.abrirModal(r.key);
+    };
+    lista.appendChild(row);
+  });
+  overlay.classList.add('open');
+}
+window.cerrarModalVuelosPendientesInstructor=function(){
+  document.getElementById('modal-vuelos-pendientes-inst')?.classList.remove('open');
+};
+document.getElementById('mvpi-btn-cerrar')?.addEventListener('click',cerrarModalVuelosPendientesInstructor);
+document.getElementById('modal-vuelos-pendientes-inst')?.addEventListener('click',e=>{if(e.target.id==='modal-vuelos-pendientes-inst')cerrarModalVuelosPendientesInstructor();});
 
 // v7.64: pedido de Daniel — link a reporte.html (reporte de actividad admin,
 // existía standalone sin link desde ningún lado) en el annunciator panel de
