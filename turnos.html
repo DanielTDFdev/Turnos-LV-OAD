@@ -1,5 +1,25 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.23
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel sobre v8.20/v8.21 (selección de slots): "quiero que las celdas
+            sean un toggle on/off, es confuso tener que desandar la línea de tiempo —
+            ejemplo: elijo 10:00/10:30/11:00 y me arrepiento de las 11:00, quiero clickear
+            SOLO esa y que se apague, no tener que tocar la de 10:30". Reescrito
+            clickSlotMulti(): cada slot ya elegido ahora es un toggle real — clickearlo lo
+            apaga directo, sin pasos intermedios. Se sigue garantizando consecutividad
+            SIEMPRE, pero por construcción del algoritmo (no por validación aparte): apagar
+            un extremo (primero o último) recorta el rango de ese lado; apagar un slot
+            INTERIOR corta ahí y descarta lo que sigue después (si no, quedaría un hueco en
+            el medio — mantener ambos lados como dos rangos separados no es una reserva
+            válida). Clickear un slot fuera del rango actual lo sigue extendiendo hasta ahí
+            (corta en el primer tomado/no disponible en el camino), eso no cambió. De paso,
+            refactor: se sacó el estado propio _multiAnchor/_multiExtremo — ahora
+            clickSlotMulti() y aplicarSeleccionMulti() trabajan directo sobre
+            selectedSlot/selectedSlotFin (las mismas variables que ya usa el resto del
+            archivo), así queda sincronizado automáticamente con todos los puntos donde ya
+            se resetea la selección (selectDay, seleccionarAvion, cancelarSeleccion,
+            logout, etc.) sin tener que tocarlos uno por uno.
   VERSION : 8.22
   FECHA   : 2026-08-31
   CAMBIOS : Dos pedidos de Daniel sobre Pedir Turno: (1) título de la grilla ahora incluye
@@ -3671,7 +3691,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.22</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.23</div>
   </div>
 
 </div>
@@ -6764,45 +6784,59 @@ function selectSlot(h){
   hideEl('turno-err');hideEl('turno-ok');
 }
 
-// ── Selección de varios slots con click/touch, sin arrastre — v8.20 ────────────────────
-// Reemplaza al viejo dropdown "Hora de fin (exclusiva)" y al primer intento con drag
-// (revertido a pedido de Daniel: "no me gusta el drag, prefiero ir haciendo click"). Solo
-// activo cuando modoMultiSlot es true (piloto, avión≠LV-OAD — particular o instrucción,
-// ver renderSlots). _multiHorasDia es la grilla completa de horas del día (para calcular
-// índices/rango), _multiDisponibles el subconjunto realmente seleccionable (pasa
-// anticipación y no está tomado). _multiAnchor es el primer slot clickeado, _multiExtremo
-// la última hora OCUPADA marcada hasta ahora (no la exclusiva — se convierte a horaFin
-// exclusiva recién al aplicar la selección, en aplicarSeleccionMulti()).
-let _multiAnchor=null,_multiExtremo=null,_multiHorasDia=[],_multiDisponibles=new Set();
+// ── Selección de varios slots con click/touch, tipo toggle — v8.23 ─────────────────────
+// Reemplaza al modelo de "click extiende desde un ancla" (v8.20/v8.21): ahora cada slot
+// es un toggle independiente — clickear un slot YA elegido lo apaga sin tener que
+// "desandar" clickeando los intermedios (pedido de Daniel, ejemplo: elegís 10:00/10:30/
+// 11:00 y te arrepentís de las 11:00 → clickeás justo esa y se apaga sola). El rango
+// SIEMPRE se mantiene consecutivo por construcción, no hace falta validarlo aparte:
+// - Apagar el extremo (primero o último) simplemente lo recorta de ese lado.
+// - Apagar un slot INTERIOR corta ahí — se queda con la parte más cercana al inicio y
+//   descarta lo que sigue después (si no, quedaría un hueco en el medio).
+// - Clickear un slot fuera del rango actual lo extiende hasta ahí, cortando en el primer
+//   tomado/no disponible en el camino (permite clickear directo el final sin tocar cada
+//   slot intermedio, sigue siendo válido).
+// No hay estado propio persistente — usa selectedSlot/selectedSlotFin directamente (así
+// queda sincronizado con todos los resets existentes: selectDay, seleccionarAvion,
+// cancelarSeleccion, logout, etc. — no hace falta tocarlos todos por separado).
+// _multiHorasDia/_multiDisponibles se recalculan en cada renderSlots (ver ahí).
+let _multiHorasDia=[],_multiDisponibles=new Set();
 
 function clickSlotMulti(h){
-  if(_multiAnchor===null){
-    _multiAnchor=h;_multiExtremo=h;
-  } else if(h===_multiAnchor){
-    // Click de nuevo sobre el primer slot: si ya había un rango armado, lo colapsa a solo
-    // ese slot (permite "arrepentirse" sin tener que cancelar todo); si ya era un solo
-    // slot, lo deselecciona por completo.
-    if(_multiExtremo===_multiAnchor){_multiAnchor=null;_multiExtremo=null;}
-    else{_multiExtremo=_multiAnchor;}
-  } else {
-    const horas=_multiHorasDia;
-    const idxA=horas.indexOf(_multiAnchor),idxH=horas.indexOf(h);
-    if(idxA<0||idxH<0)return;
-    const dir=idxH>=idxA?1:-1;
-    let idxLimite=idxA;
-    for(let i=idxA+dir; dir>0?i<=idxH:i>=idxH; i+=dir){
-      if(!_multiDisponibles.has(horas[i]))break; // corta en el primer tomado o no disponible
+  const horas=_multiHorasDia;
+  const idx=horas.indexOf(h);
+  if(idx<0)return;
+  let lo=selectedSlot?horas.indexOf(selectedSlot):-1;
+  let hi=(lo>=0&&selectedSlotFin)?horas.indexOf(selectedSlotFin)-1:lo; // fin exclusivo→índice ocupado
+  if(lo<0){
+    lo=idx;hi=idx;
+  } else if(idx>=lo&&idx<=hi){
+    // Toggle OFF de un slot ya elegido.
+    if(idx===lo&&idx===hi){lo=-1;hi=-1;}
+    else if(idx===lo){lo=idx+1;}
+    else{hi=idx-1;} // extremo derecho o interior: se recorta desde acá hacia el final
+  } else if(idx>hi){
+    let idxLimite=hi;
+    for(let i=hi+1;i<=idx;i++){
+      if(!_multiDisponibles.has(horas[i]))break;
       idxLimite=i;
     }
-    // La hora de fin se guarda EXCLUSIVA (ver aplicarSeleccionMulti) — necesita una hora
-    // real siguiente a la última ocupada. Si el click llega hasta la última hora del día
-    // no hay "hora siguiente" posible; se limita a la anteúltima (mismo límite que ya
-    // tenía el viejo dropdown, que nunca podía ofrecer esa opción como "Hora de fin").
-    if(dir>0&&idxLimite===horas.length-1&&idxLimite!==idxA){
-      idxLimite=(horas.length-2>=idxA)?horas.length-2:idxA;
+    // Hora de fin exclusiva: no puede terminar en la última hora del día (no hay "hora
+    // siguiente" para representarla) — mismo límite que ya tenía el viejo dropdown.
+    if(idxLimite===horas.length-1&&idxLimite!==lo){
+      idxLimite=(horas.length-2>=lo)?horas.length-2:lo;
     }
-    _multiExtremo=horas[idxLimite];
+    hi=idxLimite;
+  } else { // idx<lo
+    let idxLimite=lo;
+    for(let i=lo-1;i>=idx;i--){
+      if(!_multiDisponibles.has(horas[i]))break;
+      idxLimite=i;
+    }
+    lo=idxLimite;
   }
+  if(lo<0){selectedSlot=null;selectedSlotFin=null;}
+  else{selectedSlot=horas[lo];selectedSlotFin=lo===hi?null:horas[hi+1];}
   aplicarSeleccionMulti();
 }
 
@@ -6816,17 +6850,14 @@ function fmtDuracionSlots(count,avion){
 }
 
 function aplicarSeleccionMulti(){
-  if(_multiAnchor===null){
-    selectedSlot=null;selectedSlotFin=null;
+  if(!selectedSlot){
     document.getElementById('slot-confirm').style.display='none';
     get(ref(db,'reservas')).then(s=>renderSlots(selectedDay,s.val()));
     return;
   }
   const horas=_multiHorasDia;
-  const idxA=horas.indexOf(_multiAnchor),idxE=horas.indexOf(_multiExtremo);
-  const lo=Math.min(idxA,idxE),hi=Math.max(idxA,idxE);
-  selectedSlot=horas[lo];
-  selectedSlotFin=lo===hi?null:horas[hi+1]; // exclusiva — mismo criterio que slotsTomados()
+  const lo=horas.indexOf(selectedSlot);
+  const hi=selectedSlotFin?horas.indexOf(selectedSlotFin)-1:lo;
   const count=hi-lo+1;
   document.getElementById('confirm-label').textContent=selectedSlotFin
     ?selectedAvion+' — '+selectedDay+' de '+selectedSlot+' a '+selectedSlotFin+' hs ('+count+' slots - '+fmtDuracionSlots(count,selectedAvion)+')'
@@ -6849,7 +6880,7 @@ function requiereInstructorGlobal(){
 }
 
 window.cancelarSeleccion=function(){
-  selectedSlot=null;selectedSlotFin=null;_multiAnchor=null;_multiExtremo=null;
+  selectedSlot=null;selectedSlotFin=null;
   document.getElementById('slot-confirm').style.display='none';
   document.getElementById('slot-fin-wrap').innerHTML='';
   get(ref(db,'reservas')).then(s=>renderSlots(selectedDay,s.val()));
