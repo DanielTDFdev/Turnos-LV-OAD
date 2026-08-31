@@ -1,5 +1,43 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.29
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel sobre el login simulado de v8.28: "que no quede registro en
+            auditoría". Se sacaron TODAS las llamadas a registrarAuditoria() del camino
+            simulado en loginAlumno()/loginInstructor() — ni éxito, ni fallo de contraseña
+            admin incorrecta, ni "usuario objetivo no encontrado". El único caso borde: si
+            found es null (usuario objetivo inexistente) pero la contraseña admin era
+            válida, antes esa rama de error SÍ auditaba — ahora también queda guardada
+            bajo el chequeo !simulando, sin excepción. El resto del comportamiento (banner,
+            herencia de permisos, no forzar cambio de clave, no poder simular admin) no
+            cambió, solo se quitó la escritura a /auditoria en el flujo simulado.
+  VERSION : 8.28
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel: login simulado ("sudo") — poder entrar como un usuario/
+            instructor/alumno puntual con TODOS sus permisos y restricciones, sin saber su
+            contraseña. Se activa agregando un '*' al final del usuario en el login normal
+            (ej. "mrodriguez*" entra como mrodriguez). La contraseña tipeada en ese caso NO
+            es la del usuario simulado — se valida contra las cuentas admin/administrador
+            (las únicas que quedan en password plano, nunca se migran a Firebase Auth) vía
+            nueva verificarPasswordAdmin(), como un "sudo": hace falta la contraseña de un
+            admin real. A partir de ahí el login sigue EXACTAMENTE el mismo camino que uno
+            real (mismo session={...} armado en loginAlumno()/loginInstructor(), mismo rol,
+            mismas restricciones downstream — es la clave de por qué "hereda todos los
+            permisos": nada del resto del código sabe que es simulado, solo ve el session
+            normal del usuario objetivo) EXCEPTO: no fuerza cambio de contraseña temporal
+            (pisaría la clave real del usuario sin que se entere) y no compara contra la
+            contraseña real del objetivo en ningún punto. Si el objetivo está
+            pendiente_aprobacion o suspendido, el login simulado ve exactamente esas mismas
+            pantallas/bloqueos — "restricciones" incluye eso también, a propósito.
+            No se puede simular admin/administrador (no tiene sentido, ya es la cuenta más
+            privilegiada). Nuevo banner persistente #banner-simulacion (naranja, imposible
+            de confundir con una sesión real) mientras dure la sesión — se re-muestra solo
+            si se restaura la sesión desde sessionStorage (restoreSession) y se oculta en
+            logout(). Sin cambios visibles en el formulario de login (no hay ninguna pista
+            de que el truco existe) — es intencional, es una herramienta para el
+            programador, no una función pensada para usuarios finales. (Nota: esta entrada
+            mencionaba originalmente auditoría con prefijo "[SIMULACIÓN...]" — se sacó por
+            completo en v8.29, ver esa entrada.)
   VERSION : 8.27
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel sobre v8.26: "no me gusta el color celeste, tiene que ser un
@@ -3756,7 +3794,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.27</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.29</div>
   </div>
 
 </div>
@@ -3773,6 +3811,11 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <span id="nav-user-name" style="font-family:var(--font-mono);font-size:12px;color:var(--text2)"></span>
     <button onclick="logout()" style="font-size:11px;padding:4px 12px">⏻ SALIR</button>
   </div>
+</div>
+
+<div id="banner-simulacion" style="display:none;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;background:repeating-linear-gradient(45deg,rgba(255,69,0,.18),rgba(255,69,0,.18) 12px,rgba(255,69,0,.07) 12px,rgba(255,69,0,.07) 24px);border-bottom:1px solid rgba(255,69,0,.6);padding:6px 16px;font-family:var(--font-mono);font-size:11px;letter-spacing:.05em;color:#ff8a4c">
+  <span>🕵 LOGIN SIMULADO — actuando como <b id="banner-simulacion-nombre"></b>, sesión abierta con la contraseña de <b id="banner-simulacion-admin"></b></span>
+  <button onclick="logout()" style="font-size:10px;padding:3px 11px;border-color:rgba(255,69,0,.6);color:#ff8a4c">⏻ SALIR DE LA SIMULACIÓN</button>
 </div>
 
 <div class="container">
@@ -5596,6 +5639,36 @@ window.guardarAeronaveModal=async function(){
   setTimeout(cerrarModalAeronave,900);
 };
 
+// ── LOGIN SIMULADO ("sudo") ──────────────────────────────────────
+// v8.28: pedido de Daniel — poder entrar como un usuario/instructor/alumno puntual con
+// todos SUS permisos y restricciones, sin saber su contraseña, agregando un '*' al final
+// del usuario en el login normal (ej. "mrodriguez*" entra como mrodriguez). La contraseña
+// que se tipea en ese caso NO es la del usuario simulado — se valida acá contra las
+// cuentas admin/administrador (las únicas que quedan en password plano, nunca se migran a
+// Firebase Auth — ver nota en loginInstructor), como un "sudo": hace falta la contraseña
+// de un admin real para poder simular a cualquiera. Devuelve el username admin que
+// coincidió ('admin'/'administrador') o null si ninguna coincide. Se reusa tal cual desde
+// loginAlumno() y loginInstructor().
+async function verificarPasswordAdmin(pass){
+  for(const u of ['admin','administrador']){
+    const rec=await fbGet('instructores/'+u);
+    if(rec&&rec.pass===pass) return u;
+  }
+  if(pass==='admin123') return 'admin'; // mismo acceso de emergencia que loginInstructor
+  return null;
+}
+// Banner persistente mientras hay una sesión simulada activa — para que quede clarísimo
+// (para Daniel, y para cualquiera que use la compu después) que no es un login real. El
+// botón de salir reusa logout() tal cual, no hay una "vuelta a admin" automática — hay
+// que loguearse de nuevo como admin si hace falta.
+function mostrarBannerSimulacion(nombre,admin){
+  const b=document.getElementById('banner-simulacion');
+  if(!b)return;
+  document.getElementById('banner-simulacion-nombre').textContent=nombre;
+  document.getElementById('banner-simulacion-admin').textContent=admin;
+  b.style.display='flex';
+}
+
 // ── AUDITORÍA ──────────────────────────────────────────────────
 async function registrarAuditoria(accion,rol,resultado,detalle=''){
   if(detalle&&detalle.includes('(admin)'))return;
@@ -5860,10 +5933,22 @@ window.registrarAlumno=async function(){
 
 window.loginAlumno=async function(){
   hideEl('login-err');
-  const id=val('al-login-email').toLowerCase(),pass=val('al-login-pass');
+  let id=val('al-login-email').toLowerCase(),pass=val('al-login-pass');
   if(!id||!pass){showErr('login-err','Completá usuario/email y contraseña.');return;}
   setLoading('btn-login-al',true);
   try{
+    // v8.29: pedido de Daniel — sin ningún registro en auditoría para el login simulado,
+    // ni éxito ni fallo. A partir de acá, todo await registrarAuditoria(...) de este
+    // bloque queda condicionado a !simulando.
+    let simulando=false,adminSimulador=null;
+    if(id.endsWith('*')){
+      id=id.slice(0,-1);
+      adminSimulador=await verificarPasswordAdmin(pass);
+      if(!adminSimulador){
+        showErr('login-err','Usuario/email o contraseña incorrectos.');return;
+      }
+      simulando=true;
+    }
     let alumno=null,k=null;
     if(id.includes('@')){
       k=ek(id); alumno=await fbGet('alumnos/'+k);
@@ -5874,41 +5959,47 @@ window.loginAlumno=async function(){
       }
     }
     if(!alumno){
-      await registrarAuditoria('login','alumno','fallo','Identificador no encontrado — '+id);
+      if(!simulando) await registrarAuditoria('login','alumno','fallo','Identificador no encontrado — '+id);
       showErr('login-err','Usuario/email o contraseña incorrectos.');return;
     }
     // Verificación: primero Firebase Auth (si ya está migrado), con fallback a password plano.
     // Si el alumno aún no está migrado y la password plana coincide, se crea su cuenta de Auth (perezosa).
-    let okLogin=false;
-    if(alumno.authMigrado){
-      try{ await signInWithEmailAndPassword(auth,alumno.email,pass); okLogin=true; }
-      catch(_){ okLogin=false; }
-    }
-    if(!okLogin && alumno.pass!=null && alumno.pass===pass){
-      okLogin=true;
-      if(!alumno.authMigrado) await authMigrarAlumno(k,alumno.email,pass);
+    // v8.28: en login simulado se salta esta verificación entera — ya se autorizó arriba
+    // con la contraseña del admin, la del alumno no interviene para nada.
+    let okLogin=simulando;
+    if(!simulando){
+      if(alumno.authMigrado){
+        try{ await signInWithEmailAndPassword(auth,alumno.email,pass); okLogin=true; }
+        catch(_){ okLogin=false; }
+      }
+      if(!okLogin && alumno.pass!=null && alumno.pass===pass){
+        okLogin=true;
+        if(!alumno.authMigrado) await authMigrarAlumno(k,alumno.email,pass);
+      }
     }
     if(!okLogin){
       await registrarAuditoria('login',alumno.rol||'alumno','fallo','Contraseña incorrecta — '+id);
       showErr('login-err','Usuario/email o contraseña incorrectos.');return;
     }
     if(alumno.estado_login==='suspendido'){
-      await registrarAuditoria('login',alumno.rol||'alumno','bloqueado','Acceso suspendido — '+id);
+      if(!simulando) await registrarAuditoria('login',alumno.rol||'alumno','bloqueado','Acceso suspendido — '+id);
       showErr('login-err','⚠ Tu acceso está suspendido. Comunicate con administración.');
       return;
     }
     if(alumno.estado==='pendiente_aprobacion'){
-      await registrarAuditoria('login','pendiente','exito',alumno.nombre+' ('+id+')');
+      if(!simulando) await registrarAuditoria('login','pendiente','exito',alumno.nombre+' ('+id+')');
       showScreen('pendiente-screen');
       return;
     }
-    if(alumno.pass_temporal){
+    // v8.28: un login simulado nunca fuerza cambio de contraseña del alumno — sería
+    // pisarle la clave real sin que se entere. Se salta directo con lo que ya tenga.
+    if(alumno.pass_temporal && !simulando){
       const cambiada=await forzarCambioClave('alumnos/'+k);
       if(!cambiada){showErr('login-err','Para ingresar tenés que cambiar la contraseña temporal.');return;}
     }
-    await registrarAuditoria('login',alumno.rol||'alumno','exito',alumno.nombre+' ('+id+')');
+    if(!simulando) await registrarAuditoria('login',alumno.rol||'alumno','exito',alumno.nombre+' ('+id+')');
     const rol=alumno.rol||'alumno';
-    session={tipo:'alumno',rol,nombre:alumno.nombre,email:alumno.email,emailKey:k,username:alumno.username||''};
+    session={tipo:'alumno',rol,nombre:alumno.nombre,email:alumno.email,emailKey:k,username:alumno.username||'',simuladoPor:simulando?adminSimulador:null};
     guardarSesion();
     setNavUser(alumno.nombre,rol);
     await loadConfig();
@@ -5918,6 +6009,7 @@ window.loginAlumno=async function(){
     showAlumnoTab('mis-turnos');
     suscribirReservas();
     startSessionTimeout();
+    if(simulando) mostrarBannerSimulacion(alumno.nombre,adminSimulador);
   }catch(e){showErr('login-err','Error al iniciar sesión.');console.error(e);}
   finally{setLoading('btn-login-al',false);}
 };
@@ -5978,10 +6070,25 @@ function forzarCambioClave(dbPath){
 
 window.loginInstructor=async function(){
   hideEl('login-err2');
-  const user=val('inst-user'),pass=val('inst-pass');
+  let user=val('inst-user'),pass=val('inst-pass');
   if(!user||!pass){showErr('login-err2','Completá usuario y contraseña.');return;}
   setLoading('btn-login-inst',true);
   try{
+    // v8.28: '*' al final del usuario = login simulado (ver verificarPasswordAdmin) —
+    // no tiene sentido simular a admin/administrador (ya son la cuenta más privilegiada),
+    // así que ese caso se rechaza directo.
+    let simulando=false,adminSimulador=null;
+    if(user.endsWith('*')){
+      user=user.slice(0,-1);
+      if(user.toLowerCase()==='admin'||user.toLowerCase()==='administrador'){
+        showErr('login-err2','No se puede simular una cuenta admin.');return;
+      }
+      adminSimulador=await verificarPasswordAdmin(pass);
+      if(!adminSimulador){
+        showErr('login-err2','Usuario o contraseña incorrectos.');return;
+      }
+      simulando=true;
+    }
     const data=await fbGet('instructores');
     // Buscar por usuario (sin comparar password todavía)
     let found=null;
@@ -5989,40 +6096,47 @@ window.loginInstructor=async function(){
 
     // Verificación de password: Auth primero (si ya está migrado), fallback a plano + migración perezosa.
     // admin/administrador quedan en password plano (acceso administrativo/emergencia), no se migran.
-    let okLogin=false;
-    if(found && found.user!=='admin' && found.user!=='administrador'){
-      const instEmail=authEmailInstructor(found.user);
-      if(found.authMigrado){
-        try{ await signInWithEmailAndPassword(auth,instEmail,pass); okLogin=true; }catch(_){ okLogin=false; }
+    // v8.28: en login simulado se salta esta verificación entera — ya se autorizó arriba
+    // con la contraseña del admin, la del instructor simulado no interviene para nada.
+    let okLogin=simulando;
+    if(!simulando){
+      if(found && found.user!=='admin' && found.user!=='administrador'){
+        const instEmail=authEmailInstructor(found.user);
+        if(found.authMigrado){
+          try{ await signInWithEmailAndPassword(auth,instEmail,pass); okLogin=true; }catch(_){ okLogin=false; }
+        }
+        if(!okLogin && found.pass!=null && found.pass===pass){
+          okLogin=true;
+          if(!found.authMigrado) await authMigrarInstructor(found.key,instEmail,pass);
+        }
+      } else if(found){
+        okLogin = found.pass===pass;
       }
-      if(!okLogin && found.pass!=null && found.pass===pass){
-        okLogin=true;
-        if(!found.authMigrado) await authMigrarInstructor(found.key,instEmail,pass);
-      }
-    } else if(found){
-      okLogin = found.pass===pass;
-    }
 
-    // admin siempre accesible con clave fija (acceso de emergencia)
-    if(!okLogin && user==='admin' && pass==='admin123'){
-      if(!await fbGet('instructores/admin'))await fbSet('instructores/admin',{user:'admin',pass:'admin123',nombre:'Instructor'});
-      found={user:'admin',pass:'admin123',nombre:'Instructor',key:'admin'};
-      okLogin=true;
+      // admin siempre accesible con clave fija (acceso de emergencia)
+      if(!okLogin && user==='admin' && pass==='admin123'){
+        if(!await fbGet('instructores/admin'))await fbSet('instructores/admin',{user:'admin',pass:'admin123',nombre:'Instructor'});
+        found={user:'admin',pass:'admin123',nombre:'Instructor',key:'admin'};
+        okLogin=true;
+      }
     }
 
     if(!found || !okLogin){
-      await registrarAuditoria('login','instructor','fallo','Usuario o contraseña incorrectos — '+user);
+      // v8.29: sin auditoría para login simulado — ni siquiera cuando el objetivo no
+      // existe (found null pero okLogin true por la contraseña admin válida).
+      if(!simulando) await registrarAuditoria('login','instructor','fallo','Usuario o contraseña incorrectos — '+user);
       showErr('login-err2','Usuario o contraseña incorrectos.');return;
     }
-    // Cambio de clave forzado por admin (pass_temporal). No aplica al acceso de emergencia admin.
-    if(found.pass_temporal && found.user!=='admin'){
+    // Cambio de clave forzado por admin (pass_temporal). No aplica al acceso de emergencia admin
+    // ni a un login simulado (no tiene sentido pisarle la clave real al instructor simulado).
+    if(found.pass_temporal && found.user!=='admin' && !simulando){
       const cambiada=await forzarCambioClave('instructores/'+found.key);
       if(!cambiada){showErr('login-err2','Para ingresar tenés que cambiar la contraseña temporal.');return;}
     }
-    await registrarAuditoria('login','instructor','exito',found.nombre+' ('+found.user+')');
+    if(!simulando) await registrarAuditoria('login','instructor','exito',found.nombre+' ('+found.user+')');
     // administrador tiene acceso completo (excepto Zona Peligrosa y edición de horarios)
     const soloUsuarios=found.soloUsuarios===true&&found.user!=='admin'&&found.user!=='administrador';
-    session={tipo:'instructor',nombre:found.nombre,user:found.user,soloUsuarios};
+    session={tipo:'instructor',nombre:found.nombre,user:found.user,soloUsuarios,simuladoPor:simulando?adminSimulador:null};
     guardarSesion();
     setNavUser(found.nombre,'instructor');
     await loadConfig();
@@ -6042,6 +6156,7 @@ window.loginInstructor=async function(){
     const instPerfilNombre=document.getElementById('inst-perfil-user-label');
     if(instPerfilUser) instPerfilUser.value=found.user||'';
     if(instPerfilNombre) instPerfilNombre.value=found.nombre||'';
+    if(simulando) mostrarBannerSimulacion(found.nombre,adminSimulador);
   }catch(e){showErr('login-err2','Error al iniciar sesión.');console.error(e);}
   finally{setLoading('btn-login-inst',false);}
 };
@@ -6176,6 +6291,7 @@ window.logout=function(){
   const banner=document.getElementById('banner-pendientes');if(banner)banner.style.display='none';
   const bvpi=document.getElementById('banner-vuelos-pendientes-inst');if(bvpi)bvpi.style.display='none';
   const bturnos=document.getElementById('banner-turnos-pend');if(bturnos)bturnos.style.display='none';
+  const bsim=document.getElementById('banner-simulacion');if(bsim)bsim.style.display='none';
   session=null;selectedDay=null;selectedSlot=null;selectedAvion=null;selectedSlotFin=null;selectedTipoVuelo=null;
   try{sessionStorage.removeItem('lvoad-session');}catch(e){}
   // reset cachés de datos
@@ -11151,6 +11267,7 @@ async function restoreSession(){
       suscribirReservas();
     }
     startSessionTimeout();
+    if(s.simuladoPor) mostrarBannerSimulacion(s.nombre,s.simuladoPor);
     return true;
   }catch(e){
     console.error('No se pudo restaurar la sesión:',e);
