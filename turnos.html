@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.17
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel tras revisar el resultado real (captura de la lista): fecha
+            límite de evaluación del banner de vuelos pendientes de FECHA_EVAL_PENDIENTES_INST
+            corrida de 2026-07-01 a 2026-08-01 (texto del modal actualizado a "01/08/2026"
+            también). Además, red de seguridad explícita en filtrarVuelosPendientesInstructor:
+            excluye cualquier reserva con cancelado_por/cancelado_rol seteados — en el modelo
+            actual estado es un campo único y las 3 rutas de cancelación siempre setean
+            estado:'cancelado' (mutuamente excluyente con 'vencido'), así que en teoría ya
+            estaban excluidas por el filtro de estado; se agrega el chequeo explícito por si
+            hay algún dato viejo inconsistente que no siga esa regla — Daniel reportó
+            sospechar de casos cancelados en la lista mostrada.
   VERSION : 8.16
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel ("prefiero el banner persistente"): reemplaza el popup
@@ -3571,7 +3583,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.16</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.17</div>
   </div>
 
 </div>
@@ -4115,7 +4127,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
     <div class="modal" style="max-width:480px">
       <div class="modal-title" style="color:var(--amber)">⚠ Vuelos sin datos cargados</div>
       <div style="font-family:var(--font-mono);font-size:12px;color:var(--text2);margin-bottom:.85rem;letter-spacing:.03em;line-height:1.5">
-        Tenés <span id="mvpi-count" style="color:var(--amber)"></span> vuelo(s) vencido(s) desde el 01/07/2026 donde figurás como instructor sin tiempo de vuelo, aterrizajes u observación cargados. Tocá uno para completarlo.
+        Tenés <span id="mvpi-count" style="color:var(--amber)"></span> vuelo(s) vencido(s) desde el 01/08/2026 donde figurás como instructor sin tiempo de vuelo, aterrizajes u observación cargados. Tocá uno para completarlo.
       </div>
       <div id="mvpi-lista" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:1rem"></div>
       <div style="display:flex;justify-content:flex-end">
@@ -5869,7 +5881,7 @@ window.loginInstructor=async function(){
 // para el calendario, mismo criterio de "sin fetch extra" que v8.15. El modal con la
 // lista de vuelos (mostrarModalVuelosPendientesInstructor) sigue existiendo tal cual,
 // ahora se abre desde el botón "VER VUELOS →" del banner en vez de solo.
-const FECHA_EVAL_PENDIENTES_INST='2026-07-01';
+const FECHA_EVAL_PENDIENTES_INST='2026-08-01';
 let _pendientesInstructorActual=[];
 
 function filtrarVuelosPendientesInstructor(nombreInstructor,data){
@@ -5878,6 +5890,14 @@ function filtrarVuelosPendientesInstructor(nombreInstructor,data){
     .map(([key,r])=>({key,...r}))
     .filter(r=>{
       if(r.estado!=='vencido') return false;
+      // v8.17 (pedido de Daniel, sospecha de casos cancelados en la lista): red de
+      // seguridad explícita además de estado!=='vencido' — en el modelo actual estado
+      // es un campo único y las 3 rutas de cancelación (cancelarTurnoAlumno, cancelación
+      // por instructor, cancelación por bloqueo de avión) siempre setean
+      // estado:'cancelado', así que un 'vencido' no debería tener cancelado_por/
+      // cancelado_rol seteados — pero se chequea explícito por si hay algún dato viejo
+      // inconsistente que no siga esa regla.
+      if(r.cancelado_por||r.cancelado_rol) return false;
       if(!r.fecha||r.fecha<FECHA_EVAL_PENDIENTES_INST) return false;
       const aprobador=r.aprobado_por||r.instructor||'';
       if(aprobador!==nombreInstructor) return false;
