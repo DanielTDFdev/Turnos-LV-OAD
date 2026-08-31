@@ -1,5 +1,27 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.25
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel (captura de vista SEMANA): "los turnos que vencieron y
+            todavía no se cargaron los datos de tiempo y aterrizaje se diferencien de
+            color con los que se vencieron de los pilotos (no instrucción)". Antes
+            claseVencido() pintaba TODO turno vencido con fueAprobado (instrucción
+            aprobada por instructor, o piloto particular autoaprobado) del mismo violeta
+            '.vencido', tuviera datos cargados o no — un vencido de piloto particular sin
+            datos (responsabilidad del propio piloto, se carga en vuelo-piloto.html) se
+            veía igual que un vencido de instrucción sin datos (responsabilidad del
+            instructor, ver banner de pendientes v8.14-v8.17). Nueva clase CSS
+            '.vencido-piloto-sin-datos' (azul, igual paleta que "piloto particular" pero
+            con borde punteado y tachado por vencido) — se usa únicamente cuando
+            autoAprobPiloto && sin datos de vuelo cargados. Con datos ya cargados (voló)
+            sigue siendo '.vencido' violeta normal, no hay nada pendiente ahí. Aplica solo
+            (LISTA y SEMANA comparten claseVencido()). Agregado ítem a la leyenda del
+            calendario en ambas vistas (#cal-leyenda). Corregido además el chequeo del
+            modal de detalle (abrirModal): usaba venc.cls==='vencido' para decidir el
+            texto de la nota — con la clase nueva ese chequeo daba falso y mostraba el
+            texto de "vencido sin confirmar" (incorrecto) para estos casos; ahora usa
+            venc.cls!=='vencido-sin-confirmar' (cubre 'vencido' Y la clase nueva por
+            igual), con una frase extra aclarando que falta cargar tiempo/aterrizajes.
   VERSION : 8.24
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel: al confirmar un pedido de turno (alumno o piloto), la
@@ -3441,6 +3463,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .cal-block.aprobado{background:rgba(57,211,83,.15);border:1px solid rgba(57,211,83,.45);color:var(--green);}
 .cal-block.cancelado{background:rgba(248,81,73,.18);border:1px solid rgba(248,81,73,.45);color:var(--red);text-decoration:line-through;}
 .cal-block.vencido{background:rgba(120,80,200,.18);border:1px solid rgba(120,80,200,.45);color:#c4aef8;text-decoration:line-through;}
+.cal-block.vencido-piloto-sin-datos{background:rgba(77,159,255,.16);border:1px dashed rgba(77,159,255,.55);color:var(--blue);text-decoration:line-through;}
 .cal-block.vencido-sin-confirmar{background:rgba(200,110,40,.16);border:1px dashed rgba(200,110,40,.55);color:#e0a373;text-decoration:line-through;}
 .cal-block.sin-instructor{background:rgba(224,82,156,.18);border:1px dashed rgba(224,82,156,.6);color:var(--pink);}
 .cal-block.aprobado-piloto{background:rgba(77,159,255,.16);border:1px solid rgba(77,159,255,.5);color:var(--blue);}
@@ -3703,7 +3726,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.24</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.25</div>
   </div>
 
 </div>
@@ -4008,6 +4031,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(224,82,156,.3);border:1px dashed rgba(224,82,156,.6)"></div>SIN INSTRUCTOR</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(248,81,73,.3)"></div>CANCELADO</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(77,159,255,.3);border:1px dashed rgba(77,159,255,.55)"></div>VENCIDO PILOTO (sin datos cargar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
           <span id="cal-leyenda-aviones-lista" style="display:contents"></span>
@@ -4029,6 +4053,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(224,82,156,.3);border:1px dashed rgba(224,82,156,.6)"></div>SIN INSTRUCTOR</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(248,81,73,.3)"></div>CANCELADO</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(77,159,255,.3);border:1px dashed rgba(77,159,255,.55)"></div>VENCIDO PILOTO (sin datos cargar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
           <span id="cal-leyenda-aviones-semana" style="display:contents"></span>
@@ -7352,6 +7377,23 @@ function claseVencido(r){
   if(esAdelantado(r)){
     return {cls:'vencido',tip:' — VOLÓ ANTES DE LA HORA AGENDADA'+((r.aprobado_por||r.instructor)?' (aprobó '+(r.aprobado_por||r.instructor)+')':'')};
   }
+  if(!fueAprobado){
+    return {cls:'vencido-sin-confirmar',tip:' — VENCIDO (sin confirmar: ningún instructor lo aprobó a tiempo)'};
+  }
+  // v8.25: pedido de Daniel (captura de SEMANA) — "los turnos que vencieron y todavía no
+  // se cargaron los datos de tiempo y aterrizaje se diferencien de color con los que se
+  // vencieron de los pilotos (no instrucción)". Antes CUALQUIER vencido con fueAprobado
+  // (instrucción aprobada por instructor, o particular autoaprobado) compartía el mismo
+  // violeta '.vencido', tuviera datos cargados o no — un vencido de piloto particular sin
+  // datos (responsabilidad del PROPIO piloto, se carga en vuelo-piloto.html) se veía
+  // idéntico a un vencido de instrucción sin datos (responsabilidad del INSTRUCTOR, ver
+  // banner de pendientes). Ahora, únicamente cuando es piloto particular Y todavía no
+  // cargó datos, usa '.vencido-piloto-sin-datos' (azul, distinto del violeta). Con datos
+  // ya cargados (voló, aunque sea particular) sigue siendo '.vencido' violeta normal —
+  // ahí ya no hay nada pendiente de nadie, no hace falta distinguirlo.
+  if(autoAprobPiloto&&!datosVueloDe(r).tieneVuelo){
+    return {cls:'vencido-piloto-sin-datos',tip:' — VENCIDO (voló, turno de piloto autoaprobado — todavía sin tiempo/aterrizajes cargados)'};
+  }
   return fueAprobado
     ?{cls:'vencido',tip:autoAprobPiloto&&!(r.aprobado_por||r.instructor)?' — VENCIDO (voló, turno de piloto autoaprobado)':' — VENCIDO (voló, aprobado por '+(r.aprobado_por||r.instructor)+')'}
     :{cls:'vencido-sin-confirmar',tip:' — VENCIDO (sin confirmar: ningún instructor lo aprobó a tiempo)'};
@@ -8764,10 +8806,10 @@ window.abrirModal=function(key){
     const venc=claseVencido(r);
     const nota=document.createElement('div');
     nota.style.cssText='font-family:var(--font-mono);font-size:11px;color:var(--text3);letter-spacing:.04em;line-height:1.5';
-    nota.textContent=venc.cls==='vencido'
+    nota.textContent=venc.cls!=='vencido-sin-confirmar'
       ?(r.aprobado_por||r.instructor
         ?'Turno aprobado por '+(r.aprobado_por||r.instructor)+'. Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.'
-        :'Turno de piloto autoaprobado (no requiere confirmación de instructor). Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.')
+        :'Turno de piloto autoaprobado (no requiere confirmación de instructor). Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.'+(venc.cls==='vencido-piloto-sin-datos'?' Todavía no cargó tiempo de vuelo ni aterrizajes.':''))
       :'Venció automáticamente: ningún instructor lo confirmó dentro del plazo antes del vuelo, así que el horario quedó liberado. No hace falta que el horario del vuelo ya haya pasado.';
     actions.appendChild(nota);
     // v7.05: corrección manual vencido→cancelado (pedido de Daniel). Mismo criterio de
