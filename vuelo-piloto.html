@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.50 · 2026-08-31
+  Pedido de Daniel — banner de vuelos propios (rol piloto) sin tiempo de vuelo,
+  aterrizajes u observación cargados, mismo concepto que el banner de
+  instructores de turnos.html v8.16/v8.17 (fecha límite 2026-08-01, red de
+  seguridad contra cancelado_por/cancelado_rol). Fetch único a /reservas en
+  abrirApp() (esta app no tiene ningún listener realtime a /reservas — todo es
+  get() puntual — así que se hace UNA vez al loguear, no en tiempo real; banner
+  estático hasta el próximo login si algo cambia mientras tanto, mismo criterio
+  de costo/beneficio ya usado en turnos.html). Banner persistente arriba de las
+  3 pestañas (Vuelo/Libro/Reporte), botón "VER →" abre una lista (modal propio,
+  reusa la familia visual .cancelar-modal-*) — cada fila cierra la lista y abre
+  directo el modal de carga que ya existía (abrirCargaDatosVuelo, v4.36), sin
+  pasar por la pestaña Libro. Solo para rol==='piloto' — alumno no autocarga
+  datos de vuelo.
+
   v4.49 · 2026-08-30
   Mismo cambio en paralelo que vuelo.html v5.65/turnos.html v8.13 (pedido de
   Daniel): METAR de inicio/fin en el modal de ANÁLISIS. btnTraza()/abrirMapa()
@@ -1303,6 +1318,22 @@ select:disabled{opacity:.55}
     </span>
   </div>
 
+  <!-- v4.50: banner de vuelos propios (piloto) sin datos cargados — pedido de Daniel,
+       mismo concepto que el banner de instructores en turnos.html. Fetch único al abrir
+       la app (chequearVuelosPendientesPiloto, ver script): esta app no tiene listener
+       realtime a /reservas en ningún lado (todo es get() puntual), agregar uno solo para
+       esto sería pagar una suscripción completa por un caso marginal — mismo criterio ya
+       descartado para el caso equivalente en turnos.html. Banner estático hasta el
+       próximo login. Solo aplica a rol==='piloto' — el alumno no autocarga datos de
+       vuelo (eso lo completa el instructor desde turnos.html), así que este chequeo ni
+       se dispara para ese rol.-->
+  <div id="banner-vuelos-pendientes-piloto" style="display:none;margin-bottom:14px;padding:12px 14px;background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.35);border-radius:12px;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:16px;line-height:1">⚠️</span>
+    <span id="banner-vuelos-pendientes-piloto-txt" style="font-family:var(--mono);font-size:11px;color:var(--amber);letter-spacing:.05em;flex:1;min-width:140px"></span>
+    <button onclick="mostrarModalVuelosPendientesPilotoDesdeBanner()" style="font-family:var(--mono);font-size:11px;padding:6px 13px;border:1px solid var(--amber);color:var(--amber);background:rgba(240,165,0,.12);border-radius:8px;cursor:pointer;white-space:nowrap">VER →</button>
+    <button onclick="document.getElementById('banner-vuelos-pendientes-piloto').style.display='none'" style="font-size:14px;padding:2px 8px;border:none;background:none;color:var(--amber);opacity:.6;cursor:pointer" title="Cerrar">✕</button>
+  </div>
+
   <div class="tab-bar">
     <span class="avnc-panel">
     <button class="tab-btn avnc-btn active" data-tab="vuelo"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg><span>Vuelo</span></button>
@@ -1562,7 +1593,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.49';
+const APP_VERSION = '4.50';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -1835,6 +1866,7 @@ async function _abrirAppInner(){
   await poblarAviones();
   aplicarTurnoVinculado();
   renderPantalla();
+  chequearVuelosPendientesPiloto(); // v4.50: fire-and-forget, no bloquea la apertura de la app
 }
 
 // v4.1: turno propio de HOY sin volar. Dos niveles:
@@ -1939,6 +1971,7 @@ $('btn-confirmar-turno-si').addEventListener('click',async()=>{
   await poblarAviones();
   aplicarTurnoVinculado();
   renderPantalla();
+  chequearVuelosPendientesPiloto();
 });
 $('btn-confirmar-turno-no').addEventListener('click',async()=>{
   turnoVinculado=null;
@@ -1948,6 +1981,7 @@ $('btn-confirmar-turno-no').addEventListener('click',async()=>{
   await poblarAviones();
   aplicarTurnoVinculado();
   renderPantalla();
+  chequearVuelosPendientesPiloto();
 });
 
 // Oculta el selector de avión y lo fija al del turno detectado (reutiliza
@@ -3229,6 +3263,71 @@ window.abrirCargaDatosVuelo=async function(info){
   }
 };
 
+// v4.50: pedido de Daniel — mismo aviso que ya existe para instructores en turnos.html,
+// adaptado al autoservicio del piloto. Mismo criterio de "sin datos" que cargarLibro()
+// (piloto_tiempo_vuelo/aterrizajes u obs_privada_tiempo_vuelo/aterrizajes, cualquiera de
+// los dos pares cuenta como "ya cargado"), pero sin acotar a un solo día — recorre todo
+// /reservas desde FECHA_EVAL_PENDIENTES_PILOTO. Mismo cutoff que turnos.html (2026-08-01)
+// para no arrastrar vuelos viejos de cuando arrancó el sistema.
+const FECHA_EVAL_PENDIENTES_PILOTO='2026-08-01';
+let _pendientesPilotoActual=[];
+
+function filtrarVuelosPendientesPiloto(data){
+  if(!data) return [];
+  return Object.entries(data)
+    .map(([key,r])=>({key,...r}))
+    .filter(r=>{
+      if(r.estado!=='vencido') return false;
+      // red de seguridad explícita, mismo criterio que turnos.html v8.17.
+      if(r.cancelado_por||r.cancelado_rol) return false;
+      if(r.email!==session.email) return false;
+      if(!r.fecha||r.fecha<FECHA_EVAL_PENDIENTES_PILOTO) return false;
+      const tieneDatos=r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null;
+      return !tieneDatos;
+    })
+    .sort((a,b)=>a.fecha===b.fecha?(a.hora||'').localeCompare(b.hora||''):a.fecha.localeCompare(b.fecha));
+}
+
+async function chequearVuelosPendientesPiloto(){
+  const banner=$('banner-vuelos-pendientes-piloto');
+  const txt=$('banner-vuelos-pendientes-piloto-txt');
+  if(!banner||!txt) return;
+  try{
+    const data=(await get(ref(db,'reservas'))).val();
+    const pendientes=filtrarVuelosPendientesPiloto(data);
+    _pendientesPilotoActual=pendientes;
+    if(pendientes.length>0){
+      txt.textContent=pendientes.length===1
+        ?'Tenés 1 vuelo sin datos cargados'
+        :'Tenés '+pendientes.length+' vuelos sin datos cargados';
+      banner.style.display='flex';
+    } else {
+      banner.style.display='none';
+    }
+  }catch(e){ console.error('chequearVuelosPendientesPiloto',e); }
+}
+
+window.mostrarModalVuelosPendientesPilotoDesdeBanner=function(){
+  const lista=$('mvpp-lista'), overlay=$('modal-vuelos-pendientes-piloto');
+  if(!lista||!overlay) return;
+  lista.innerHTML='';
+  _pendientesPilotoActual.forEach(r=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:10px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--white)';
+    row.innerHTML=`<span>${fmtFecha(r.fecha)} · ${r.hora||r.horaInicio||''} hs</span><span style="color:var(--amber)">${r.avion||''} ▸</span>`;
+    row.onclick=()=>{
+      overlay.classList.remove('open');
+      abrirCargaDatosVuelo({key:r.key,fecha:r.fecha,hora:r.hora||r.horaInicio||'',avion:r.avion||''});
+    };
+    lista.appendChild(row);
+  });
+  overlay.classList.add('open');
+};
+document.getElementById('modal-vuelos-pendientes-piloto')?.addEventListener('click',e=>{
+  if(e.target.id==='modal-vuelos-pendientes-piloto') e.target.classList.remove('open');
+});
+
+
 
 // v4.18 — pedido de Daniel. Mismo criterio de "mis vuelos" que cargarLibro
 // (session.email + piloto_tiempo_vuelo ?? obs_privada_tiempo_vuelo) pero
@@ -4145,6 +4244,21 @@ if('serviceWorker' in navigator){
     <div class="cancelar-modal-btns">
       <button class="btn btn-ghost" id="btn-cd-cancelar">Cancelar</button>
       <button class="btn btn-cyan" id="btn-cd-guardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- v4.50: lista de vuelos propios sin datos, abierta desde el banner. Reusa la familia
+     visual .cancelar-modal-* (mismo criterio que cargar-datos-modal-overlay arriba —
+     ancho/alineación override por inline style). Cada fila cierra este modal y abre
+     directo cargar-datos-modal-overlay vía abrirCargaDatosVuelo(), sin pasar por Libro. -->
+<div class="cancelar-modal-overlay" id="modal-vuelos-pendientes-piloto" style="z-index:1150">
+  <div class="cancelar-modal" style="max-width:380px;text-align:left;border-color:rgba(240,165,0,.35)">
+    <div class="cancelar-modal-title" style="text-align:left;color:var(--amber)">⚠ Vuelos sin datos cargados</div>
+    <div class="cancelar-modal-sub" style="text-align:left" id="mvpp-sub">Tocá un vuelo para cargarle tiempo de vuelo y aterrizajes.</div>
+    <div id="mvpp-lista" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:14px"></div>
+    <div class="cancelar-modal-btns">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-vuelos-pendientes-piloto').classList.remove('open')">Cerrar</button>
     </div>
   </div>
 </div>
