@@ -1,5 +1,20 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.05
+  FECHA   : 2026-08-30
+  CAMBIOS : FIX reportado por Daniel con captura del modal de ANÁLISIS: (1) toques y
+            despegues detectados a más de 1000ft — _detectarToques() no filtraba por
+            altura, así que cualquier pique intermedio durante el ascenso (racha,
+            turbulencia) contaba como "toque" aunque estuviera lejos del terreno.
+            Ahora exige TOQUE_ALTURA_MAX_FT (300ft) del punto más bajo de todo el
+            vuelo (altMinTraza, en la práctica la elevación del aeródromo). (2) las
+            franjas ámbar de "maniobra" aparecían en tierra/taxi, no en los virajes
+            reales del circuito — con el avión casi quieto, el rumbo entre dos puntos
+            GPS consecutivos es puro ruido de posición (unos metros de error alcanzan
+            para un bearing que salta 90°+), dando un giro/seg altísimo sin viraje
+            real. _clasificarTramosVuelo() ahora exige un desplazamiento mínimo
+            (MANIOBRA_DIST_MIN_KM, ~30m) entre los tres puntos para siquiera calcular
+            el giro — por debajo, el tramo es 'crucero' sin importar el bearing.
   VERSION : 8.04
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: el eje X del gráfico de altitud (modal de ANÁLISIS,
@@ -3415,7 +3430,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.04</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.05</div>
   </div>
 
 </div>
@@ -11199,13 +11214,20 @@ let _ultimaTraza = null;
 // para reducir ruido GPS) con una subida de al menos TOQUE_PROMINENCIA_FT
 // ANTES y DESPUÉS, dentro de TOQUE_VENTANA_MIN — así un aterrizaje final (sin
 // subida después) NO cuenta como toque, y una bajada suave de crucero (sin
-// prominencia suficiente) tampoco. Dedup: dos mínimos a menos de 2min se
-// funden en uno solo (el más bajo). Aproximado a propósito — con GPS de
-// celular la altitud tiene bastante ruido, mejor un falso negativo ocasional
-// que inundar de falsos positivos.
+// prominencia suficiente) tampoco. v8.05 FIX (reportado por Daniel con
+// captura): sin filtro de altura, cualquier pique intermedio durante el ASCENSO
+// inicial (ej. el vuelo sube, se topa con una racha/turbulencia, baja un rato y
+// vuelve a subir) también contaba como "toque" — aunque estuviera a 1000+ ft,
+// bien lejos del terreno. Ahora solo cuenta si el mínimo queda a menos de
+// TOQUE_ALTURA_MAX_FT del punto más bajo de TODO el vuelo (altMinTraza — en la
+// práctica, la elevación del aeródromo, porque el vuelo arranca y termina en
+// tierra). Dedup: dos mínimos a menos de 2min se funden en uno solo (el más
+// bajo). Aproximado a propósito — con GPS de celular la altitud tiene bastante
+// ruido, mejor un falso negativo ocasional que inundar de falsos positivos.
 const TOQUE_PROMINENCIA_FT = 100;
 const TOQUE_VENTANA_MIN = 4;
-function _detectarToques(segmentos){
+const TOQUE_ALTURA_MAX_FT = 300;
+function _detectarToques(segmentos, altMinTraza){
   const candidatos=[];
   for(const seg of segmentos){
     if(seg.tipo!=='real') continue;
@@ -11218,6 +11240,7 @@ function _detectarToques(segmentos){
     });
     for(let i=1;i<suaves.length-1;i++){
       if(suaves[i]>=suaves[i-1] || suaves[i]>=suaves[i+1]) continue;
+      if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
       let antesOk=false;
       for(let j=i-1;j>=0;j--){
         const dtMin=(new Date(pts[i].ts)-new Date(pts[j].ts))/60000;
@@ -11249,9 +11272,18 @@ function _detectarToques(segmentos){
 
 // Crucero vs maniobra: régimen de giro (°/seg, sobre 3 puntos consecutivos).
 // Por encima de MANIOBRA_GIRO_DEG_S se considera viraje sostenido (maniobra);
-// por debajo, tramo recto (crucero). Devuelve bandas [{tipo,t0,t1}] listas
-// para pintar de fondo en el gráfico.
+// por debajo, tramo recto (crucero). v8.05 FIX (reportado por Daniel: "no hay
+// virajes, pero sí franjas ámbar" — las franjas aparecían en el peor lugar
+// posible, taxi/parado en tierra): con el avión casi quieto, el rumbo entre dos
+// puntos GPS consecutivos es puro ruido de posición (unos pocos metros de error
+// alcanzan para que el bearing calculado salte 90°+), así que el giro/seg salía
+// altísimo sin que hubiera ningún viraje real — exactamente al revés de lo que
+// se buscaba mostrar. Ahora se exige además un desplazamiento mínimo entre p0 y
+// p2 (MANIOBRA_DIST_MIN_KM, ~30m — por debajo de eso el rumbo no es confiable);
+// si no se cumple, el tramo se clasifica 'crucero' sin importar el giro
+// calculado. Devuelve bandas [{tipo,t0,t1}] listas para pintar de fondo.
 const MANIOBRA_GIRO_DEG_S = 3;
+const MANIOBRA_DIST_MIN_KM = 0.03;
 function _clasificarTramosVuelo(segmentos){
   const bandas=[];
   for(const seg of segmentos){
@@ -11259,12 +11291,16 @@ function _clasificarTramosVuelo(segmentos){
     let actual=null;
     for(let i=1;i<seg.pts.length-1;i++){
       const p0=seg.pts[i-1], p1=seg.pts[i], p2=seg.pts[i+1];
-      const b1=_bearingDeg(p0.lat,p0.lng,p1.lat,p1.lng);
-      const b2=_bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
-      let dB=Math.abs(b2-b1); if(dB>180) dB=360-dB;
-      const dtS=(new Date(p2.ts)-new Date(p0.ts))/1000;
-      const giro = dtS>0 ? dB/dtS : 0;
-      const tipo = giro>=MANIOBRA_GIRO_DEG_S ? 'maniobra' : 'crucero';
+      const dTotalKm = _haversineKm(p0.lat,p0.lng,p2.lat,p2.lng);
+      let tipo='crucero';
+      if(dTotalKm>=MANIOBRA_DIST_MIN_KM){
+        const b1=_bearingDeg(p0.lat,p0.lng,p1.lat,p1.lng);
+        const b2=_bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
+        let dB=Math.abs(b2-b1); if(dB>180) dB=360-dB;
+        const dtS=(new Date(p2.ts)-new Date(p0.ts))/1000;
+        const giro = dtS>0 ? dB/dtS : 0;
+        tipo = giro>=MANIOBRA_GIRO_DEG_S ? 'maniobra' : 'crucero';
+      }
       if(!actual || actual.tipo!==tipo){
         if(actual) bandas.push(actual);
         actual={tipo, t0:p1.ts, t1:p1.ts};
@@ -11329,7 +11365,7 @@ window.abrirAnalisisVuelo = function(){
   const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora} = _ultimaTraza;
   document.getElementById('analisis-sub').textContent = (nombre?`${nombre} — ${avion}`:avion) + (hora?` · Turno ${hora} hs`:'');
   const bandas = _clasificarTramosVuelo(segmentos);
-  const toques = _detectarToques(segmentos);
+  const toques = _detectarToques(segmentos, altMinTraza);
   const fmtT = iso => { const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
   document.getElementById('analisis-toques-resumen').textContent = toques.length
     ? `🟡 ${toques.length} toque${toques.length!==1?'s':''} y despegue${toques.length!==1?'s':''} detectado${toques.length!==1?'s':''} — ${toques.map(t=>fmtT(t.ts)).join(', ')}`
