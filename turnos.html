@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.18
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel (captura de la grilla semanal): el badge de iniciales del
+            instructor que aprobó (.cal-inst-inic, v7.53) solo se mostraba con
+            estado==='aprobado' — al vencer el turno (bloque violeta tachado) se perdía.
+            En renderTodasReservas (LISTA) y renderVistaSemana (SEMANA): condición pasa a
+            (estado==='aprobado'||estado==='vencido'); esPilotoParticular reemplaza a
+            !aprobPil como exclusión (aprobPil solo es true en 'aprobado', no cubre
+            'vencido' — se necesitaba un check de "es piloto particular" que valga para
+            ambos estados, ya que un particular autoaprobado nunca tiene un instructor
+            real que le corresponda mostrar).
   VERSION : 8.17
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel tras revisar el resultado real (captura de la lista): fecha
@@ -3583,7 +3594,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.17</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.18</div>
   </div>
 
 </div>
@@ -7291,9 +7302,14 @@ async function renderTodasReservas(data){
         // el saldo semanal no baja, y quién lo cargó.
         const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno)`:'';
         const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — ${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno">📋</span>`:'';
-        // v7.53: iniciales del instructor que aprobó, para turnos de instrucción aprobados
-        // (no piloto autoaprobado). Badge centrado verticalmente, pegado a la derecha.
-        const inicInst=(r.estado==='aprobado'&&!aprobPil&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
+        // v7.53/v8.18: iniciales del instructor que aprobó, para turnos de instrucción
+        // aprobados O vencidos (no piloto particular autoaprobado — ver esPilotoParticular,
+        // separado de aprobPil porque ese solo es true en estado==='aprobado' y acá también
+        // hace falta cubrir vencido). Badge centrado verticalmente, pegado a la derecha.
+        // v8.18: pedido de Daniel — antes solo se mostraba en 'aprobado'; un turno vencido
+        // (tachado en la grilla) perdía la referencia de quién lo había aprobado.
+        const esPilotoParticular=(r.rol==='piloto')&&tipoVueloDe(r)==='particular';
+        const inicInst=((r.estado==='aprobado'||r.estado==='vencido')&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
         // v7.85: turno de un solo slot en avión de media hora (LV-ART) → bloque más bajo,
         // para que se note a simple vista que no ocupa la hora completa. Un rango
         // (horaInicio/horaFin) sí puede cubrir más de un slot, así que queda con tamaño normal.
@@ -7441,8 +7457,10 @@ async function renderVistaSemana(){
         // v6.99: ver nota en renderTodasReservas — mismo badge/tooltip para turnos con cargado_por.
         const tipCargado=r.cargado_por?` — CARGADO POR ${r.cargado_por} (${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno)`:'';
         const cargadoBadge=r.cargado_por?`<span class="cargado-badge" title="Cargado por ${r.cargado_por} — ${r.consume_cupo?'CONSUME':'no consume'} cupo del alumno">📋</span>`:'';
-        // v7.53: ver nota en renderTodasReservas — mismas iniciales del instructor que aprobó.
-        const inicInst=(r.estado==='aprobado'&&!aprobPil&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
+        // v7.53/v8.18: ver nota en renderTodasReservas — mismas iniciales, ahora también
+        // en vencido, con esPilotoParticular separado de aprobPil.
+        const esPilotoParticular=(r.rol==='piloto')&&tipoVueloDe(r)==='particular';
+        const inicInst=((r.estado==='aprobado'||r.estado==='vencido')&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
         // v7.85: ver nota en renderTodasReservas — mismo criterio para el bloque de media hora.
         const esMediaHora=AVIONES_MEDIA_HORA.includes(r.avion||'LV-OAD')&&!r.horaInicio;
         html+=`<div class="cal-block ${colorCls}${esMediaHora?' media-hora':''}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ${r.estado}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}${accStyle}">
