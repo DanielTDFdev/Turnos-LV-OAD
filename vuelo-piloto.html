@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.45 · 2026-08-30
+  Pedido de Daniel: modal de ANÁLISIS del vuelo, mismo feature que turnos.html
+  v8.03-v8.10/vuelo.html v5.61 (portado tal cual, mismos parámetros finales).
+  Perfil de altitud/tiempo en SVG con franjas ámbar de maniobra (top 10% de
+  giro EN VUELO, excluyendo taxeo por altura) y toques y despegues detectados.
+  Botón "📊 Análisis" en el header del mapa.
+
   v4.44 · 2026-08-30
   Pedido de Daniel, mismo cambio en paralelo que turnos.html v8.02/vuelo.html
   v5.60: flechas de sentido sobre la traza del visor de mapa GPS, cada 500m
@@ -1042,6 +1049,16 @@ select:disabled{opacity:.55}
 }
 .map-modal-overlay.open{display:flex}
 
+/* v4.45 — modal de análisis, mismo criterio que vuelo.html v5.61: header en
+   flujo normal (no absolute como .map-modal-header, pensado para flotar
+   sobre el mapa) porque este modal no tiene Leaflet debajo. z-index más alto
+   que .map-modal-overlay porque se abre ENCIMA del mapa (no lo cierra). */
+#modal-analisis-vuelo{display:none;position:fixed;inset:0;background:var(--bg);z-index:1100;flex-direction:column}
+#modal-analisis-vuelo.open{display:flex}
+#modal-analisis-vuelo .an-header{display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--bg2);border-bottom:1px solid rgba(0,200,212,.15);flex:none}
+#modal-analisis-vuelo .an-header .map-title{font-family:var(--disp);font-size:13px;color:var(--cyan);letter-spacing:.08em;flex:1}
+#modal-analisis-vuelo .an-header .map-sub{font-family:var(--mono);font-size:10px;color:var(--gray);margin-top:2px}
+
 /* v4.16: pedido de Daniel — el header (nombre/avión + botón Cerrar) vivía
    ARRIBA del mapa, como fila normal del flujo de la página — no como overlay
    fijo. Pasa a vivir DENTRO de #map-container, position:absolute, mismo
@@ -1499,7 +1516,7 @@ let guardadoExitoso = false;
 const LS = 'acrg-piloto-v1';
 const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados localmente, sin sincronizar todavía
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.44';
+const APP_VERSION = '4.45';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3493,6 +3510,7 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
 }
 
 window.abrirMapa = async function(key, alumno, avion, hora) {
+  _ultimaTraza = null; // v4.45: se repuebla recién si carga bien
   const fmtTs = iso => {
     if(!iso) return '—';
     const d = new Date(iso);
@@ -3604,6 +3622,7 @@ window.abrirMapa = async function(key, alumno, avion, hora) {
     $('mi-desc').textContent = vario.desc<0 ? `${Math.round(vario.desc)} ft/min` : '—';
     const distMaxOrigenNm = calcDistMaxOrigenNm(puntos);
     $('mi-distorigen').textContent = `${distMaxOrigenNm.toFixed(distMaxOrigenNm < 1 ? 2 : 1)} nm`;
+    _ultimaTraza = { puntos, segmentos, altMinTraza, altMaxTraza, nombre:alumno, avion, hora };
 
     const huecosReales = segmentos.filter(s => s.tipo === 'hueco');
     if (huecosReales.length) {
@@ -3719,6 +3738,169 @@ function calcDistMaxOrigenNm(puntos){
   return max;
 }
 
+// v4.45 — pedido de Daniel: análisis del vuelo (perfil de altitud, tramos de
+// maniobra, toques y despegues) en un modal aparte. Misma lógica que
+// turnos.html v8.03-v8.10/vuelo.html v5.61 (portada tal cual).
+let _ultimaTraza = null;
+
+const TOQUE_PROMINENCIA_FT = 100;
+const TOQUE_VENTANA_MIN = 4;
+const TOQUE_ALTURA_MAX_FT = 300;
+function _detectarToques(segmentos, altMinTraza){
+  const candidatos=[];
+  for(const seg of segmentos){
+    if(seg.tipo!=='real') continue;
+    const pts = seg.pts.filter(p=>p.alt!=null);
+    if(pts.length<5) continue;
+    const alts = pts.map(p=>p.alt);
+    const suaves = alts.map((a,i)=>{
+      const a0=alts[Math.max(0,i-1)], a2=alts[Math.min(alts.length-1,i+1)];
+      return (a0+a+a2)/3;
+    });
+    for(let i=1;i<suaves.length-1;i++){
+      if(suaves[i]>suaves[i-1] || suaves[i]>suaves[i+1]) continue;
+      if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
+      let antesOk=false;
+      for(let j=i-1;j>=0;j--){
+        const dtMin=(new Date(pts[i].ts)-new Date(pts[j].ts))/60000;
+        if(dtMin>TOQUE_VENTANA_MIN) break;
+        if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ antesOk=true; break; }
+      }
+      if(!antesOk) continue;
+      let despuesOk=false;
+      for(let j=i+1;j<suaves.length;j++){
+        const dtMin=(new Date(pts[j].ts)-new Date(pts[i].ts))/60000;
+        if(dtMin>TOQUE_VENTANA_MIN) break;
+        if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ despuesOk=true; break; }
+      }
+      if(despuesOk) candidatos.push(pts[i]);
+    }
+  }
+  candidatos.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  const dedup=[];
+  for(const c of candidatos){
+    const ult=dedup[dedup.length-1];
+    if(ult && (new Date(c.ts)-new Date(ult.ts))/60000<2){
+      if(c.alt<ult.alt) dedup[dedup.length-1]=c;
+      continue;
+    }
+    dedup.push(c);
+  }
+  return dedup;
+}
+
+const MANIOBRA_GIRO_DEG_S = 0.8;
+const MANIOBRA_PERCENTIL = 0.10;
+const MANIOBRA_DIST_MIN_KM = 0.03;
+const MANIOBRA_STEP = 3;
+const MANIOBRA_ALTURA_MIN_FT = 150;
+function _clasificarTramosVuelo(segmentos, altMinTraza){
+  const porTramo = [];
+  const todosLosGiros = [];
+  for(const seg of segmentos){
+    if(seg.tipo!=='real'||seg.pts.length<(MANIOBRA_STEP*2+1)){ porTramo.push(null); continue; }
+    const arr=[];
+    for(let i=MANIOBRA_STEP;i<seg.pts.length-MANIOBRA_STEP;i++){
+      const p0=seg.pts[i-MANIOBRA_STEP], p1=seg.pts[i], p2=seg.pts[i+MANIOBRA_STEP];
+      const enTierra = altMinTraza!=null && p1.alt!=null && (p1.alt-altMinTraza)*3.28084 < MANIOBRA_ALTURA_MIN_FT;
+      const dTotalKm = _haversineKm(p0.lat,p0.lng,p2.lat,p2.lng);
+      let giro=0;
+      if(!enTierra && dTotalKm>=MANIOBRA_DIST_MIN_KM){
+        const b1=_bearingDeg(p0.lat,p0.lng,p1.lat,p1.lng);
+        const b2=_bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
+        let dB=Math.abs(b2-b1); if(dB>180) dB=360-dB;
+        const dtS=(new Date(p2.ts)-new Date(p0.ts))/1000;
+        giro = dtS>0 ? dB/dtS : 0;
+      }
+      arr.push({ts:p1.ts, giro, enTierra});
+      if(!enTierra) todosLosGiros.push(giro);
+    }
+    porTramo.push(arr);
+  }
+  if(!todosLosGiros.length) return [];
+  const ordenados = [...todosLosGiros].sort((a,b)=>a-b);
+  const pctIdx = Math.min(ordenados.length-1, Math.floor(ordenados.length*(1-MANIOBRA_PERCENTIL)));
+  const umbral = Math.max(MANIOBRA_GIRO_DEG_S, ordenados[pctIdx]);
+  console.log('[análisis vuelo] giro °/s (solo en vuelo, sobre '+MANIOBRA_ALTURA_MIN_FT+'ft) — min:', ordenados[0].toFixed(2),
+    'mediana:', ordenados[Math.floor(ordenados.length/2)].toFixed(2),
+    'máx:', ordenados[ordenados.length-1].toFixed(2),
+    'umbral usado (top '+Math.round(MANIOBRA_PERCENTIL*100)+'%):', umbral.toFixed(2));
+  const bandas=[];
+  for(const arr of porTramo){
+    if(!arr) continue;
+    let actual=null;
+    for(const pt of arr){
+      const tipo = pt.giro>=umbral ? 'maniobra' : 'crucero';
+      if(!actual || actual.tipo!==tipo){
+        if(actual) bandas.push(actual);
+        actual={tipo, t0:pt.ts, t1:pt.ts};
+      } else {
+        actual.t1=pt.ts;
+      }
+    }
+    if(actual) bandas.push(actual);
+  }
+  return bandas;
+}
+
+function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
+  const W=680, H=220, PAD_L=42, PAD_R=10, PAD_T=10, PAD_B=30;
+  const validPts = puntos.filter(p=>p.alt!=null);
+  if(validPts.length<2) return '<div style="font-family:var(--mono);font-size:12px;color:var(--gray)">// Sin datos de altitud suficientes para graficar.</div>';
+  const t0 = new Date(validPts[0].ts).getTime();
+  const t1 = new Date(validPts[validPts.length-1].ts).getTime();
+  const durMs = (t1-t0)||1;
+  const altMin = altMinTraza ?? Math.min(...validPts.map(p=>p.alt));
+  const altMax = altMaxTraza ?? Math.max(...validPts.map(p=>p.alt));
+  const rango = (altMax-altMin)||1;
+  const xOf = ts => PAD_L + ((new Date(ts).getTime()-t0)/durMs)*(W-PAD_L-PAD_R);
+  const yOf = alt => PAD_T + (1-((alt-altMin)/rango))*(H-PAD_T-PAD_B);
+  const fmtTickT = ms => { const d=new Date(ms); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
+  const ejeYBase = H-PAD_B;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid var(--gray2)">`;
+  for(const b of bandas){
+    if(b.tipo!=='maniobra') continue;
+    const x1=xOf(b.t0), x2=xOf(b.t1);
+    svg += `<rect x="${x1.toFixed(1)}" y="${PAD_T}" width="${Math.max(1,x2-x1).toFixed(1)}" height="${ejeYBase-PAD_T}" fill="rgba(240,165,0,.32)"/>`;
+  }
+  const pathD = validPts.map((p,i)=>`${i===0?'M':'L'} ${xOf(p.ts).toFixed(1)} ${yOf(p.alt).toFixed(1)}`).join(' ');
+  svg += `<path d="${pathD}" fill="none" stroke="#00c8d4" stroke-width="1.6"/>`;
+  for(const t of toques){
+    svg += `<circle cx="${xOf(t.ts).toFixed(1)}" cy="${yOf(t.alt).toFixed(1)}" r="4.5" fill="#f0a500" stroke="#000" stroke-width="0.6"/>`;
+  }
+  svg += `<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${ejeYBase}" stroke="var(--gray2)" stroke-width="1"/>`;
+  svg += `<line x1="${PAD_L}" y1="${ejeYBase}" x2="${W-PAD_R}" y2="${ejeYBase}" stroke="var(--gray2)" stroke-width="1"/>`;
+  for(let f=0; f<=1; f+=0.25){
+    const ms = t0 + durMs*f;
+    const x = PAD_L + f*(W-PAD_L-PAD_R);
+    svg += `<line x1="${x.toFixed(1)}" y1="${ejeYBase}" x2="${x.toFixed(1)}" y2="${ejeYBase+4}" stroke="var(--gray2)" stroke-width="1"/>`;
+    const anchor = f===0?'start':f===1?'end':'middle';
+    svg += `<text x="${x.toFixed(1)}" y="${H-4}" text-anchor="${anchor}" font-size="9" style="fill:var(--gray);font-family:monospace">${fmtTickT(ms)}</text>`;
+  }
+  svg += `<text x="${PAD_L-4}" y="${PAD_T+8}" text-anchor="end" font-size="9" style="fill:var(--gray);font-family:monospace">${Math.round(altMax*3.28084)}ft</text>`;
+  svg += `<text x="${PAD_L-4}" y="${ejeYBase}" text-anchor="end" font-size="9" style="fill:var(--gray);font-family:monospace">${Math.round(altMin*3.28084)}ft</text>`;
+  svg += `</svg>`;
+  return svg;
+}
+
+window.abrirAnalisisVuelo = function(){
+  if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
+  const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora} = _ultimaTraza;
+  $('analisis-sub').textContent = (nombre?`${nombre} — ${avion}`:avion) + (hora?` · Turno ${hora} hs`:'');
+  const bandas = _clasificarTramosVuelo(segmentos, altMinTraza);
+  const toques = _detectarToques(segmentos, altMinTraza);
+  const fmtT = iso => { const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
+  $('analisis-toques-resumen').textContent = toques.length
+    ? `${toques.length} toque${toques.length!==1?'s':''} y despegue${toques.length!==1?'s':''} detectado${toques.length!==1?'s':''} — ${toques.map(t=>fmtT(t.ts)).join(', ')}`
+    : '// Sin toques y despegues detectados en este vuelo.';
+  $('analisis-chart-wrap').innerHTML = _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques);
+  $('modal-analisis-vuelo').classList.add('open');
+};
+window.cerrarAnalisisVuelo = function(){
+  $('modal-analisis-vuelo').classList.remove('open');
+};
+
 function cerrarModalMapa(){
   $('map-modal').classList.remove('open');
   if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
@@ -3775,6 +3957,7 @@ if('serviceWorker' in navigator){
         <div class="map-sub" id="map-modal-sub"></div>
         <div class="map-sub" id="map-modal-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
       </div>
+      <button class="btn-map-close" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" style="border-color:rgba(240,165,0,.4);color:var(--amber);margin-right:8px">📊 Análisis</button>
       <button class="btn-map-close" id="btn-map-close">✕ Cerrar</button>
     </div>
     <div class="map-loading" id="map-loading">
@@ -3803,6 +3986,32 @@ if('serviceWorker' in navigator){
     <span>🔽 Descenso máx: <span class="mv" id="mi-desc">—</span></span>
     <span>📡 Dist. máx. despegue: <span class="mv" id="mi-distorigen">—</span></span>
     <span id="mi-huecos" style="display:none;color:var(--amber)">⚠ <span class="mv" id="mi-huecos-txt">—</span></span>
+  </div>
+</div>
+
+<!-- v4.45 — pedido de Daniel: modal de ANÁLISIS separado del mapa (para no
+     congestionarlo), con perfil de altitud/tiempo, tramos de maniobra
+     (virajes) pintados como franjas de fondo, y toques y despegues
+     detectados marcados sobre el gráfico + listados en texto. Mismo feature
+     que turnos.html v8.03+/vuelo.html v5.61 (misma lógica de detección,
+     portada tal cual). -->
+<div id="modal-analisis-vuelo">
+  <div class="an-header">
+    <div>
+      <div class="map-title">ANÁLISIS DEL VUELO</div>
+      <div class="map-sub" id="analisis-sub"></div>
+    </div>
+    <button class="btn-map-close" onclick="cerrarAnalisisVuelo()">✕ Cerrar</button>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px">
+    <div id="analisis-toques-resumen" style="font-family:var(--mono);font-size:13px;color:var(--white);margin-bottom:10px"></div>
+    <div id="analisis-chart-wrap"></div>
+    <div style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--gray);line-height:1.9">
+      <span style="display:inline-block;width:11px;height:11px;background:rgba(240,165,0,.32);border:1px solid rgba(240,165,0,.5);border-radius:2px;vertical-align:-1px;margin-right:4px"></span>
+      franja = tramo con maniobra (viraje sostenido) · resto del gráfico = crucero.<br>
+      <span style="display:inline-block;width:11px;height:11px;background:#f0a500;border:1px solid rgba(0,0,0,.55);border-radius:50%;vertical-align:-1px;margin-right:4px"></span>
+      punto = toque y despegue detectado (aproximado — puede haber falsos positivos si el GPS es impreciso cerca de la pista).
+    </div>
   </div>
 </div>
 

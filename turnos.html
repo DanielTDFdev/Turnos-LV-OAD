@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.10
+  FECHA   : 2026-08-30
+  CAMBIOS : FIX propio encontrado al preparar la réplica a vuelo.html/vuelo-piloto.html
+            (pedido de Daniel, "me gusta, replicalo en las otras dos apps"): el header
+            de #modal-analisis-vuelo (.map-bar/.map-title/.map-sub) quedaba sin estilo
+            — esas clases están scopeadas a "#modal-mapa-vuelo .map-bar" desde que
+            existen, y el selector no matcheaba con el nuevo modal. Reglas propias
+            para #modal-analisis-vuelo .map-bar (mismos valores). Sin este fix se
+            hubiera replicado el mismo bug a los otros dos archivos.
   VERSION : 8.09
   FECHA   : 2026-08-30
   CAMBIOS : Pedido de Daniel: la referencia de abajo del modal de ANÁLISIS usaba el
@@ -3295,9 +3304,16 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 /* v8.03 — modal de análisis, mismo patrón visual que #modal-mapa-vuelo (fondo
    full-screen, .map-bar reusada) pero con scroll propio en el body en vez de
    un mapa Leaflet. z-index más alto porque se abre ENCIMA del mapa (no lo
-   cierra), así el instructor puede volver atrás sin perder el mapa cargado. */
+   cierra), así el instructor puede volver atrás sin perder el mapa cargado.
+   v8.10 FIX: .map-bar/.map-title/.map-sub están scopeadas a
+   "#modal-mapa-vuelo .map-bar" — el header de #modal-analisis-vuelo quedaba
+   sin estilo (texto plano, sin padding/fondo/borde) porque el selector no
+   matcheaba. Reglas propias acá, mismos valores. */
 #modal-analisis-vuelo{display:none;position:fixed;inset:0;background:#050d1a;z-index:1400;flex-direction:column}
 #modal-analisis-vuelo.open{display:flex}
+#modal-analisis-vuelo .map-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#0b1929;border-bottom:1px solid rgba(0,200,212,.15);flex:none}
+#modal-analisis-vuelo .map-bar .map-title{font-family:var(--font-mono);font-size:12px;color:var(--cyan);letter-spacing:.08em;flex:1}
+#modal-analisis-vuelo .map-bar .map-sub{font-family:var(--font-mono);font-size:10px;color:var(--text3);margin-top:2px}
 .btn-ver-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(0,200,212,.08);border:1px solid rgba(0,200,212,.25);border-radius:4px;color:var(--cyan);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;transition:all .15s;letter-spacing:.05em}
 .btn-ver-mapa:hover{background:rgba(0,200,212,.18)}
 .btn-export-mapa{display:inline-flex;align-items:center;gap:5px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.25);border-radius:4px;color:var(--amber);font-family:var(--font-mono);font-size:10px;padding:3px 9px;cursor:pointer;margin-top:6px;margin-left:6px;transition:all .15s;letter-spacing:.05em}
@@ -3488,7 +3504,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.09</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.10</div>
   </div>
 
 </div>
