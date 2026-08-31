@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.27
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel sobre v8.26: "no me gusta el color celeste, tiene que ser un
+            color llamativo, que indique algo fuera de lugar o urgencia — si veo celeste,
+            pienso que está todo ok, justo lo contrario". .vencido-instruccion-sin-datos
+            pasa de cian (rgba(0,200,212)) a un naranja-rojo bien saturado
+            (rgba(255,69,0)) con un pulso sutil (@keyframes vencidoSinDatosPulse, box-
+            shadow que crece y decrece cada 2s) para que llame la atención en el
+            calendario en vez de leerse como "todo en orden". Actualizado el color del
+            ítem correspondiente en la leyenda (ambas vistas) + agregado un ⚠ al texto del
+            ítem.
   VERSION : 8.26
   FECHA   : 2026-08-31
   CAMBIOS : Reportado por Daniel (capturas del calendario + modal de detalle + log del
@@ -3481,7 +3492,8 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .cal-block.cancelado{background:rgba(248,81,73,.18);border:1px solid rgba(248,81,73,.45);color:var(--red);text-decoration:line-through;}
 .cal-block.vencido{background:rgba(120,80,200,.18);border:1px solid rgba(120,80,200,.45);color:#c4aef8;text-decoration:line-through;}
 .cal-block.vencido-piloto-sin-datos{background:rgba(77,159,255,.16);border:1px dashed rgba(77,159,255,.55);color:var(--blue);text-decoration:line-through;}
-.cal-block.vencido-instruccion-sin-datos{background:rgba(0,200,212,.16);border:1px dashed rgba(0,200,212,.55);color:var(--cyan);text-decoration:line-through;}
+.cal-block.vencido-instruccion-sin-datos{background:rgba(255,69,0,.22);border:1px dashed rgba(255,69,0,.75);color:#ff8a4c;text-decoration:line-through;animation:vencidoSinDatosPulse 2s ease-in-out infinite;}
+@keyframes vencidoSinDatosPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,69,0,.35)}50%{box-shadow:0 0 6px 1px rgba(255,69,0,.55)}}
 .cal-block.vencido-sin-confirmar{background:rgba(200,110,40,.16);border:1px dashed rgba(200,110,40,.55);color:#e0a373;text-decoration:line-through;}
 .cal-block.sin-instructor{background:rgba(224,82,156,.18);border:1px dashed rgba(224,82,156,.6);color:var(--pink);}
 .cal-block.aprobado-piloto{background:rgba(77,159,255,.16);border:1px solid rgba(77,159,255,.5);color:var(--blue);}
@@ -3744,7 +3756,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.26</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.27</div>
   </div>
 
 </div>
@@ -4050,7 +4062,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(248,81,73,.3)"></div>CANCELADO</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(77,159,255,.3);border:1px dashed rgba(77,159,255,.55)"></div>VENCIDO PILOTO (sin datos cargar)</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(0,200,212,.3);border:1px dashed rgba(0,200,212,.55)"></div>VENCIDO INSTRUCCIÓN (sin datos cargar)</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(255,69,0,.4);border:1px dashed rgba(255,69,0,.75)"></div>VENCIDO INSTRUCCIÓN (sin datos cargar) ⚠</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
           <span id="cal-leyenda-aviones-lista" style="display:contents"></span>
@@ -4073,7 +4085,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(248,81,73,.3)"></div>CANCELADO</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(120,80,200,.3)"></div>VENCIDO (voló)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(77,159,255,.3);border:1px dashed rgba(77,159,255,.55)"></div>VENCIDO PILOTO (sin datos cargar)</div>
-          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(0,200,212,.3);border:1px dashed rgba(0,200,212,.55)"></div>VENCIDO INSTRUCCIÓN (sin datos cargar)</div>
+          <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(255,69,0,.4);border:1px dashed rgba(255,69,0,.75)"></div>VENCIDO INSTRUCCIÓN (sin datos cargar) ⚠</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="background:rgba(200,110,40,.3);border:1px dashed rgba(200,110,40,.55)"></div>VENCIDO (sin confirmar)</div>
           <div class="cal-leyenda-item"><div class="cal-leyenda-dot" style="box-shadow:0 0 0 2px var(--green)"></div>★ Mi disponibilidad</div>
           <span id="cal-leyenda-aviones-semana" style="display:contents"></span>
