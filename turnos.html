@@ -1,5 +1,17 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.24
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel: al confirmar un pedido de turno (alumno o piloto), la
+            pantalla salta automáticamente a "Mis Turnos" con el filtro puesto en el
+            estado real de lo que se acaba de pedir (pendiente si requirió instructor,
+            aprobado si fue particular auto-aprobado) — así el usuario ve al toque lo que
+            pidió sin cambiar de pestaña ni de filtro a mano. showAlumnoTab('mis-turnos')
+            + setHistFiltro(estado) al final de _guardarTurnoConfirmado(), reemplazando el
+            mensaje showOk('turno-ok', ...) que quedaba en una pestaña que ya no se ve
+            (la propia fila en Mis Turnos, con su badge de estado, ya cumple ese rol de
+            confirmación visual). window._misTurnosData ya se mantiene al día por el
+            listener realtime de /reservas — no hace falta ningún fetch extra acá.
   VERSION : 8.23
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel sobre v8.20/v8.21 (selección de slots): "quiero que las celdas
@@ -3691,7 +3703,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.23</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.24</div>
   </div>
 
 </div>
@@ -6987,15 +6999,17 @@ window._guardarTurnoConfirmado=async function(){
   const labelAudit=(esRango?selectedSlot+' a '+selectedSlotFin+' hs':selectedSlot+' hs');
   await registrarAuditoria('alta_turno',session.rol||'alumno','exito',
     session.nombre+' — '+selectedAvion+' — '+selectedDay+' '+labelAudit+(sinInstructor?' — SIN INSTRUCTOR':''));
-  if(estado==='aprobado'){
-    const label=esRango?selectedSlot+' a '+selectedSlotFin+' hs':selectedSlot+' hs';
-    showOk('turno-ok','// TURNO CONFIRMADO — '+selectedAvion+' '+selectedDay+' '+label);
-  } else {
-    showOk('turno-ok','// TURNO SOLICITADO — Pendiente de aprobación por instructor.');
-  }
   selectedSlot=null;
   document.getElementById('slot-confirm').style.display='none';
   clearVal('al-obs');
+  // v8.24: pedido de Daniel — al confirmar, ir directo a "Mis Turnos" con el filtro del
+  // estado real de lo que se acaba de pedir (pendiente si requirió instructor, aprobado
+  // si fue particular auto-aprobado), así lo ve al toque sin tener que cambiar de
+  // pestaña ni de filtro a mano. showAlumnoTab('mis-turnos') solo cambia de pestaña —
+  // window._misTurnosData ya se mantiene al día por el listener realtime de /reservas
+  // (no hace falta un fetch aparte acá).
+  showAlumnoTab('mis-turnos');
+  setHistFiltro(estado);
 };
 
 // v7.74: modal de confirmación previo a guardar (pedido de Daniel — antes CONFIRMAR
