@@ -1,5 +1,20 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.07
+  FECHA   : 2026-08-30
+  CAMBIOS : FIX reportado por Daniel con captura del trazado (rulo apretado + ocho
+            bien visibles, pero cero franjas ámbar): dos rondas ajustando un umbral
+            fijo de giro (3°/s → 1.5°/s) sin resultado visible — señal de que el
+            problema era la idea de un umbral ABSOLUTO, no el número en sí (distintos
+            GPS de celular/estilos de vuelo dan escalas de giro distintas). Cambio de
+            enfoque en _clasificarTramosVuelo: se calcula el giro en TODOS los puntos
+            del vuelo primero, y se marca 'maniobra' el percentil más alto
+            (MANIOBRA_PERCENTIL, top 30%) — se autocalibra por vuelo en vez de
+            depender de un número fijo. MANIOBRA_GIRO_DEG_S pasa a ser un piso
+            absoluto aparte (0.8°/s): si el vuelo entero fue prácticamente recto, ni
+            el top 30% llega a ese piso y no se pinta nada (correcto). Se agrega
+            console.log con min/mediana/máx/umbral calculado del vuelo, para poder
+            afinar MANIOBRA_PERCENTIL con datos reales si hiciera falta otra vuelta.
   VERSION : 8.06
   FECHA   : 2026-08-30
   CAMBIOS : FIX reportado por Daniel con captura (2do round sobre el modal de
@@ -3447,7 +3462,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.06</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.07</div>
   </div>
 
 </div>
@@ -11289,43 +11304,67 @@ function _detectarToques(segmentos, altMinTraza){
 }
 
 // Crucero vs maniobra: régimen de giro (°/seg). v8.05: se descartó el ruido de
-// taxi/tierra exigiendo un desplazamiento mínimo entre puntos. v8.06 FIX
-// (reportado por Daniel: "sigue sin mostrar franjas, ni en los virajes reales
-// del circuito"): dos problemas más. (1) MANIOBRA_GIRO_DEG_S=3°/s es la
-// definición de "viraje estándar" (rate 1, 180°/60s) — un viraje de circuito a
-// banqueo bajo/moderado (lo normal en instrucción) suele ir MÁS LENTO que eso,
-// así que casi nunca llegaba al umbral. Bajado a 1.5°/s. (2) el rumbo se
-// calculaba entre puntos consecutivos (~6s de separación total) — a esa escala
-// tan corta el error de posición del GPS (unos metros) pesa demasiado sobre el
-// bearing calculado, dando una medición ruidosa aun con buen desplazamiento.
-// Ahora usa MANIOBRA_STEP puntos de por medio a cada lado (~12-18s de ventana
-// según el muestreo) para promediar ese ruido y estimar el giro real con más
-// estabilidad. Devuelve bandas [{tipo,t0,t1}] listas para pintar de fondo.
-const MANIOBRA_GIRO_DEG_S = 1.5;
+// taxi/tierra exigiendo un desplazamiento mínimo entre puntos. v8.06: ventana
+// más ancha (MANIOBRA_STEP) para que el ruido de posición GPS pese menos sobre
+// el bearing calculado. v8.07 FIX (reportado por Daniel con captura del
+// trazado — rulo apretado y ocho bien visibles, pero cero franjas ámbar pase
+// lo que pase con el umbral en °/s): dos rondas ajustando un número fijo
+// (3°/s → 1.5°/s) sin resultado visible es señal de que el problema no es EL
+// número sino la idea de usar un umbral absoluto — distintos GPS de celular y
+// estilos de vuelo dan escalas de giro distintas, y adivinar a ciegas no
+// escala. Cambio de enfoque: se calcula el giro en TODOS los puntos del vuelo
+// primero, y se marca 'maniobra' el percentil más alto (top MANIOBRA_PERCENTIL,
+// hoy 30%) — así el umbral se autocalibra por vuelo en vez de depender de un
+// número fijo. MANIOBRA_GIRO_DEG_S ahora es un piso absoluto aparte (no el
+// umbral principal): si el vuelo entero fue prácticamente recto, ni el "top
+// 30%" alcanza ese piso y no se pinta nada (correcto — no hay nada que
+// marcar). console.log con min/mediana/máx/umbral calculado, para poder
+// afinar MANIOBRA_PERCENTIL con datos reales si hiciera falta.
+const MANIOBRA_GIRO_DEG_S = 0.8; // piso absoluto — por debajo de esto ni el top del vuelo cuenta como maniobra
+const MANIOBRA_PERCENTIL = 0.30; // top 30% de giro del vuelo → maniobra
 const MANIOBRA_DIST_MIN_KM = 0.03;
 const MANIOBRA_STEP = 3;
 function _clasificarTramosVuelo(segmentos){
-  const bandas=[];
+  const porTramo = [];
+  const todosLosGiros = [];
   for(const seg of segmentos){
-    if(seg.tipo!=='real'||seg.pts.length<(MANIOBRA_STEP*2+1)) continue;
-    let actual=null;
+    if(seg.tipo!=='real'||seg.pts.length<(MANIOBRA_STEP*2+1)){ porTramo.push(null); continue; }
+    const arr=[];
     for(let i=MANIOBRA_STEP;i<seg.pts.length-MANIOBRA_STEP;i++){
       const p0=seg.pts[i-MANIOBRA_STEP], p1=seg.pts[i], p2=seg.pts[i+MANIOBRA_STEP];
       const dTotalKm = _haversineKm(p0.lat,p0.lng,p2.lat,p2.lng);
-      let tipo='crucero';
+      let giro=0;
       if(dTotalKm>=MANIOBRA_DIST_MIN_KM){
         const b1=_bearingDeg(p0.lat,p0.lng,p1.lat,p1.lng);
         const b2=_bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
         let dB=Math.abs(b2-b1); if(dB>180) dB=360-dB;
         const dtS=(new Date(p2.ts)-new Date(p0.ts))/1000;
-        const giro = dtS>0 ? dB/dtS : 0;
-        tipo = giro>=MANIOBRA_GIRO_DEG_S ? 'maniobra' : 'crucero';
+        giro = dtS>0 ? dB/dtS : 0;
       }
+      arr.push({ts:p1.ts, giro});
+      todosLosGiros.push(giro);
+    }
+    porTramo.push(arr);
+  }
+  if(!todosLosGiros.length) return [];
+  const ordenados = [...todosLosGiros].sort((a,b)=>a-b);
+  const pctIdx = Math.min(ordenados.length-1, Math.floor(ordenados.length*(1-MANIOBRA_PERCENTIL)));
+  const umbral = Math.max(MANIOBRA_GIRO_DEG_S, ordenados[pctIdx]);
+  console.log('[análisis vuelo] giro °/s — min:', ordenados[0].toFixed(2),
+    'mediana:', ordenados[Math.floor(ordenados.length/2)].toFixed(2),
+    'máx:', ordenados[ordenados.length-1].toFixed(2),
+    'umbral usado (top '+Math.round(MANIOBRA_PERCENTIL*100)+'%):', umbral.toFixed(2));
+  const bandas=[];
+  for(const arr of porTramo){
+    if(!arr) continue;
+    let actual=null;
+    for(const pt of arr){
+      const tipo = pt.giro>=umbral ? 'maniobra' : 'crucero';
       if(!actual || actual.tipo!==tipo){
         if(actual) bandas.push(actual);
-        actual={tipo, t0:p1.ts, t1:p1.ts};
+        actual={tipo, t0:pt.ts, t1:pt.ts};
       } else {
-        actual.t1=p1.ts;
+        actual.t1=pt.ts;
       }
     }
     if(actual) bandas.push(actual);
