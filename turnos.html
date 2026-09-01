@@ -1,5 +1,9 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.32
+  FECHA   : 2026-08-31
+  CAMBIOS : Ajuste de Daniel sobre v8.31 (probando): FLECHA_ESPACIADO_SEG de 15 a 21
+            segundos. Sin otros cambios.
   VERSION : 8.31
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel, a probar: "las flechitas de sentido están espaciadas
@@ -3834,7 +3838,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.31</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.32</div>
   </div>
 
 </div>
@@ -11948,7 +11952,7 @@ function _colorPorAltitud(alt, altMin, altMax){
 // no cambia, y sin este piso terminarían varias flechas superpuestas en el mismo punto
 // — se salta la colocación en ese caso (el tiempo acumulado sigue corriendo igual,
 // simplemente no larga una flecha nueva hasta que el avión se haya movido un mínimo).
-const FLECHA_ESPACIADO_SEG = 15; // segundos entre flechas — ajustar acá para tunear densidad
+const FLECHA_ESPACIADO_SEG = 21; // segundos entre flechas — ajustar acá para tunear densidad
 const FLECHA_ESPACIADO_KM_MIN = 0.02; // 20m — piso anti-superposición en tramos casi detenidos
 function _bearingDeg(lat1,lon1,lat2,lon2){
   const φ1=lat1*Math.PI/180, φ2=lat2*Math.PI/180, Δλ=(lon2-lon1)*Math.PI/180;
