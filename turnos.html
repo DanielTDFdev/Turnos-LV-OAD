@@ -1,5 +1,9 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.34
+  FECHA   : 2026-08-31
+  CAMBIOS : Ajuste de Daniel sobre v8.33: FLECHA_TAM_MAX +20% (22px→26px). Sin otros
+            cambios.
   VERSION : 8.33
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel: tamaño del ícono de las flechas de sentido en función del
@@ -3856,7 +3860,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.33</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.34</div>
   </div>
 
 </div>
@@ -11983,7 +11987,7 @@ const FLECHA_ESPACIADO_KM_MIN = 0.02; // 20m — piso anti-superposición en tra
 // usuario hace zoom manual, recreando el icono (setIcon) de cada marker con el tamaño
 // nuevo — Leaflet no permite resizear un divIcon ya puesto sin reemplazarlo.
 let _flechaMarkers = [];
-const FLECHA_TAM_MIN = 10, FLECHA_TAM_MAX = 22; // px — piso y techo del icono
+const FLECHA_TAM_MIN = 10, FLECHA_TAM_MAX = 26; // px — piso y techo del icono
 const FLECHA_ZOOM_MIN = 11, FLECHA_ZOOM_MAX = 17; // rango de referencia de zoom del visor (ver fitBounds maxZoom:15 y maxNativeZoom:17 del tileLayer) — fuera de este rango, clamp al piso/techo
 function _tamanioFlechaPorZoom(zoom){
   const t = Math.max(0, Math.min(1, (zoom-FLECHA_ZOOM_MIN)/(FLECHA_ZOOM_MAX-FLECHA_ZOOM_MIN)));
