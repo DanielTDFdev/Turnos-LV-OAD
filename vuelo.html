@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.67 · 2026-08-31
+  Pedido de Daniel: checkbox "Recordar usuario" en el login (mismo concepto que
+  turnos.html v8.30, implementado por separado acá — este login es solo de
+  instructor, sin el '*' de login simulado ni alumno/piloto, así que usa su
+  propia clave de localStorage: lvoad-recordar-user-vuelo, no la de turnos.html).
+  Si está tildado al loguear con éxito, guarda el usuario tipeado y lo
+  reaplica (campo + checkbox) al mostrar la pantalla de login, tanto al
+  arrancar la app (init()) como después de "Salir". Nuevas
+  guardarUsuarioRecordado()/aplicarUsuarioRecordado().
+
   v5.66 · 2026-08-31
   Pedido de Daniel — caso real: un vuelo de piloto en LV-ART quedó sin datos, y en
   Firebase apareció un turno nuevo, autoasignado (sin instructor) en LV-OAD, a
@@ -1521,6 +1531,10 @@ select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,
       <input id="l-pass" type="password" placeholder="••••••">
     </div>
     <div class="err" id="l-err"></div>
+    <label style="display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:12px;color:var(--gray);margin:2px 0 4px;cursor:pointer">
+      <input type="checkbox" id="l-recordar-user" style="width:14px;height:14px;accent-color:var(--cyan);cursor:pointer">
+      Recordar usuario
+    </label>
     <button class="btn btn-cyan" id="btn-login">INGRESAR</button>
   </div>
   <div style="text-align:center;margin-top:18px;opacity:.75;font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.06em">(c) 2026 by DAC</div>
@@ -1791,7 +1805,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.66'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.67'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1889,6 +1903,7 @@ function init(){
     abrirApp();
   } else {
     $('screen-login').classList.add('active');
+    aplicarUsuarioRecordado();
   }
 
   // Chequea la cola de sincronización pendiente de entrada, sesión iniciada
@@ -1919,9 +1934,30 @@ async function login(){
     if(!found){$('l-err').textContent='Usuario o contraseña incorrectos.';return;}
     session=found;
     sessionStorage.setItem('lvoad-session',JSON.stringify({tipo:'instructor',...session}));
+    guardarUsuarioRecordado();
     abrirApp();
   }catch(e){$('l-err').textContent='Error de conexión.';}
   finally{$('btn-login').disabled=false;$('btn-login').textContent='INGRESAR';}
+}
+
+// ── "Recordar usuario" (v5.67, mismo patrón que turnos.html v8.30) ─────────
+// Propia de esta app (clave localStorage distinta a turnos.html) porque acá el
+// login es solo de instructor, sin el '*' de login simulado ni el concepto de
+// alumno/piloto — no tiene sentido compartir el mismo valor entre apps.
+function guardarUsuarioRecordado(){
+  try{
+    const chk=$('l-recordar-user');
+    if(chk&&chk.checked) localStorage.setItem('lvoad-recordar-user-vuelo',$('l-user').value.trim());
+    else localStorage.removeItem('lvoad-recordar-user-vuelo');
+  }catch(e){}
+}
+function aplicarUsuarioRecordado(){
+  try{
+    const u=localStorage.getItem('lvoad-recordar-user-vuelo');
+    if(!u)return;
+    $('l-user').value=u;
+    $('l-recordar-user').checked=true;
+  }catch(e){}
 }
 
 // ── APP SHELL ─────────────────────────────────────────────
@@ -3968,6 +4004,7 @@ $('btn-logout').addEventListener('click',()=>{
   $('app-shell').classList.remove('active');
   $('screen-login').classList.add('active');
   $('l-pass').value='';$('l-err').textContent='';
+  aplicarUsuarioRecordado();
   // Los vuelos pendientes NO se pierden al salir (viven aparte de la sesión)
   // y la sincronización sigue intentando sola mientras la pestaña siga
   // abierta — solo se avisa para que quede claro, no bloquea el logout.
