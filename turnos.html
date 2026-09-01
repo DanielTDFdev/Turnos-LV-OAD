@@ -1,5 +1,23 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.33
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel: tamaño del ícono de las flechas de sentido en función del
+            zoom del mapa — más zoom, flecha más grande, con piso y techo
+            (FLECHA_TAM_MIN=10px, FLECHA_TAM_MAX=22px, interpolado linealmente entre
+            FLECHA_ZOOM_MIN=11 y FLECHA_ZOOM_MAX=17, clamp fuera de ese rango).
+            _colocarFlechasDireccion() ya no crea el marker directo — solo calcula lat/
+            lng/bearing/color y lo empuja a _flechaMarkers (array compartido, reseteado
+            en abrirMapaVuelo() antes de recorrer los segmentos). Los markers recién se
+            crean en la nueva _dibujarFlechasDireccion(), llamada DESPUÉS de fitBounds() —
+            antes de eso el mapa no tiene un zoom "real" todavía (L.map() recién creado,
+            sin setView), así que dimensionar la flecha en el momento de
+            _colocarFlechasDireccion() habría usado un zoom sin sentido. Nuevo listener
+            'zoomend' → _actualizarTamanioFlechas(), que recrea el ícono (setIcon) de cada
+            marker con el tamaño que corresponde al nuevo zoom cada vez que el usuario
+            hace zoom manual — Leaflet no permite resizear un divIcon ya puesto sin
+            reemplazarlo entero. Sin cambios en el espaciado por tiempo (v8.31/v8.32,
+            21s) ni en el color por altitud.
   VERSION : 8.32
   FECHA   : 2026-08-31
   CAMBIOS : Ajuste de Daniel sobre v8.31 (probando): FLECHA_ESPACIADO_SEG de 15 a 21
@@ -3838,7 +3856,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.32</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.33</div>
   </div>
 
 </div>
@@ -11954,6 +11972,42 @@ function _colorPorAltitud(alt, altMin, altMax){
 // simplemente no larga una flecha nueva hasta que el avión se haya movido un mínimo).
 const FLECHA_ESPACIADO_SEG = 21; // segundos entre flechas — ajustar acá para tunear densidad
 const FLECHA_ESPACIADO_KM_MIN = 0.02; // 20m — piso anti-superposición en tramos casi detenidos
+// v8.33 — pedido de Daniel: tamaño de la flecha en función del zoom (más zoom, más
+// grande), con piso y techo. _colocarFlechasDireccion ya NO crea el marker directo —
+// solo calcula lat/lng/bearing/color y lo empuja a _flechaMarkers (array compartido,
+// reseteado en abrirMapaVuelo antes de recorrer los segmentos). Los markers recién se
+// crean en _dibujarFlechasDireccion(), llamado DESPUÉS de fitBounds() — antes de eso el
+// mapa no tiene un zoom "real" todavía (recién nace con L.map(), sin setView), así que
+// dimensionar la flecha en el momento de _colocarFlechasDireccion habría usado un zoom
+// sin sentido. Un listener 'zoomend' llama a _actualizarTamanioFlechas() cada vez que el
+// usuario hace zoom manual, recreando el icono (setIcon) de cada marker con el tamaño
+// nuevo — Leaflet no permite resizear un divIcon ya puesto sin reemplazarlo.
+let _flechaMarkers = [];
+const FLECHA_TAM_MIN = 10, FLECHA_TAM_MAX = 22; // px — piso y techo del icono
+const FLECHA_ZOOM_MIN = 11, FLECHA_ZOOM_MAX = 17; // rango de referencia de zoom del visor (ver fitBounds maxZoom:15 y maxNativeZoom:17 del tileLayer) — fuera de este rango, clamp al piso/techo
+function _tamanioFlechaPorZoom(zoom){
+  const t = Math.max(0, Math.min(1, (zoom-FLECHA_ZOOM_MIN)/(FLECHA_ZOOM_MAX-FLECHA_ZOOM_MIN)));
+  return Math.round(FLECHA_TAM_MIN + t*(FLECHA_TAM_MAX-FLECHA_TAM_MIN));
+}
+function _iconoFlecha(bearing,color,tam){
+  return L.divIcon({
+    html:`<svg width="${tam}" height="${tam}" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
+    className:'', iconSize:[tam,tam], iconAnchor:[tam/2,tam/2],
+  });
+}
+function _dibujarFlechasDireccion(mapa){
+  const tam=_tamanioFlechaPorZoom(mapa.getZoom());
+  for(const f of _flechaMarkers){
+    f.marker = L.marker([f.lat,f.lng], {icon:_iconoFlecha(f.bearing,f.color,tam), interactive:false}).addTo(mapa);
+  }
+  mapa.on('zoomend', ()=>_actualizarTamanioFlechas(mapa));
+}
+function _actualizarTamanioFlechas(mapa){
+  const tam=_tamanioFlechaPorZoom(mapa.getZoom());
+  for(const f of _flechaMarkers){
+    if(f.marker) f.marker.setIcon(_iconoFlecha(f.bearing,f.color,tam));
+  }
+}
 function _bearingDeg(lat1,lon1,lat2,lon2){
   const φ1=lat1*Math.PI/180, φ2=lat2*Math.PI/180, Δλ=(lon2-lon1)*Math.PI/180;
   const y=Math.sin(Δλ)*Math.cos(φ2);
@@ -11975,11 +12029,7 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
         const bearing = _bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
         const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
         const color = _colorPorAltitud(altProm, altMinTraza, altMaxTraza);
-        const icon = L.divIcon({
-          html:`<svg width="14" height="14" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
-          className:'', iconSize:[14,14], iconAnchor:[7,7],
-        });
-        L.marker([lat,lng], {icon, interactive:false}).addTo(mapa);
+        _flechaMarkers.push({lat,lng,bearing,color,marker:null});
         ultLat=lat; ultLng=lng;
       }
       siguienteUmbralSeg += FLECHA_ESPACIADO_SEG;
@@ -12309,6 +12359,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     const altMinTraza = altsValidas.length ? Math.min(...altsValidas) : null;
     const altMaxTraza = altsValidas.length ? Math.max(...altsValidas) : null;
     const segmentos = _segmentarPorHuecos(puntos);
+    _flechaMarkers = [];
     for (const seg of segmentos) {
       const segCoords = seg.pts.map(p => [p.lat, p.lng]);
       if (seg.tipo === 'hueco') {
@@ -12342,6 +12393,7 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     L.marker(coords[coords.length-1], { icon: mkIco('#ef4444') }).bindTooltip('⏹ ' + fmtT(puntos[puntos.length-1].ts)).addTo(_mapaVueloLeaflet);
 
     _mapaVueloLeaflet.fitBounds(L.latLngBounds(coords), { padding: [40,40], maxZoom: 15 });
+    _dibujarFlechasDireccion(_mapaVueloLeaflet);
 
     // Info bar
     const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
