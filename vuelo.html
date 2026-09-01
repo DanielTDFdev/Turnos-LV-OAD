@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.68 · 2026-08-31
+  Pedido de Daniel: replicar acá los ajustes de las flechas de sentido que se
+  probaron primero en turnos.html (v8.31→v8.34, mismo día): (1) espaciado por
+  TIEMPO (21s) en vez de distancia fija (500m) — un tramo rápido separa más
+  las flechas, uno lento las junta más, sin calcular velocidad instantánea
+  aparte. (2) tamaño del ícono según el zoom del mapa (10px a 26px, entre
+  zoom 11 y 17). Ver el comentario completo junto a _colocarFlechasDireccion
+  más abajo (mismo texto que turnos.html, portado tal cual).
+
   v5.67 · 2026-08-31
   Pedido de Daniel: checkbox "Recordar usuario" en el login (mismo concepto que
   turnos.html v8.30, implementado por separado acá — este login es solo de
@@ -1805,7 +1814,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.67'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.68'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3513,41 +3522,77 @@ function _colorPorAltitud(alt, altMin, altMax){
   const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
   return `rgb(${r},${g},${b})`;
 }
-// v5.60 — pedido de Daniel, mismo cambio en paralelo que turnos.html v8.02:
-// flechas de sentido sobre la traza, para entender el flujo del vuelo a
-// simple vista. _bearingDeg da el rumbo entre dos puntos; _colocarFlechasDireccion
-// camina un tramo 'real' (nunca huecos) acumulando distancia con _haversineKm()
-// y larga una flecha cada 500m (FLECHA_ESPACIADO_KM), interpolando la posición
-// exacta entre el par de puntos que cruza el umbral. Cada flecha toma el color
-// de _colorPorAltitud de ese punto (mismo degradé de la polilínea) y es más
-// grande que el ancho de línea (14px vs 3.5px) para que sobresalga.
+// v5.60 — pedido de Daniel, mismo cambio en paralelo que turnos.html v8.02: flechas de
+// sentido sobre la traza, para entender el flujo del vuelo a simple vista.
+// v5.68 — pedido de Daniel, portado de turnos.html v8.31/8.32/8.33/8.34 (mismo día,
+// primero probado ahí): (1) el espaciado pasa de DISTANCIA fija (500m) a TIEMPO fijo
+// (FLECHA_ESPACIADO_SEG, 21s tras probar 15s) — la distancia entre dos flechas
+// consecutivas es "lo que recorrió el avión en ese mismo intervalo de tiempo", así que
+// un tramo rápido las separa más y uno lento las junta más, sin calcular velocidad
+// instantánea aparte. FLECHA_ESPACIADO_KM_MIN (20m) es un piso puramente defensivo para
+// que no queden superpuestas si el avión está casi detenido. (2) tamaño del ícono según
+// el zoom del mapa (10px a 26px, interpolado entre zoom 11 y 17, clamp fuera de ese
+// rango) — _colocarFlechasDireccion ya no crea el marker directo, solo calcula lat/lng/
+// bearing/color y lo empuja a _flechaMarkers (array compartido, reseteado en
+// abrirMapa() antes de recorrer los segmentos); los markers se crean recién en
+// _dibujarFlechasDireccion(), llamada DESPUÉS de fitBounds() (antes de eso el mapa no
+// tiene un zoom "real"), y un listener 'zoomend' llama a _actualizarTamanioFlechas()
+// para recrear el ícono (setIcon) cada vez que el usuario hace zoom manual.
+let _flechaMarkers = [];
+const FLECHA_ESPACIADO_SEG = 21;
+const FLECHA_ESPACIADO_KM_MIN = 0.02;
+const FLECHA_TAM_MIN = 10, FLECHA_TAM_MAX = 26;
+const FLECHA_ZOOM_MIN = 11, FLECHA_ZOOM_MAX = 17;
+function _tamanioFlechaPorZoom(zoom){
+  const t = Math.max(0, Math.min(1, (zoom-FLECHA_ZOOM_MIN)/(FLECHA_ZOOM_MAX-FLECHA_ZOOM_MIN)));
+  return Math.round(FLECHA_TAM_MIN + t*(FLECHA_TAM_MAX-FLECHA_TAM_MIN));
+}
+function _iconoFlecha(bearing,color,tam){
+  return L.divIcon({
+    html:`<svg width="${tam}" height="${tam}" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
+    className:'', iconSize:[tam,tam], iconAnchor:[tam/2,tam/2],
+  });
+}
+function _dibujarFlechasDireccion(mapa){
+  const tam=_tamanioFlechaPorZoom(mapa.getZoom());
+  for(const f of _flechaMarkers){
+    f.marker = L.marker([f.lat,f.lng], {icon:_iconoFlecha(f.bearing,f.color,tam), interactive:false}).addTo(mapa);
+  }
+  mapa.on('zoomend', ()=>_actualizarTamanioFlechas(mapa));
+}
+function _actualizarTamanioFlechas(mapa){
+  const tam=_tamanioFlechaPorZoom(mapa.getZoom());
+  for(const f of _flechaMarkers){
+    if(f.marker) f.marker.setIcon(_iconoFlecha(f.bearing,f.color,tam));
+  }
+}
 function _bearingDeg(lat1,lon1,lat2,lon2){
   const φ1=lat1*Math.PI/180, φ2=lat2*Math.PI/180, Δλ=(lon2-lon1)*Math.PI/180;
   const y=Math.sin(Δλ)*Math.cos(φ2);
   const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
-const FLECHA_ESPACIADO_KM = 0.5;
 function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
-  let acumulado = 0, siguienteUmbral = FLECHA_ESPACIADO_KM;
+  let acumuladoSeg = 0, siguienteUmbralSeg = FLECHA_ESPACIADO_SEG;
+  let ultLat = null, ultLng = null;
   for(let i=1;i<seg.pts.length;i++){
     const p1=seg.pts[i-1], p2=seg.pts[i];
-    const dKm = _haversineKm(p1.lat,p1.lng,p2.lat,p2.lng);
-    if(dKm<=0) continue;
-    while(acumulado+dKm >= siguienteUmbral){
-      const frac = (siguienteUmbral-acumulado)/dKm;
-      const lat = p1.lat+(p2.lat-p1.lat)*frac, lng = p1.lng+(p2.lng-p1.lng)*frac;
-      const bearing = _bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
-      const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
-      const color = _colorPorAltitud(altProm, altMinTraza, altMaxTraza);
-      const icon = L.divIcon({
-        html:`<svg width="14" height="14" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
-        className:'', iconSize:[14,14], iconAnchor:[7,7],
-      });
-      L.marker([lat,lng], {icon, interactive:false}).addTo(mapa);
-      siguienteUmbral += FLECHA_ESPACIADO_KM;
+    const dSeg = (new Date(p2.ts) - new Date(p1.ts))/1000;
+    if(!(dSeg>0)) continue;
+    while(acumuladoSeg+dSeg >= siguienteUmbralSeg){
+      const fracT = (siguienteUmbralSeg-acumuladoSeg)/dSeg;
+      const lat = p1.lat+(p2.lat-p1.lat)*fracT, lng = p1.lng+(p2.lng-p1.lng)*fracT;
+      const distDesdeUltima = (ultLat==null) ? Infinity : _haversineKm(ultLat,ultLng,lat,lng);
+      if(distDesdeUltima >= FLECHA_ESPACIADO_KM_MIN){
+        const bearing = _bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
+        const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
+        const color = _colorPorAltitud(altProm, altMinTraza, altMaxTraza);
+        _flechaMarkers.push({lat,lng,bearing,color,marker:null});
+        ultLat=lat; ultLng=lng;
+      }
+      siguienteUmbralSeg += FLECHA_ESPACIADO_SEG;
     }
-    acumulado += dKm;
+    acumuladoSeg += dSeg;
   }
 }
 
@@ -3613,6 +3658,7 @@ window.abrirMapa = async function(key, alumno, avion, hora, metarInicio, metarFi
     const altMinTraza = altsValidas.length ? Math.min(...altsValidas) : null;
     const altMaxTraza = altsValidas.length ? Math.max(...altsValidas) : null;
     const segmentos = _segmentarPorHuecos(puntos);
+    _flechaMarkers = [];
     for (const seg of segmentos) {
       const segCoords = seg.pts.map(p => [p.lat, p.lng]);
       if (seg.tipo === 'hueco') {
@@ -3659,6 +3705,7 @@ window.abrirMapa = async function(key, alumno, avion, hora, metarInicio, metarFi
 
     // Ajustar zoom al recorrido
     _leafletMap.fitBounds(L.latLngBounds(coords), { padding: [40, 40], maxZoom: 15 });
+    _dibujarFlechasDireccion(_leafletMap);
 
     // Info bar
     const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
