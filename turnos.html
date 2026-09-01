@@ -1,5 +1,24 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.31
+  FECHA   : 2026-08-31
+  CAMBIOS : Pedido de Daniel, a probar: "las flechitas de sentido están espaciadas
+            uniformemente cada 500m... quisiera una distribución geométrica basada en la
+            velocidad — más espaciado=más rápido, menos espaciado=más lento".
+            _colocarFlechasDireccion() pasa de caminar por DISTANCIA acumulada
+            (FLECHA_ESPACIADO_KM, 500m fijos) a caminar por TIEMPO acumulado
+            (FLECHA_ESPACIADO_SEG, nueva constante, 15s por defecto — ajustable ahí mismo
+            para tunear densidad) usando el .ts de cada punto GPS. Como la distancia entre
+            dos flechas consecutivas es "lo que recorrió el avión en ese mismo intervalo
+            de tiempo fijo", un tramo rápido (crucero) separa más las flechas y uno lento
+            (pattern, aproximación) las junta más — sin calcular velocidad instantánea
+            aparte, es una consecuencia directa de interpolar por tiempo en vez de por
+            distancia. Agregado FLECHA_ESPACIADO_KM_MIN (20m) como piso puramente
+            defensivo: en tramos casi detenidos (holding, taxi lento) el tiempo sigue
+            corriendo pero la distancia real casi no cambia — sin este piso quedarían
+            varias flechas superpuestas en el mismo punto; con él, simplemente se salta
+            esa colocación hasta que el avión se haya movido un mínimo. Mismo color por
+            altitud y mismo tamaño de ícono que antes, no cambia nada más del visor.
   VERSION : 8.30
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel: (1) se saca la pestaña separada "Inst / Admin" del login —
@@ -3815,7 +3834,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.30</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.31</div>
   </div>
 
 </div>
@@ -11916,43 +11935,52 @@ function _colorPorAltitud(alt, altMin, altMax){
   const b = Math.round(c1[2]+(c2[2]-c1[2])*t);
   return `rgb(${r},${g},${b})`;
 }
-// v8.02 — pedido de Daniel: flechas de sentido sobre la traza, para entender el
-// flujo del vuelo a simple vista (un circuito, ida y vuelta por el mismo tramo,
-// etc.). _bearingDeg da el rumbo entre dos puntos; _colocarFlechasDireccion
-// camina un tramo 'real' acumulando distancia (mismo _haversineKm de siempre)
-// y larga una flecha cada FLECHA_ESPACIADO_KM (500m, interpolando la posición
-// exacta entre el par de puntos que cruza el umbral) — NUNCA sobre huecos, para
-// no marcar dirección donde no hay datos GPS reales. Cada flecha toma el color
-// de _colorPorAltitud de ESE punto del tramo (mismo criterio que el degradé de
-// la polilínea), pero un poco más grande que el ancho de línea (14px vs 3.5px)
-// para que sobresalga y se note incluso sobre el propio trazo.
+// v8.31 — pedido de Daniel: "probar" espaciado geométrico por velocidad en vez de fijo
+// cada 500m — más espaciado = más rápido, menos espaciado = más lento. Antes
+// _colocarFlechasDireccion caminaba por DISTANCIA acumulada (FLECHA_ESPACIADO_KM);
+// ahora camina por TIEMPO acumulado (FLECHA_ESPACIADO_SEG, usando el .ts de cada punto
+// GPS) — como la distancia entre dos flechas consecutivas es "lo que recorrió el avión
+// en ese mismo intervalo de tiempo fijo", un tramo rápido (crucero) automáticamente
+// separa más las flechas y un tramo lento (pattern, aproximación) las junta más, sin
+// tener que calcular velocidad instantánea aparte. FLECHA_ESPACIADO_KM_MIN es un piso
+// de distancia (no de tiempo) puramente defensivo: si el avión está prácticamente
+// detenido (holding, taxi lento) el tiempo sigue corriendo pero la distancia real casi
+// no cambia, y sin este piso terminarían varias flechas superpuestas en el mismo punto
+// — se salta la colocación en ese caso (el tiempo acumulado sigue corriendo igual,
+// simplemente no larga una flecha nueva hasta que el avión se haya movido un mínimo).
+const FLECHA_ESPACIADO_SEG = 15; // segundos entre flechas — ajustar acá para tunear densidad
+const FLECHA_ESPACIADO_KM_MIN = 0.02; // 20m — piso anti-superposición en tramos casi detenidos
 function _bearingDeg(lat1,lon1,lat2,lon2){
   const φ1=lat1*Math.PI/180, φ2=lat2*Math.PI/180, Δλ=(lon2-lon1)*Math.PI/180;
   const y=Math.sin(Δλ)*Math.cos(φ2);
   const x=Math.cos(φ1)*Math.sin(φ2)-Math.sin(φ1)*Math.cos(φ2)*Math.cos(Δλ);
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
-const FLECHA_ESPACIADO_KM = 0.5;
 function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
-  let acumulado = 0, siguienteUmbral = FLECHA_ESPACIADO_KM;
+  let acumuladoSeg = 0, siguienteUmbralSeg = FLECHA_ESPACIADO_SEG;
+  let ultLat = null, ultLng = null;
   for(let i=1;i<seg.pts.length;i++){
     const p1=seg.pts[i-1], p2=seg.pts[i];
-    const dKm = _haversineKm(p1.lat,p1.lng,p2.lat,p2.lng);
-    if(dKm<=0) continue;
-    while(acumulado+dKm >= siguienteUmbral){
-      const frac = (siguienteUmbral-acumulado)/dKm;
-      const lat = p1.lat+(p2.lat-p1.lat)*frac, lng = p1.lng+(p2.lng-p1.lng)*frac;
-      const bearing = _bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
-      const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
-      const color = _colorPorAltitud(altProm, altMinTraza, altMaxTraza);
-      const icon = L.divIcon({
-        html:`<svg width="14" height="14" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
-        className:'', iconSize:[14,14], iconAnchor:[7,7],
-      });
-      L.marker([lat,lng], {icon, interactive:false}).addTo(mapa);
-      siguienteUmbral += FLECHA_ESPACIADO_KM;
+    const dSeg = (new Date(p2.ts) - new Date(p1.ts))/1000;
+    if(!(dSeg>0)) continue; // dos puntos con el mismo timestamp (o desordenados) — no se puede interpolar por tiempo
+    while(acumuladoSeg+dSeg >= siguienteUmbralSeg){
+      const fracT = (siguienteUmbralSeg-acumuladoSeg)/dSeg;
+      const lat = p1.lat+(p2.lat-p1.lat)*fracT, lng = p1.lng+(p2.lng-p1.lng)*fracT;
+      const distDesdeUltima = (ultLat==null) ? Infinity : _haversineKm(ultLat,ultLng,lat,lng);
+      if(distDesdeUltima >= FLECHA_ESPACIADO_KM_MIN){
+        const bearing = _bearingDeg(p1.lat,p1.lng,p2.lat,p2.lng);
+        const altProm = (p1.alt!=null&&p2.alt!=null) ? (p1.alt+p2.alt)/2 : (p1.alt??p2.alt);
+        const color = _colorPorAltitud(altProm, altMinTraza, altMaxTraza);
+        const icon = L.divIcon({
+          html:`<svg width="14" height="14" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
+          className:'', iconSize:[14,14], iconAnchor:[7,7],
+        });
+        L.marker([lat,lng], {icon, interactive:false}).addTo(mapa);
+        ultLat=lat; ultLng=lng;
+      }
+      siguienteUmbralSeg += FLECHA_ESPACIADO_SEG;
     }
-    acumulado += dKm;
+    acumuladoSeg += dSeg;
   }
 }
 
