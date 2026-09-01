@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.69 · 2026-09-01
+  Pedido de Daniel: al grabar tiempo/aterrizajes desde esta app, la reserva
+  queda con cargado_desde_app:true — permite distinguir en turnos.html un
+  dato cargado desde la app de uno cargado a mano (VER LOG DEL ALUMNO /
+  CARGAR TIEMPO-ATERRIZAJES / CARGAR VUELO HISTÓRICO), que nunca setean este
+  campo. Ver también vuelo-piloto.html v4.54 (mismo cambio, dos puntos de
+  escritura allá) y turnos.html v8.37 (ícono 📱 nuevo en la grilla).
+
   v5.68 · 2026-08-31
   Pedido de Daniel: replicar acá los ajustes de las flechas de sentido que se
   probaron primero en turnos.html (v8.31→v8.34, mismo día): (1) espaciado por
@@ -1814,7 +1822,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.68'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.69'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2925,6 +2933,10 @@ async function escribirPendiente(item){
     ts_aterrizaje:            item.tsFin,
     metar_inicio:             item.metarInicio||null,
     metar_fin:                item.metarFin||null,
+    cargado_desde_app:        true, // v5.69 — distingue datos grabados desde esta app
+                                     // de una carga manual en turnos.html (obs_privada_*
+                                     // vía "VER LOG DEL ALUMNO"/"CARGAR TIEMPO/ATERRIZAJES"
+                                     // o "CARGAR VUELO HISTÓRICO", que nunca setean esto).
   };
   Object.keys(datos).forEach(k=>{ if(datos[k]===null) delete datos[k]; });
   const tieneTraza=item.gpsPoints&&item.gpsPoints.length>1;

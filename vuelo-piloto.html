@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.54 · 2026-09-01
+  Pedido de Daniel: al grabar tiempo/aterrizajes desde esta app (cierre normal
+  del vuelo O botón "✎ Cargar tiempo/aterrizajes" del Libro), la reserva
+  queda con cargado_desde_app:true — permite distinguir en turnos.html un
+  dato cargado desde la app de uno cargado a mano por un instructor (VER LOG
+  DEL ALUMNO / CARGAR TIEMPO-ATERRIZAJES / CARGAR VUELO HISTÓRICO), que nunca
+  setean este campo. Ver también vuelo.html v5.69 (mismo cambio) y
+  turnos.html v8.37 (ícono 📱 nuevo en la grilla).
+
   v4.53 · 2026-08-31
   Pedido de Daniel: replicar acá los ajustes de las flechas de sentido que se
   probaron primero en turnos.html (v8.31→v8.34, mismo día — ver también
@@ -1645,7 +1654,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.53';
+const APP_VERSION = '4.54';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3000,6 +3009,8 @@ async function escribirPendiente(item){
     ts_aterrizaje:       item.tsFin,
     metar_inicio:        item.metarInicio||null,
     metar_fin:           item.metarFin||null,
+    cargado_desde_app:   true, // v4.54 — mismo flag que vuelo.html v5.69, distingue de
+                                // una carga manual en turnos.html (obs_privada_*)
     ...(item.gpsPoints&&item.gpsPoints.length>1?{tiene_traza_gps:true}:{})
   };
   Object.keys(datosVuelo).forEach(k=>{ if(datosVuelo[k]===null) delete datosVuelo[k]; });
@@ -3371,7 +3382,10 @@ window.abrirCargaDatosVuelo=async function(info){
       piloto_tiempo_vuelo:resultado.tiempo,
       piloto_aterrizajes:resultado.aterrizajes,
       piloto_autor:session.nombre,
-      piloto_ts:new Date().toISOString()
+      piloto_ts:new Date().toISOString(),
+      cargado_desde_app:true // v4.54 — este flujo también es "desde la app" (el piloto
+                              // lo carga dentro de vuelo-piloto.html), aunque sea manual
+                              // respecto del cierre normal del vuelo
     }));
     toast('Datos cargados ✓');
     cargarLibro();

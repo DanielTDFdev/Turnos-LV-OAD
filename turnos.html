@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.37
+  FECHA   : 2026-09-01
+  CAMBIOS : Pedido de Daniel: distinguir en la grilla los datos de vuelo (tiempo/
+            aterrizajes) cargados desde vuelo.html/vuelo-piloto.html de los cargados
+            a mano en turnos.html. vuelo.html v5.69 y vuelo-piloto.html v4.54 ahora
+            setean `cargado_desde_app:true` al grabar (cierre normal del vuelo, y
+            el botón propio "CARGAR TIEMPO/ATERRIZAJES" de vuelo-piloto.html); una
+            carga manual en turnos.html (VER LOG DEL ALUMNO / CARGAR TIEMPO-
+            ATERRIZAJES / CARGAR VUELO HISTÓRICO, funciones guardarObsPrivada() y
+            guardarVueloHistorico()) nunca setea ese campo. Acá solo se agrega la
+            lectura: si `r.cargado_desde_app` es true, ícono 📱 nuevo (clase
+            `.cal-app-badge`, esquina inferior derecha del bloque) en las vistas
+            LISTA y SEMANA de Reservas — sin el flag no se pinta nada. No se tocó
+            ningún otro criterio (color, badges existentes, iniciales de instructor).
   VERSION : 8.36
   FECHA   : 2026-09-01
   CAMBIOS : Bug reportado por Daniel con caso real (captura): un turno de piloto en LV-OAD
@@ -3632,6 +3646,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .cal-block{padding:5px 7px;border-radius:var(--radius);cursor:pointer;margin-bottom:3px;font-family:var(--font-mono);font-size:11px;line-height:1.4;transition:filter .15s;position:relative;}
 .cal-block:hover{filter:brightness(1.25);}
 .cal-inst-inic{position:absolute;top:50%;right:6px;transform:translateY(-50%);font-size:9px;font-weight:700;letter-spacing:.04em;opacity:.75;}
+.cal-app-badge{position:absolute;bottom:2px;right:6px;font-size:9px;opacity:.8;line-height:1;}
 .cal-block.pendiente{background:rgba(240,165,0,.22);border:1px solid rgba(240,165,0,.5);color:var(--amber);}
 .cal-block.aprobado{background:rgba(57,211,83,.15);border:1px solid rgba(57,211,83,.45);color:var(--green);}
 .cal-block.cancelado{background:rgba(248,81,73,.18);border:1px solid rgba(248,81,73,.45);color:var(--red);text-decoration:line-through;}
@@ -3901,7 +3916,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.36</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.37</div>
   </div>
 
 </div>
@@ -7870,11 +7885,17 @@ async function renderTodasReservas(data){
         // (tachado en la grilla) perdía la referencia de quién lo había aprobado.
         const esPilotoParticular=(r.rol==='piloto')&&tipoVueloDe(r)==='particular';
         const inicInst=((r.estado==='aprobado'||r.estado==='vencido')&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
+        // v8.37: pedido de Daniel — ícono en la esquina inferior derecha del bloque cuando
+        // el tiempo/aterrizajes se grabó desde vuelo.html o vuelo-piloto.html (cargado_desde_app,
+        // seteado por esas apps al cerrar el vuelo o al usar "CARGAR TIEMPO/ATERRIZAJES" propio
+        // del piloto). Sin el flag no se pinta nada — una carga manual en turnos.html (VER LOG
+        // DEL ALUMNO / CARGAR VUELO HISTÓRICO) nunca lo setea.
+        const appBadge=r.cargado_desde_app?`<span class="cal-app-badge" title="Datos de vuelo cargados desde la app">📱</span>`:'';
         // v7.85: turno de un solo slot en avión de media hora (LV-ART) → bloque más bajo,
         // para que se note a simple vista que no ocupa la hora completa. Un rango
         // (horaInicio/horaFin) sí puede cubrir más de un slot, así que queda con tamaño normal.
         const esMediaHora=AVIONES_MEDIA_HORA.includes(r.avion||'LV-OAD')&&!r.horaInicio;
-        html+=`<div class="cal-block ${colorCls}${esMediaHora?' media-hora':''}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}${accStyle}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}${inicInst}</div>`;
+        html+=`<div class="cal-block ${colorCls}${esMediaHora?' media-hora':''}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}${accStyle}">${badge}${cargadoBadge}${avLabel}${rangoLabel}${nombre}${inicInst}${appBadge}</div>`;
       });
       // v7.01: turnos con rango que arrancaron en una hora anterior y siguen ocupando ESTA
       // hora (ej: rango 10:00–13:00 → acá se pinta en las filas de 11:00 y 12:00). Antes la
@@ -8026,10 +8047,12 @@ async function renderVistaSemana(){
         // en vencido, con esPilotoParticular separado de aprobPil.
         const esPilotoParticular=(r.rol==='piloto')&&tipoVueloDe(r)==='particular';
         const inicInst=((r.estado==='aprobado'||r.estado==='vencido')&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
+        // v8.37: ver nota en renderTodasReservas — mismo ícono de "cargado desde la app".
+        const appBadge=r.cargado_desde_app?`<span class="cal-app-badge" title="Datos de vuelo cargados desde la app">📱</span>`:'';
         // v7.85: ver nota en renderTodasReservas — mismo criterio para el bloque de media hora.
         const esMediaHora=AVIONES_MEDIA_HORA.includes(r.avion||'LV-OAD')&&!r.horaInicio;
         html+=`<div class="cal-block ${colorCls}${esMediaHora?' media-hora':''}" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ${r.estado}${tipSin}${tipDisp}${tipQuien}${tooltipAccion(r)}${tooltipSaldo(r,todas)}${tipCargado}" style="${estiloExtra}${accStyle}">
-          ${badge}${cargadoBadge}<span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>${nombre}${inicInst}
+          ${badge}${cargadoBadge}<span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>${nombre}${inicInst}${appBadge}
         </div>`;
       });
       // v7.01: mismo criterio que renderTodasReservas — pintar continuación de rango en las
