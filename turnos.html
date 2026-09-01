@@ -1,5 +1,24 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.36
+  FECHA   : 2026-09-01
+  CAMBIOS : Bug reportado por Daniel con caso real (captura): un turno de piloto en LV-OAD
+            venció SIN que ningún instructor lo aprobara a tiempo (horario liberado
+            automáticamente), pero Admin le cargó los datos reales del vuelo después vía
+            VUELO HISTÓRICO — en el calendario seguía pintado ámbar/'vencido-sin-confirmar'
+            ("no se sabe si voló") a pesar de tener 0.7hs/1 aterrizaje cargados. Causa:
+            claseVencido() decidía el color SOLO en base a fueAprobado (si algún instructor
+            aprobó a tiempo), sin mirar nunca si había datos de vuelo cargados en esa rama
+            — a diferencia del resto de la función (v8.25/v8.26), que sí prioriza los datos
+            por sobre la aprobación en los otros casos. Fix: nuevo chequeo
+            tieneDatos&&!fueAprobado ANTES del `if(!fueAprobado)` de siempre — con datos
+            cargados, pasa a violeta '.vencido' igual que cualquier vencido volado, con un
+            tooltip propio ("cargado manualmente, sin aprobación formal a tiempo"). Mismo
+            criterio "el dato cargado pesa más que la falta de un click de aprobación" que
+            ya rige en esAdelantado/vuelo-piloto.html/reporte.html. El texto explicativo del
+            modal de detalle (abrirModal, rama r.estado==='vencido') pasó de 2 a 3 ramas
+            para cubrir este caso con un mensaje propio, en vez de caer por descarte en el
+            de "piloto autoaprobado" (que hubiera sido falso acá).
   VERSION : 8.35
   FECHA   : 2026-08-31
   CAMBIOS : Pedido de Daniel: piloto pidiendo LV-OAD ahora también ve el dropdown de
@@ -3882,7 +3901,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.35</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.36</div>
   </div>
 
 </div>
@@ -7632,10 +7651,24 @@ function claseBadgeEstado(r){
 function claseVencido(r){
   const autoAprobPiloto=tipoVueloDe(r)==='particular';
   const fueAprobado=!!(r.aprobado_por||r.instructor)||autoAprobPiloto;
+  const tieneDatos=datosVueloDe(r).tieneVuelo;
   // v8.19: caso adelantado — mismo violeta que 'vencido (voló)', tooltip distinto para
   // no decir "VENCIDO" de un turno que en rigor todavía no venció por horario.
   if(esAdelantado(r)){
     return {cls:'vencido',tip:' — VOLÓ ANTES DE LA HORA AGENDADA'+((r.aprobado_por||r.instructor)?' (aprobó '+(r.aprobado_por||r.instructor)+')':'')};
+  }
+  // v8.36 (reportado por Daniel, caso real: turno vencido-sin-confirmar de un piloto,
+  // con datos de vuelo cargados a mano por Admin vía VUELO HISTÓRICO después de que el
+  // horario se liberó automáticamente sin que ningún instructor lo aprobara a tiempo) —
+  // si HAY datos cargados, voló, sin importar que nadie lo haya aprobado formalmente
+  // antes. Antes, esto se decidía SOLO por fueAprobado: sin aprobación a tiempo siempre
+  // caía en 'vencido-sin-confirmar' (ámbar), aunque hubiera datos reales que dijeran lo
+  // contrario. El dato cargado pesa más que la falta de un click de aprobación — mismo
+  // criterio "se asume que fueron cargados correctamente" que ya rige en el resto del
+  // sistema (vuelo-piloto.html/reporte.html/esAdelantado). Por eso este chequeo va
+  // ANTES del `if(!fueAprobado)` de siempre.
+  if(tieneDatos&&!fueAprobado){
+    return {cls:'vencido',tip:' — VENCIDO (voló — cargado manualmente'+(r.cargado_por?' por '+r.cargado_por:'')+', sin aprobación formal a tiempo)'};
   }
   if(!fueAprobado){
     return {cls:'vencido-sin-confirmar',tip:' — VENCIDO (sin confirmar: ningún instructor lo aprobó a tiempo)'};
@@ -7650,7 +7683,7 @@ function claseVencido(r){
   // banner de pendientes v8.14-v8.17), azul para piloto particular (v8.25,
   // responsabilidad del propio piloto). Con datos cargados (voló de verdad) ambos casos
   // vuelven al violeta '.vencido' de siempre — ahí ya no hay nada pendiente de nadie.
-  if(!datosVueloDe(r).tieneVuelo){
+  if(!tieneDatos){
     return autoAprobPiloto
       ?{cls:'vencido-piloto-sin-datos',tip:' — VENCIDO (voló, turno de piloto autoaprobado — todavía sin tiempo/aterrizajes cargados)'}
       :{cls:'vencido-instruccion-sin-datos',tip:' — VENCIDO (aprobado por '+(r.aprobado_por||r.instructor)+' — todavía sin tiempo/aterrizajes cargados)'};
@@ -9081,11 +9114,24 @@ window.abrirModal=function(key){
     const venc=claseVencido(r);
     const nota=document.createElement('div');
     nota.style.cssText='font-family:var(--font-mono);font-size:11px;color:var(--text3);letter-spacing:.04em;line-height:1.5';
-    nota.textContent=venc.cls!=='vencido-sin-confirmar'
-      ?(r.aprobado_por||r.instructor
-        ?'Turno aprobado por '+(r.aprobado_por||r.instructor)+'. Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.'+(venc.cls==='vencido-instruccion-sin-datos'?' Todavía no se cargó tiempo de vuelo ni aterrizajes.':'')
-        :'Turno de piloto autoaprobado (no requiere confirmación de instructor). Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.'+(venc.cls==='vencido-piloto-sin-datos'?' Todavía no cargó tiempo de vuelo ni aterrizajes.':''))
-      :'Venció automáticamente: ningún instructor lo confirmó dentro del plazo antes del vuelo, así que el horario quedó liberado. No hace falta que el horario del vuelo ya haya pasado.';
+    // v8.36: antes eran 2 ramas (venc.cls==='vencido-sin-confirmar' / no) — con el fix de
+    // claseVencido() de esta misma versión, un turno con datos cargados pero SIN aprobar a
+    // tiempo también da cls==='vencido' (violeta), así que hacía falta una 3ra rama acá o
+    // el texto hubiera dicho "aprobado por [nada]"/"piloto autoaprobado" (falso) para ese
+    // caso — se recalculan los mismos booleanos que usa claseVencido() para elegir el texto
+    // correcto sin duplicar la lógica de color.
+    const autoAprobPilotoNota=tipoVueloDe(r)==='particular';
+    const fueAprobadoNota=!!(r.aprobado_por||r.instructor)||autoAprobPilotoNota;
+    const tieneDatosNota=datosVueloDe(r).tieneVuelo;
+    if(venc.cls==='vencido-sin-confirmar'){
+      nota.textContent='Venció automáticamente: ningún instructor lo confirmó dentro del plazo antes del vuelo, así que el horario quedó liberado. No hace falta que el horario del vuelo ya haya pasado.';
+    } else if(!fueAprobadoNota&&tieneDatosNota){
+      nota.textContent='Nadie lo aprobó a tiempo y el horario quedó liberado, pero después se cargaron datos de vuelo'+(r.cargado_por?' (cargado por '+r.cargado_por+')':'')+' — se asume que voló igual. Quedó "vencido" con esos datos.';
+    } else if(r.aprobado_por||r.instructor){
+      nota.textContent='Turno aprobado por '+(r.aprobado_por||r.instructor)+'. Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.'+(venc.cls==='vencido-instruccion-sin-datos'?' Todavía no se cargó tiempo de vuelo ni aterrizajes.':'');
+    } else {
+      nota.textContent='Turno de piloto autoaprobado (no requiere confirmación de instructor). Quedó "vencido" porque el horario del vuelo ya pasó — es un vuelo cerrado, no una falla.'+(venc.cls==='vencido-piloto-sin-datos'?' Todavía no cargó tiempo de vuelo ni aterrizajes.':'');
+    }
     actions.appendChild(nota);
     // v7.05: corrección manual vencido→cancelado (pedido de Daniel). Mismo criterio de
     // permiso que cancelar cualquier aprobado (v5.86): cualquier instructor real, o admin.
