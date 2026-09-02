@@ -454,7 +454,7 @@ Todos los servicios de los que depende el sistema para funcionar, y cuáles tien
 
 | Servicio | Para qué se usa | ¿Tiene costo? |
 |---|---|---|
-| **Dominio `aeroclubriogrande.com.ar`** | Dirección del sitio | **Sí, pago recurrente** (renovación anual de NIC Argentina) — sin esto el sitio deja de resolver aunque todo lo demás siga funcionando. |
+| **Dominio `aeroclubriogrande.com.ar`** | Dirección del sitio | **Sí, pago recurrente en NIC.ar** (registro/renovación anual — es el único registrador posible para `.com.ar`, Cloudflare no lo revende) — sin esto el sitio deja de resolver aunque todo lo demás siga funcionando. Cloudflare por separado solo hace de DNS/CDN sobre ese dominio (gratis, plan Free), no cobra por el dominio en sí. |
 | **Firebase Realtime Database** (`turnos-lv-oad`) | Toda la base de datos del sistema (reservas, alumnos, instructores, auditoría, GPS, FPL, etc.) | Nace en plan gratuito (Spark) de Google, con límites de uso mensual (conexiones simultáneas, ancho de banda, almacenamiento). Si el club crece y se supera el límite gratuito, Google exige pasar a plan pago (Blaze) para seguir funcionando — **a verificar si ya está en Blaze o sigue en Spark**, y si hay tarjeta cargada para el caso de que Google lo pase automáticamente. |
 | **Cloudflare** (CDN + DNS) | Sirve el sitio, cachea assets, la Cache Rule de `.html` sin caché | Nace en plan Free — normalmente alcanza para un sitio de este tamaño, sin costo. |
 | **GitHub Pages** (hosting del sitio) | Aloja los archivos `.html` | Gratis mientras el repo sea público (o el plan de GitHub lo permita). |
