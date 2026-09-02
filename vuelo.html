@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.70 · 2026-09-02
+  Pedido de Daniel: nuevo estado real 'volado' (ver turnos.html v8.39 para el diseño
+  completo). Esta app SIEMPRE graba datos cuando escribe una reserva (guardar() exige
+  horas>0), así que escribirPendiente() ahora escribe estado:'volado' directo en los dos
+  casos: turno in-situ nuevo (antes 'aprobado') y cierre de un turno existente (antes no
+  tocaba estado). cargarLibroCalMes()/cargarLibro()/_repFilasDe() (Libro de vuelo y
+  Reporte de horas) actualizados para incluir 'volado' junto a 'aprobado'/'vencido' — sin
+  esto, los vuelos migrados a 'volado' desaparecían silenciosamente de esas 3 vistas.
+
   v5.69 · 2026-09-01
   Pedido de Daniel: al grabar tiempo/aterrizajes desde esta app, la reserva
   queda con cargado_desde_app:true — permite distinguir en turnos.html un
@@ -1822,7 +1831,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.69'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.70'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2955,7 +2964,7 @@ async function escribirPendiente(item){
         hora:        t.hora,
         avion:       t.avion,
         tipo_vuelo:  'instruccion',
-        estado:      'aprobado',
+        estado:      'volado', // v5.70: siempre se crea CON datos (...datos incluye horas/aterr) — directo a 'volado', ya no 'aprobado'
         rol:         t.rol,
         instructor:  item.instructorNombre,
         aprobado_por:item.instructorNombre,
@@ -2998,6 +3007,7 @@ async function escribirPendiente(item){
       }));
       datos.tiene_traza_gps=true;
     }
+    datos.estado='volado'; // v5.70: se están grabando datos de vuelo — pasa a 'volado' sea cual sea su estado previo ('aprobado' o 'vencido')
     await conTimeout(update(ref(db,`reservas/${item.key}`),datos));
   }
 }
@@ -3241,7 +3251,7 @@ async function cargarLibroCalMes(){
         (r.fecha||'').startsWith(prefijo)&&
         (r.instructor===session.nombre||r.aprobado_por===session.nombre||
          r.instructor===session.user||r.aprobado_por===session.user)&&
-        (r.estado==='aprobado'||r.estado==='vencido')&&
+        (r.estado==='aprobado'||r.estado==='vencido'||r.estado==='volado')&&
         !!r.obs_privada_tiempo_vuelo
       ).map(r=>r.fecha)
     );
@@ -3307,7 +3317,7 @@ async function cargarLibro(){
       r.fecha===fecha&&
       (r.instructor===session.nombre||r.aprobado_por===session.nombre||
        r.instructor===session.user||r.aprobado_por===session.user)&&
-      (r.estado==='aprobado'||r.estado==='vencido')&&
+      (r.estado==='aprobado'||r.estado==='vencido'||r.estado==='volado')&&
       !!r.obs_privada_tiempo_vuelo // solo vuelos finalizados y guardados (tiempo cargado)
     ).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
 
@@ -3366,7 +3376,7 @@ function _repFilasDe(todas,desde,hasta){
     r.fecha>=desde&&r.fecha<=hasta&&
     (r.instructor===session.nombre||r.aprobado_por===session.nombre||
      r.instructor===session.user||r.aprobado_por===session.user)&&
-    (r.estado==='aprobado'||r.estado==='vencido')&&
+    (r.estado==='aprobado'||r.estado==='vencido'||r.estado==='volado')&&
     !!r.obs_privada_tiempo_vuelo
   ).sort((a,b)=>(a.fecha+((a.hora||a.horaInicio)||'')).localeCompare(b.fecha+((b.hora||b.horaInicio)||'')));
 }

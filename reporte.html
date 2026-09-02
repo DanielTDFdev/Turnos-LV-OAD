@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   REPORTE DE ACTIVIDAD DE AERONAVES — Aeroclub Río Grande 
+  v1.16 · Nuevo estado real 'volado' (ver turnos.html v8.39). clasificar() ahora
+         reconoce r.estado==='volado' directo — sin esto, los vuelos migrados a
+         'volado' desaparecían del reporte (no matcheaban ninguna rama existente).
+
   v1.15 · FIX reportado por Daniel: el Excel exportado (Detalle de aeronaves/
          instructor/alumno) salía SIN ordenar por fecha — _datosAeronaves/
          _datosInstructor/_datosAlumno se armaban con .map() directo sobre
@@ -391,7 +395,7 @@ table.det tbody td.gray{color:var(--text3)}
     <div class="dot"></div>
     <h1>REPORTE DE ACTIVIDAD<small>AEROCLUB RÍO GRANDE</small></h1>
     <div class="sp">
-      <span class="ver">v1.15</span>
+      <span class="ver">v1.16</span>
       <a class="btn-back" href="turnos.html">← TURNERO</a>
     </div>
   </header>
@@ -644,6 +648,11 @@ function clasificar(r) {
   const hoyStr = hoy();
   const esPasado = r.fecha < hoyStr;
   if (r.cargado_por && r.estado === 'cancelado') return 'cancelado_instructor';
+  // v1.16 (Daniel, turnos.html v8.39): 'volado' ahora puede ser un estado real escrito
+  // directo por turnos.html/vuelo.html/vuelo-piloto.html — sin esta rama, los vuelos
+  // migrados a 'volado' no matcheaban ninguna de las condiciones de abajo y caían en el
+  // default (desaparecían del reporte).
+  if (r.estado === 'volado') return 'volado';
   // estado 'aprobado' pasado — poco frecuente (barrido lazy del cliente puede no haberlo vencido aún)
   if (r.estado === 'aprobado' && esPasado) {
     return esVolado(r) ? 'volado' : 'no_realizado';

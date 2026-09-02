@@ -1,5 +1,26 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.39
+  CAMBIOS : Pedido de Daniel — nuevo estado real 'volado' (turno vencido/aprobado con
+            tiempo y/o aterrizajes ya cargados). Se comporta igual que 'vencido' en TODA
+            la lógica de negocio (cupo semanal, slotsTomados, filtros de calendario,
+            Seguimiento, Consultas) vía el helper nuevo esVencidoOVolado(). Se escribe
+            directo en: vencerTurnosPendientes() (si al vencer ya tenía datos),
+            guardarObsPrivada() (si al guardar deja el turno con datos sobre un
+            aprobado/vencido) y guardarVueloHistorico() (siempre, tiempo es obligatorio
+            en ese form). textoBadgeEstado()/claseBadgeEstado() actualizados para tratarlo
+            como caso directo (ya no depende de inferir por datos, aunque se mantiene esa
+            inferencia como red de seguridad para registros no migrados). Botón nuevo
+            "VOLADO" en el toolbar de Mis Turnos, CSS .turno-status-volado/.badge-volado/
+            .cal-block.volado agregados (mismo violeta que 'vencido'). Ver también vuelo.html
+            v5.70/vuelo-piloto.html v4.55 (escriben 'volado' directo al cerrar un vuelo) y
+            reporte.html v1.16 (clasificar() reconoce el estado real). Requiere correr una
+            vez el script de migración sobre /reservas para los registros ya existentes que
+            calificarían — Daniel lo corre a mano desde la consola del navegador (no forma
+            parte de este archivo). Zona Peligrosa (borrado masivo) NO se tocó — "Solo
+            vencidos" sigue sin incluir 'volado' a propósito, a definir aparte por ser una
+            acción irreversible.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.38
   CAMBIOS : Link a browser-reservas.html agregado en pantalla Configuración > Sistema
             (nueva card "Browser de Reservas" arriba de Zona Peligrosa, abre en nueva
@@ -3546,6 +3567,7 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .badge-aprobado{background:rgba(57,211,83,.1);color:var(--green);border:1px solid rgba(57,211,83,.3)}
 .badge-cancelado{background:rgba(248,81,73,.1);color:var(--red);border:1px solid rgba(248,81,73,.25)}
 .badge-vencido{background:rgba(120,80,200,.12);color:#a07ef0;border:1px solid rgba(120,80,200,.3)}
+.badge-volado{background:rgba(120,80,200,.12);color:#a07ef0;border:1px solid rgba(120,80,200,.3)}
 .badge-novolado{background:rgba(148,163,184,.14);color:var(--text3);border:1px solid rgba(148,163,184,.35)}
 .hist-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:.9rem;}
 .hist-filter-btn{font-family:var(--font-mono);font-size:11px;padding:4px 11px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer;letter-spacing:.08em;transition:background .15s,color .15s,border-color .15s;}
@@ -3573,6 +3595,8 @@ button.danger:hover{background:rgba(248,81,73,.18)}
 .turno-status-cancelado .turno-status-dot{background:var(--red)}
 .turno-status-vencido{color:#a07ef0}
 .turno-status-vencido .turno-status-dot{background:#a07ef0}
+.turno-status-volado{color:#a07ef0}
+.turno-status-volado .turno-status-dot{background:#a07ef0}
 
 .days-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:1rem}
 .day-btn{padding:10px 4px;text-align:center;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono);font-size:13px;background:var(--bg2);color:var(--text2);line-height:1.5;transition:all .15s;box-shadow:0 3px 0 rgba(0,0,0,.35),0 4px 8px rgba(0,0,0,.2);}
@@ -3656,6 +3680,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
 .cal-block.aprobado{background:rgba(57,211,83,.15);border:1px solid rgba(57,211,83,.45);color:var(--green);}
 .cal-block.cancelado{background:rgba(248,81,73,.18);border:1px solid rgba(248,81,73,.45);color:var(--red);text-decoration:line-through;}
 .cal-block.vencido{background:rgba(120,80,200,.18);border:1px solid rgba(120,80,200,.45);color:#c4aef8;text-decoration:line-through;}
+.cal-block.volado{background:rgba(120,80,200,.18);border:1px solid rgba(120,80,200,.45);color:#c4aef8;text-decoration:line-through;}
 .cal-block.vencido-piloto-sin-datos{background:rgba(77,159,255,.16);border:1px dashed rgba(77,159,255,.55);color:var(--blue);text-decoration:line-through;}
 .cal-block.vencido-instruccion-sin-datos{background:rgba(255,69,0,.22);border:1px dashed rgba(255,69,0,.75);color:#ff8a4c;text-decoration:line-through;animation:vencidoSinDatosPulse 2s ease-in-out infinite;}
 @keyframes vencidoSinDatosPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,69,0,.35)}50%{box-shadow:0 0 6px 1px rgba(255,69,0,.55)}}
@@ -3921,7 +3946,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.38</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.39</div>
   </div>
 
 </div>
@@ -4030,6 +4055,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         <button class="hist-filter-btn"         data-f="aprobado"  onclick="setHistFiltro('aprobado')">APROBADO</button>
         <button class="hist-filter-btn"         data-f="cancelado" onclick="setHistFiltro('cancelado')">CANCELADO</button>
         <button class="hist-filter-btn"         data-f="vencido"   onclick="setHistFiltro('vencido')">VENCIDO</button>
+        <button class="hist-filter-btn"         data-f="volado"    onclick="setHistFiltro('volado')">VOLADO</button>
         <button class="hist-sort-btn" id="hist-sort-btn" onclick="toggleHistOrden()">↓ MÁS RECIENTE</button>
       </div>
       <span class="hist-count" id="hist-count"></span>
@@ -6895,7 +6921,7 @@ function selectDay(ds){
 }
 
 function slotsTomados(ds,avion,data){
-  const reservas=rArr(data).filter(r=>r.fecha===ds&&(r.avion||'LV-OAD')===avion&&r.estado!=='cancelado'&&r.estado!=='vencido');
+  const reservas=rArr(data).filter(r=>r.fecha===ds&&(r.avion||'LV-OAD')===avion&&r.estado!=='cancelado'&&!esVencidoOVolado(r));
   const taken=new Set();
   reservas.forEach(r=>{
     if(r.horaInicio&&r.horaFin){
@@ -6967,7 +6993,7 @@ function turnosRestantesSemana(ds,data,email){
     if(r.email!==targetEmail) return false;
     if(!r.fecha||r.fecha<semLunes||r.fecha>semDomingo) return false;
     if(r.cargado_por&&!r.consume_cupo) return false; // cargado por staff (+ CARGAR TURNO) y NO tildado para consumir cupo
-    if(r.estado==='vencido'&&!r.aprobado_por) return false; // vencido del cron (nunca aprobado): no cuenta
+    if(esVencidoOVolado(r)&&!r.aprobado_por) return false; // vencido/volado sin aprobador: no cuenta (v8.39: mismo criterio para 'volado')
     if(r.estado==='cancelado'&&r.cancelado_rol==='instructor') return false;
     return true;
   });
@@ -7647,6 +7673,14 @@ function datosVueloDe(r){
   const aterr=r.obs_privada_aterrizajes!=null?r.obs_privada_aterrizajes:r.piloto_aterrizajes;
   return{horas,aterr,tieneVuelo:horas!=null||aterr!=null};
 }
+// v8.39: 'volado' es un estado REAL (no solo visual) — se escribe directo cuando se
+// graban tiempo/aterrizajes sobre un turno 'aprobado' o 'vencido' (ver escribirPendiente
+// en vuelo.html/vuelo-piloto.html, guardarObsPrivada/guardarVueloHistorico acá mismo, y
+// vencerTurnosPendientes para el caso borde de un turno que venció con datos ya cargados
+// de antes). Pedido de Daniel: 'volado' debe pesar EXACTAMENTE igual que 'vencido' en
+// toda la lógica de negocio (cupo semanal, slotsTomados, filtros, reportes) — este helper
+// evita repetir el OR en cada lugar que antes chequeaba solo estado==='vencido'.
+function esVencidoOVolado(r){ return r.estado==='vencido'||r.estado==='volado'; }
 // v8.19: pedido de Daniel (captura de la grilla) — un turno estado==='aprobado' con
 // datos de vuelo YA cargados se adelantó: voló antes de la hora agendada, sin haber
 // llegado todavía a estado==='vencido' (su horario nominal sigue siendo futuro). Se
@@ -7662,6 +7696,10 @@ function esAdelantado(r){
 // 'aprobado' adelantado (v8.19, ver esAdelantado). Los demás estados (pendiente/
 // aprobado sin datos/cancelado/vencido sin datos) respetan la convención de siempre.
 function textoBadgeEstado(r){
+  // v8.39: 'volado' ahora puede ser el estado real (caso normal desde la migración) — los
+  // otros dos checks quedan como red de seguridad para registros viejos no migrados o
+  // alguna escritura fuera de los puntos ya cubiertos.
+  if(r.estado==='volado') return 'volado';
   if(r.estado==='vencido'&&datosVueloDe(r).tieneVuelo) return 'volado';
   if(esAdelantado(r)) return 'volado';
   return r.estado;
@@ -7671,6 +7709,8 @@ function textoBadgeEstado(r){
 // (mismo color que un vencido con datos) para que texto "volado" y color coincidan.
 // Usar en cualquier lugar donde antes se armaba 'badge-'+r.estado a mano.
 function claseBadgeEstado(r){
+  // v8.39: 'volado' reusa la clase CSS violeta de 'vencido' (no hay .badge-volado propio).
+  if(r.estado==='volado') return 'vencido';
   return esAdelantado(r)?'vencido':r.estado;
 }
 function claseVencido(r){
@@ -7816,7 +7856,7 @@ async function renderTodasReservas(data){
 
   const horasConTurnos=[...new Set([
     ...enRango.map(r=>r.hora),
-    ...enRango.filter(r=>r.estado!=='cancelado'&&r.estado!=='vencido').flatMap(horasContinuacion)
+    ...enRango.filter(r=>r.estado!=='cancelado'&&!esVencidoOVolado(r)).flatMap(horasContinuacion)
   ])].sort();
   if(!horasConTurnos.length){
     cal.innerHTML='<div class="cal-empty">// SIN RESERVAS EN LOS 17 DÍAS VISIBLES</div>';return;
@@ -7875,7 +7915,7 @@ async function renderTodasReservas(data){
         // venc chequeado ANTES que aprobPil en colorCls/tipSin para que un piloto
         // particular adelantado también se vea violeta (antes aprobPil ganaba siempre
         // que estado==='aprobado', pero eso nunca podía coincidir con venc hasta ahora).
-        const venc=(r.estado==='vencido'||esAdelantado(r))?claseVencido(r):null;
+        const venc=(esVencidoOVolado(r)||esAdelantado(r))?claseVencido(r):null;
         const colorCls=(sinInst?'sin-instructor':(venc?venc.cls:(aprobPil?'aprobado-piloto':r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
         const accStyle='border-left-color:'+accColorForAvion(r.avion||'LV-OAD')+';';
         const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(venc?venc.tip:(aprobPil?' — turno de piloto (particular)':''));
@@ -7894,7 +7934,7 @@ async function renderTodasReservas(data){
         // v8.18: pedido de Daniel — antes solo se mostraba en 'aprobado'; un turno vencido
         // (tachado en la grilla) perdía la referencia de quién lo había aprobado.
         const esPilotoParticular=(r.rol==='piloto')&&tipoVueloDe(r)==='particular';
-        const inicInst=((r.estado==='aprobado'||r.estado==='vencido')&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
+        const inicInst=((r.estado==='aprobado'||esVencidoOVolado(r))&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
         // v8.37: pedido de Daniel — ícono en la esquina inferior derecha del bloque cuando
         // el tiempo/aterrizajes se grabó desde vuelo.html o vuelo-piloto.html (cargado_desde_app,
         // seteado por esas apps al cerrar el vuelo o al usar "CARGAR TIEMPO/ATERRIZAJES" propio
@@ -7910,7 +7950,7 @@ async function renderTodasReservas(data){
       // v7.01: turnos con rango que arrancaron en una hora anterior y siguen ocupando ESTA
       // hora (ej: rango 10:00–13:00 → acá se pinta en las filas de 11:00 y 12:00). Antes la
       // celda quedaba vacía y parecía disponible, aunque slotsTomados() ya la bloqueaba.
-      enRango.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
+      enRango.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&!esVencidoOVolado(r)&&horasContinuacion(r).includes(hora)).forEach(r=>{
         const avLabelC=calAvionFiltro==='todos'?`<span style="font-size:9px;opacity:.7">${r.avion||'LV-OAD'}</span><br>`:'';
         html+=`<div class="cal-block rango-continua acc-avion" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)" style="border-left-color:${accColorForAvion(r.avion||'LV-OAD')}">${avLabelC}⋯ ocupado</div>`;
       });
@@ -7994,7 +8034,7 @@ async function renderVistaSemana(){
   // Horas con turnos en esta semana
   const horasSet=new Set([
     ...enSemana.map(r=>r.hora),
-    ...enSemana.filter(r=>r.estado!=='cancelado'&&r.estado!=='vencido').flatMap(horasContinuacion)
+    ...enSemana.filter(r=>r.estado!=='cancelado'&&!esVencidoOVolado(r)).flatMap(horasContinuacion)
   ]);
   if(!horasSet.size){grid.innerHTML='<div class="cal-empty">// SIN RESERVAS ESTA SEMANA</div>';return;}
   const horas=[...horasSet].sort();
@@ -8039,13 +8079,13 @@ async function renderVistaSemana(){
         // v6.16: color por ESTADO igual que vista LISTA; matricula visible en el bloque
         // v8.19: venc también cubre 'aprobado' adelantado, chequeado antes que aprobPil
         // — ver nota completa en renderTodasReservas.
-        const venc=(r.estado==='vencido'||esAdelantado(r))?claseVencido(r):null;
+        const venc=(esVencidoOVolado(r)||esAdelantado(r))?claseVencido(r):null;
         const colorCls=(sinInst?'sin-instructor':(venc?venc.cls:(aprobPil?'aprobado-piloto':r.estado)))+(coincideDisp?' mi-disp':'')+' acc-avion';
         const accStyle='border-left-color:'+accColorForAvion(r.avion||'LV-OAD')+';';
         // v8.19: adelantado también se tacha, igual que vencido — acá estiloExtra ya es
         // estado-driven (a diferencia de LISTA, que tacha por columna/día pasado), así
         // que suma natural para mantener el mismo criterio dentro de esta vista.
-        const estiloExtra=(r.estado==='cancelado'||r.estado==='vencido'||esAdelantado(r))?'text-decoration:line-through;':'';
+        const estiloExtra=(r.estado==='cancelado'||esVencidoOVolado(r)||esAdelantado(r))?'text-decoration:line-through;':'';
         const tipSin=sinInst?' — SIN INSTRUCTOR (pendiente)':(venc?venc.tip:(aprobPil?' — turno de piloto (particular)':''));
         const tipDisp=coincideDisp?' — ✓ Coincide con tu disponibilidad':'';
         const tipQuien=r.estado==='pendiente'?tipQuienesPueden(dispCompleta,ds,r.hora):'';
@@ -8056,7 +8096,7 @@ async function renderVistaSemana(){
         // v7.53/v8.18: ver nota en renderTodasReservas — mismas iniciales, ahora también
         // en vencido, con esPilotoParticular separado de aprobPil.
         const esPilotoParticular=(r.rol==='piloto')&&tipoVueloDe(r)==='particular';
-        const inicInst=((r.estado==='aprobado'||r.estado==='vencido')&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
+        const inicInst=((r.estado==='aprobado'||esVencidoOVolado(r))&&!esPilotoParticular&&(r.aprobado_por||r.instructor))?`<span class="cal-inst-inic" title="Aprobó: ${r.aprobado_por||r.instructor}">${iniciales(r.aprobado_por||r.instructor)}</span>`:'';
         // v8.37: ver nota en renderTodasReservas — mismo ícono de "cargado desde la app".
         const appBadge=r.cargado_desde_app?`<span class="cal-app-badge" title="Datos de vuelo cargados desde la app">📱</span>`:'';
         // v7.85: ver nota en renderTodasReservas — mismo criterio para el bloque de media hora.
@@ -8067,7 +8107,7 @@ async function renderVistaSemana(){
       });
       // v7.01: mismo criterio que renderTodasReservas — pintar continuación de rango en las
       // horas intermedias que ocupa un turno con horaInicio/horaFin.
-      enSemana.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&r.estado!=='vencido'&&horasContinuacion(r).includes(hora)).forEach(r=>{
+      enSemana.filter(r=>r.fecha===ds&&r.estado!=='cancelado'&&!esVencidoOVolado(r)&&horasContinuacion(r).includes(hora)).forEach(r=>{
         html+=`<div class="cal-block rango-continua acc-avion" onclick="abrirModal('${r.key}')" title="${r.nombre} — ${r.avion||'LV-OAD'} — ocupado por turno ${r.horaInicio}–${r.horaFin} hs (rango, ver detalle en la hora de inicio)" style="border-left-color:${accColorForAvion(r.avion||'LV-OAD')}">
           <span style="font-size:9px;opacity:.8">${r.avion||'LV-OAD'}</span><br>⋯ ocupado
         </div>`;
@@ -8869,13 +8909,21 @@ window.guardarObsPrivada=async function(){
       renderFormObsPrivada();
       return;
     }
-    await fbUpdate('reservas/'+_logAlumnoCtx.reservaKey,{
+    // v8.39: si con este guardado el turno queda con datos de vuelo Y estaba
+    // 'aprobado'/'vencido', pasa directo a 'volado' (mismo criterio que
+    // escribirPendiente() de vuelo.html/vuelo-piloto.html). Se calcula sobre el
+    // registro FRESCO (por si ya tenía datos piloto_* cargados de antes) más lo que
+    // se está por guardar ahora.
+    const upd={
       obs_privada:texto||null,
       obs_privada_tiempo_vuelo:tiempoVuelo,
       obs_privada_aterrizajes:aterrizajes,
       obs_privada_autor:autorFresh||yo,
       obs_privada_ts:serverTimestamp()
-    });
+    };
+    const tendraVuelo=tiempoVuelo!=null||aterrizajes!=null||fresh?.piloto_tiempo_vuelo!=null||fresh?.piloto_aterrizajes!=null;
+    if(tendraVuelo&&(fresh?.estado==='aprobado'||fresh?.estado==='vencido')) upd.estado='volado';
+    await fbUpdate('reservas/'+_logAlumnoCtx.reservaKey,upd);
     msg.style.color='var(--green)'; msg.textContent='✓ Guardado';
     // _reservasCache se actualiza solo vía el listener onValue de /reservas; refrescamos
     // igual acá con el dato recién escrito por si el listener todavía no llegó. OJO (v6.86):
@@ -8883,7 +8931,7 @@ window.guardarObsPrivada=async function(){
     // sentinel serverTimestamp() (eso solo lo resuelve el servidor al escribir). Se usa
     // ahoraServidor() como mejor aproximación hasta que el listener traiga el valor real.
     if(_reservasCache[_logAlumnoCtx.reservaKey]){
-      Object.assign(_reservasCache[_logAlumnoCtx.reservaKey],{obs_privada:texto||null,obs_privada_tiempo_vuelo:tiempoVuelo,obs_privada_aterrizajes:aterrizajes,obs_privada_autor:autorFresh||yo,obs_privada_ts:ahoraServidor().getTime()});
+      Object.assign(_reservasCache[_logAlumnoCtx.reservaKey],{obs_privada:texto||null,obs_privada_tiempo_vuelo:tiempoVuelo,obs_privada_aterrizajes:aterrizajes,obs_privada_autor:autorFresh||yo,obs_privada_ts:ahoraServidor().getTime(),...(upd.estado?{estado:upd.estado}:{})});
     }
     renderFormObsPrivada();
     renderNotasPrivadasAlumno();
@@ -9135,7 +9183,7 @@ window.abrirModal=function(key){
       nota.textContent='Turno aprobado por '+(aprobador||'otro instructor')+'. Solo esa persona o un administrador puede liberarlo o cancelarlo.';
       actions.appendChild(nota);
     }
-  } else if(r.estado==='vencido'){
+  } else if(esVencidoOVolado(r)){
     // v6.91: el modal no explicaba por qué un turno figuraba vencido, lo que confundía
     // sobre todo cuando el vencimiento era ANTES de la hora del vuelo (vencido_auto del
     // cron, por falta de confirmación) — se leía como si el sistema estuviera adelantado
@@ -9258,7 +9306,7 @@ window.abrirModal=function(key){
     const aprobador=r.aprobado_por||r.instructor||'';
     const esAprobador=!!session?.nombre&&session.nombre===aprobador;
     const fueAprobado=!!aprobador;   // un vencido que SI tuvo aprobador (no el del cron/pendiente)
-    const aplica=(r.estado==='aprobado'||r.estado==='vencido')&&turnoYaPaso(r)&&fueAprobado&&(esAprobador||esAdminGlobal);
+    const aplica=(r.estado==='aprobado'||esVencidoOVolado(r))&&turnoYaPaso(r)&&fueAprobado&&(esAprobador||esAdminGlobal);
     if(!aplica){ row.style.display='none'; btn.onclick=null; return; }
     ta.value=r.obs_post||''; msg.textContent=''; row.style.display='flex';
     btn.onclick=async()=>{
@@ -9318,6 +9366,13 @@ document.addEventListener('click',e=>{if(e.target.id==='modal-turno')cerrarModal
 
 // ── VENCIMIENTO AUTOMÁTICO ─────────────────────────────────────
 // Un turno vence cuando la hora del turno ya pasó (estado pendiente o aprobado).
+// v8.39: pedido de Daniel — si al momento de vencer el turno YA tiene datos de vuelo
+// cargados (caso: instructor cargó tiempo/aterrizajes a mano en turnos.html sobre un
+// turno todavía 'aprobado', antes de que pase la hora nominal — o cualquier otra
+// escritura que haya dejado datos sin pasar por escribirPendiente de vuelo.html/
+// vuelo-piloto.html, que ya escriben 'volado' directo), va derecho a 'volado' en vez
+// de pasar por 'vencido' primero. Un pendiente que expira SIEMPRE va a 'vencido' (nunca
+// puede tener datos — no está aprobado, nadie carga datos sobre un turno sin aprobar).
 async function vencerTurnosPendientes(data){
   if(!data)return;
   const ahora=Date.now()+_serverOffsetMs;
@@ -9329,7 +9384,10 @@ async function vencerTurnosPendientes(data){
     const[y,m,d]=r.fecha.split('-').map(Number);
     const[hh,mm]=(r.hora||'00:00').split(':').map(Number);
     const fechaHoraTurno=new Date(y,m-1,d,hh,mm,0).getTime();
-    if(fechaHoraTurno<ahora) promesas.push(fbUpdate('reservas/'+k,{estado:'vencido'}));
+    if(fechaHoraTurno<ahora){
+      const nuevoEstado=(r.estado==='aprobado'&&datosVueloDe(r).tieneVuelo)?'volado':'vencido';
+      promesas.push(fbUpdate('reservas/'+k,{estado:nuevoEstado}));
+    }
   }
   if(promesas.length)await Promise.all(promesas);
 }
@@ -9513,7 +9571,7 @@ window.addEventListener('resize',segSwitchUpdatePill);
 function segAprobadorDe(r){
   if(r.aprobado_por) return r.aprobado_por;
   // registro viejo: aprobado (o vencido) por un instructor, sin haber sido cancelado por instructor
-  if((r.estado==='aprobado'||r.estado==='vencido') && r.instructor && !r.cancelado_por) return r.instructor;
+  if((r.estado==='aprobado'||esVencidoOVolado(r)) && r.instructor && !r.cancelado_por) return r.instructor;
   return null;
 }
 // Devuelve el nombre de quien CANCELÓ el turno (solo cancelaciones de instructor, no del usuario).
@@ -9542,6 +9600,7 @@ function segClasificar(r){
   const hoyStr=fmtDate(ahoraServidor());
   const esPasado=r.fecha<hoyStr;
   if(r.cargado_por && r.estado==='cancelado') return 'cancelado_instructor';
+  if(r.estado==='volado') return 'volado'; // v8.39: estado real, no hace falta inferirlo por datos
   if(r.estado==='aprobado' && esPasado) return segEsVolado(r)?'volado':'no_realizado';
   if(r.estado==='aprobado' && !esPasado) return 'aprobado_futuro';
   if(r.estado==='cancelado') return r.cancelado_rol==='instructor'?'cancelado_instructor':'cancelado_alumno';
@@ -10538,9 +10597,9 @@ window.guardarVueloHistorico = async function() {
   }
   // v7.49 — mismo criterio que guardarTurnoManual(): si "Consume cupo semanal" está
   // tildado y el vuelo es de un ALUMNO (no piloto), bloquea si ya se alcanzó el límite
-  // de esa semana. Un histórico se guarda 'vencido' CON aprobado_por seteado, así que
-  // turnosRestantesSemana() ya lo cuenta como cupo usado una vez guardado — sin este
-  // chequeo previo se podría cargar de más sin aviso.
+  // de esa semana. Un histórico se guarda 'volado' (v8.39) CON aprobado_por seteado, así
+  // que turnosRestantesSemana() ya lo cuenta como cupo usado una vez guardado (vía
+  // esVencidoOVolado) — sin este chequeo previo se podría cargar de más sin aviso.
   const consumeCupoHist=document.getElementById('ct-consume-cupo').checked;
   if(consumeCupoHist&&alumno.rol!=='piloto'){
     const{usados,limite,semLunes,semDomingo}=turnosRestantesSemana(fecha,snapH.val(),alumno.email);
@@ -10563,7 +10622,7 @@ window.guardarVueloHistorico = async function() {
     email:     alumno.email || '',
     fecha, hora, avion,
     tipo_vuelo: tipoV,
-    estado:    'vencido',      // clasificado como vuelo realizado
+    estado:    'volado',       // v8.39: siempre tiene tiempo cargado (obligatorio en este form) — va directo a 'volado', no pasa por 'vencido'
     // v7.92 FIX (reportado por Daniel): antes `aprobado_por: instSel || (session.nombre...)`
     // caía en el instructor LOGUEADO cuando se elegía "— Sin instructor (particular) —"
     // (instSel==='') — el vuelo quedaba atribuido a quien lo CARGÓ, no a quien lo VOLÓ.
@@ -11080,7 +11139,9 @@ function calcAlumnoStats(lista){
     const st=map[key];
     st.pedidos++;
     if(r.rol==='piloto') st.rol='piloto'; // si aparece como piloto en cualquier reserva, se muestra como piloto
-    if(r.estado==='vencido'){
+    if(r.estado==='volado'){
+      st.volo++; // v8.39: 'volado' siempre tiene datos de vuelo, cuenta directo
+    }else if(r.estado==='vencido'){
       const autoAprobPiloto=tipoVueloDe(r)==='particular';
       if(r.aprobado_por||r.instructor||autoAprobPiloto) st.volo++; else st.vencioSinAprobar++;
     }else if(r.estado==='cancelado'){

@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.55 · 2026-09-02
+  Pedido de Daniel: nuevo estado real 'volado' (ver turnos.html v8.39 para el diseño
+  completo). Los 3 puntos de escritura de esta app (turno in-situ nuevo, cierre de turno
+  existente en escribirPendiente(), y el atajo abrirCargaDatosVuelo() del Libro) ahora
+  escriben estado:'volado' en vez de dejar 'aprobado' o no tocar el campo — en los tres
+  casos la escritura SIEMPRE viene con datos de vuelo. cargarLibro() no necesitó cambios:
+  ya incluía por presencia de datos (piloto_tiempo_vuelo/obs_privada_tiempo_vuelo), que
+  un 'volado' siempre tiene.
+
   v4.54 · 2026-09-01
   Pedido de Daniel: al grabar tiempo/aterrizajes desde esta app (cierre normal
   del vuelo O botón "✎ Cargar tiempo/aterrizajes" del Libro), la reserva
@@ -1654,7 +1663,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.54';
+const APP_VERSION = '4.55';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3034,6 +3043,7 @@ async function escribirPendiente(item){
       // v4.0: turno ya vinculado al loguearse (buscarTurnoPropioParaAhora,
       // match directo o confirmado) — se usa directo.
       key=item.turnoKey;
+      datosVuelo.estado='volado'; // v4.55: se están grabando datos de vuelo — pasa a 'volado' sea cual sea su estado previo ('aprobado' o 'vencido')
       await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
     } else {
       // Sin vínculo (no había ningún turno de hoy sin volar, o el piloto
@@ -3047,7 +3057,7 @@ async function escribirPendiente(item){
         hora:        horaIni,
         avion:       item.avion,
         tipo_vuelo:  'particular',
-        estado:      'aprobado',
+        estado:      'volado', // v4.55: siempre se crea CON datos (...datosVuelo incluye horas/aterr) — directo a 'volado', ya no 'aprobado'
         rol:         'piloto',
         ts:          new Date().toISOString(),
         ...datosVuelo
@@ -3383,9 +3393,12 @@ window.abrirCargaDatosVuelo=async function(info){
       piloto_aterrizajes:resultado.aterrizajes,
       piloto_autor:session.nombre,
       piloto_ts:new Date().toISOString(),
-      cargado_desde_app:true // v4.54 — este flujo también es "desde la app" (el piloto
+      cargado_desde_app:true, // v4.54 — este flujo también es "desde la app" (el piloto
                               // lo carga dentro de vuelo-piloto.html), aunque sea manual
                               // respecto del cierre normal del vuelo
+      estado:'volado' // v4.55: este atajo solo se ofrece sobre turnos 'vencido' sin datos
+                       // (ver filtrarVuelosPendientesPiloto/cargarLibro) — al guardar pasa
+                       // directo a 'volado'
     }));
     toast('Datos cargados ✓');
     cargarLibro();
