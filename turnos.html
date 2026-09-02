@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.41
+  CAMBIOS : Autorrevisión (/revisar) de los cambios de v8.39/v8.40. Dos bugs reales
+            corregidos: (1) guardarObsPrivada() no revertía 'volado'→'vencido'/'aprobado'
+            cuando se borraban tiempo/aterrizajes para corregir un error — quedaba
+            'volado' sin datos para siempre, badge diciendo "volado" con tooltip
+            diciendo "sin datos" (claseVencido() sí recalcula por datos reales). Ahora
+            revierte a 'vencido' o 'aprobado' según si el horario ya pasó. (2)
+            vencerTurnosPendientes() solo chequeaba datos para la rama 'aprobado' — la
+            rama 'pendiente' iba directo a 'vencido' sin mirar si excepcionalmente ya
+            tenía datos cargados. Simétrico ahora.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.40
   CAMBIOS : Pedido de Daniel — regla de negocio endurecida: "cualquier turno de
             instrucción solo puede pedirse en un horario con avión+instructor
@@ -3965,7 +3976,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.40</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.41</div>
   </div>
 
 </div>
@@ -8947,8 +8958,22 @@ window.guardarObsPrivada=async function(){
       obs_privada_autor:autorFresh||yo,
       obs_privada_ts:serverTimestamp()
     };
+    // v8.41 (revisión post-v8.39): si con este guardado el turno queda CON datos y
+    // estaba 'aprobado'/'vencido', pasa a 'volado' (igual que antes). Pero si queda SIN
+    // datos (el instructor borró tiempo/aterrizajes para corregir un error) y el estado
+    // actual era 'volado', hay que revertir — si no, quedaba 'volado' para siempre sin
+    // datos, contradiciendo a claseVencido() (que sí recalcula por presencia real de
+    // datos y mostraría "sin datos" con el badge diciendo "volado"). Se revierte a
+    // 'vencido' o 'aprobado' según si el horario del turno ya pasó.
     const tendraVuelo=tiempoVuelo!=null||aterrizajes!=null||fresh?.piloto_tiempo_vuelo!=null||fresh?.piloto_aterrizajes!=null;
-    if(tendraVuelo&&(fresh?.estado==='aprobado'||fresh?.estado==='vencido')) upd.estado='volado';
+    if(tendraVuelo){
+      if(fresh?.estado==='aprobado'||fresh?.estado==='vencido') upd.estado='volado';
+    }else if(fresh?.estado==='volado'){
+      const[fy,fm,fd]=(fresh.fecha||'').split('-').map(Number);
+      const[fhh,fmm]=(fresh.hora||'00:00').split(':').map(Number);
+      const yaPaso=fresh.fecha&&(new Date(fy,fm-1,fd,fhh,fmm,0).getTime()<ahoraServidor().getTime());
+      upd.estado=yaPaso?'vencido':'aprobado';
+    }
     await fbUpdate('reservas/'+_logAlumnoCtx.reservaKey,upd);
     msg.style.color='var(--green)'; msg.textContent='✓ Guardado';
     // _reservasCache se actualiza solo vía el listener onValue de /reservas; refrescamos
@@ -9411,7 +9436,10 @@ async function vencerTurnosPendientes(data){
     const[hh,mm]=(r.hora||'00:00').split(':').map(Number);
     const fechaHoraTurno=new Date(y,m-1,d,hh,mm,0).getTime();
     if(fechaHoraTurno<ahora){
-      const nuevoEstado=(r.estado==='aprobado'&&datosVueloDe(r).tieneVuelo)?'volado':'vencido';
+      // v8.41 (revisión post-v8.39): antes solo chequeaba datosVueloDe() para el caso
+      // 'aprobado' — la rama 'pendiente' iba directo a 'vencido' sin mirar si por algún
+      // flujo excepcional ya tenía datos cargados. Simétrico ahora para los dos casos.
+      const nuevoEstado=datosVueloDe(r).tieneVuelo?'volado':'vencido';
       promesas.push(fbUpdate('reservas/'+k,{estado:nuevoEstado}));
     }
   }
