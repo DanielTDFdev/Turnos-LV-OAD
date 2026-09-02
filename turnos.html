@@ -1,5 +1,24 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.40
+  CAMBIOS : Pedido de Daniel — regla de negocio endurecida: "cualquier turno de
+            instrucción solo puede pedirse en un horario con avión+instructor
+            disponible" pasa de ser un AVISO (dejaba pedir igual, quedaba pendiente sin
+            que nadie pudiera aprobarlo — caso real reportado: piloto pidió instrucción
+            un día sin ningún instructor, nadie se lo aprobó nunca) a un BLOQUEO DURO.
+            Eliminado el bypass 'pilotoLibre' de renderSlots() — el filtro de horarios
+            disponibles (avail) ahora es el MISMO para alumno y piloto (el alumno ya
+            tenía este bloqueo desde siempre, no se tocó). guardarTurno() ahora aborta
+            con error explícito si al confirmar ya no hay instructor disponible para
+            ese día/horario (chequeo de defensa en profundidad, misma ventana de
+            carrera que ya cubría el chequeo de anticipación). Se eliminó el campo
+            sinInstructor del turno nuevo (ya no puede darse el caso) y su referencia
+            en el log de auditoría — el badge/tooltip "SIN INSTRUCTOR" en calendario
+            sigue andando para registros VIEJOS que ya tenían ese flag (no se tocaron,
+            hay que resolverlos a mano si quedó alguno pendiente de antes de este
+            cambio). Legend y textos de nota de confirmación simplificados (ya no existe
+            el caso "se puede pedir igual, queda pendiente").
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.39
   CAMBIOS : Pedido de Daniel — nuevo estado real 'volado' (turno vencido/aprobado con
             tiempo y/o aterrizajes ya cargados). Se comporta igual que 'vencido' en TODA
@@ -3946,7 +3965,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.39</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.40</div>
   </div>
 
 </div>
@@ -7073,15 +7092,18 @@ async function renderSlots(ds,data){
   const slotsConInstructor=requiereInstructor?await slotsConInstructorParaDia(ds,data):new Set();
   _slotsConInstructorDia=slotsConInstructor;
   _slotsConInstructorFecha=ds;
-  // PILOTO en modo instrucción (LV-OAD, o cualquier avión con 'instruccion' elegida en el
-  // dropdown): puede reservar aunque no haya instructor con horario cargado ese día (queda
-  // pendiente / SIN INSTRUCTOR). ALUMNO en LV-OAD: solo ve slots con instructor disponible
-  // (sin cambios, nunca tiene este bypass).
-  const pilotoLibre=requiereInstructor&&esPiloto;
+  // v8.40: pedido de Daniel — regla endurecida (bloqueo duro, no solo aviso): ya no se
+  // deja pedir NINGÚN turno de instrucción sin instructor disponible ese día/horario, ni
+  // para alumno (que ya tenía este bloqueo) ni para piloto (que antes SÍ podía forzarlo
+  // vía pilotoLibre y quedaba pendiente sin que nadie pudiera aprobarlo nunca — caso real
+  // reportado por Daniel: un piloto pidió instrucción un día sin ningún instructor
+  // disponible, se lo dejó pedir igual, y después se quejó de que nadie se lo aprobaba).
+  // pilotoLibre queda eliminado — el filtro de abajo (avail) ahora es el mismo para
+  // alumno y piloto.
   const horasDia=horasParaDia(ds,selectedAvion);
-  const avail=horasDia.filter(h=>okAnticipacion(ds,h)&&(!requiereInstructor||pilotoLibre||slotsConInstructor.has(h)));
+  const avail=horasDia.filter(h=>okAnticipacion(ds,h)&&(!requiereInstructor||slotsConInstructor.has(h)));
   if(!avail.length){
-    const sinDisp=requiereInstructor&&!pilotoLibre&&slotsConInstructor.size===0;
+    const sinDisp=requiereInstructor&&slotsConInstructor.size===0;
     grid.innerHTML='<div class="empty">//'+(sinDisp?' SIN INSTRUCTOR DISPONIBLE PARA ESTE DÍA':' SIN DISPONIBILIDAD (se requiere '+(requiereAnticipacionLarga()?'12 hs':'1 hora')+' de anticipación)')+'</div>';
     document.getElementById('slots-hint').textContent='';
     document.getElementById('slots-legend').innerHTML='';
@@ -7094,16 +7116,11 @@ async function renderSlots(ds,data){
   // siendo siempre instrucción de 1 slot (esOAD cae al flujo simple de selectSlot()).
   const modoMultiSlot=esPiloto&&!esOAD;
   document.getElementById('slots-hint').textContent=modoMultiSlot?' - Seleccioná los slots requeridos.':' - Seleccioná un horario.';
-  // Leyenda de colores (pedido de Daniel — "no estoy entendiendo la codificación de
-  // colores"): antes un slot elegido sin instructor cambiaba de ámbar a rosa (ver CSS
-  // .slot.sin-instructor.selected, ahora unificado a ámbar+⚠), lo que hacía parecer que
-  // había dos criterios de selección distintos. Acá se explicita en texto qué significa
-  // cada color, solo con las categorías que realmente pueden aparecer en esta grilla.
+  // Leyenda de colores. v8.40: se elimina la entrada "sin instructor — se puede pedir
+  // igual" — ya no existe ese caso, avail() filtra esos horarios de raíz (igual que
+  // siempre lo hizo para alumno).
   const legendEl=document.getElementById('slots-legend');
   const legend=['<span><span style="color:var(--amber)">■</span> Seleccionado</span>'];
-  if(requiereInstructor){
-    legend.push('<span><span style="color:var(--pink)">┄</span> Sin instructor con horario cargado — se puede pedir igual, queda pendiente de aprobación (⚠ si además lo elegiste)</span>');
-  }
   legend.push('<span><span style="color:var(--text3);text-decoration:line-through">■</span> Ocupado</span>');
   legendEl.innerHTML=legend.join('');
   // selectedSlotFin, cuando existe, es EXCLUSIVO (la hora siguiente a la última ocupada
@@ -7115,10 +7132,8 @@ async function renderSlots(ds,data){
     const tk=taken.includes(h);
     const idxH=horasDia.indexOf(h);
     const sl=idxSel>=0&&idxH>=idxSel&&idxH<=idxFinExcl-1;
-    const sinInst=requiereInstructor&&!slotsConInstructor.has(h);
-    const cls='slot'+(tk?' taken':sl?' selected':'')+(sinInst&&!tk?' sin-instructor':'');
-    const tip=(sinInst&&!tk)?' title="Sin instructor con horario cargado este día — podés reservar igual; quedará pendiente de aprobación"':'';
-    return `<div class="${cls}" data-hora="${h}"${tip}>${h}</div>`;
+    const cls='slot'+(tk?' taken':sl?' selected':'');
+    return `<div class="${cls}" data-hora="${h}">${h}</div>`;
   }).join('');
   if(modoMultiSlot){
     _multiHorasDia=horasDia;
@@ -7139,10 +7154,12 @@ function selectSlot(h){
   // v6.94: requiere instructor en LV-OAD (siempre) o en cualquier avión cuando el
   // piloto eligió 'instruccion' — antes era esOAD a secas.
   const requiereInstructor=esOAD||(rol==='piloto'&&selectedTipoVuelo==='instruccion');
-  const sinInst=requiereInstructor&&_slotsConInstructorFecha===selectedDay&&!_slotsConInstructorDia.has(h);
-  document.getElementById('confirm-nota').textContent=sinInst
-    ?'▸ No hay instructor con horario cargado este día. El turno se cargará igual y quedará pendiente de aprobación.'
-    :'▸ Requerirá aprobación del instructor.';
+  // v8.40: ya no existe el caso "sin instructor, se puede pedir igual" — el grid (avail
+  // en renderSlots) ya filtró esos horarios, así que si llegamos acá con requiereInstructor
+  // es porque SÍ hay instructor. Nota simplificada.
+  document.getElementById('confirm-nota').textContent=requiereInstructor
+    ?'▸ Requerirá aprobación del instructor.'
+    :'▸ Se aprobará automáticamente al confirmar.';
   document.getElementById('slot-confirm').style.display='block';
   hideEl('turno-err');hideEl('turno-ok');
 }
@@ -7225,9 +7242,11 @@ function aplicarSeleccionMulti(){
   document.getElementById('confirm-label').textContent=selectedSlotFin
     ?selectedAvion+' — '+selectedDay+' de '+selectedSlot+' a '+selectedSlotFin+' hs ('+count+' slots - '+fmtDuracionSlots(count,selectedAvion)+')'
     :selectedAvion+' — '+selectedDay+' a las '+selectedSlot+' hs (1 slot - '+fmtDuracionSlots(1,selectedAvion)+')';
-  const sinInst=requiereInstructorGlobal()&&_slotsConInstructorFecha===selectedDay&&!_slotsConInstructorDia.has(selectedSlot);
+  // v8.40: ya no existe "sin instructor, se puede pedir igual" — avail() en renderSlots
+  // ya filtró esos horarios de raíz, así que si selectedSlot quedó elegido con
+  // selectedTipoVuelo==='instruccion' es porque hay instructor.
   document.getElementById('confirm-nota').textContent=selectedTipoVuelo==='instruccion'
-    ?(sinInst?'▸ No hay instructor con horario cargado este día. El turno se cargará igual y quedará pendiente de aprobación.':'▸ Requerirá aprobación del instructor.')
+    ?'▸ Requerirá aprobación del instructor.'
     :'▸ Se aprobará automáticamente al confirmar.';
   document.getElementById('slot-confirm').style.display='block';
   hideEl('turno-err');hideEl('turno-ok');
@@ -7293,13 +7312,21 @@ window._guardarTurnoConfirmado=async function(){
     return;
   }
   const estado=requiereInstructor?'pendiente':'aprobado';
-  // Marca turnos sin instructor con horario cargado ese día — antes solo aplicaba a
-  // piloto+LV-OAD, ahora a cualquier piloto en modo instrucción (recalcula fresco: el
-  // instructor pudo cargar disponibilidad entremedio).
-  let sinInstructor=false;
-  if(esPiloto&&requiereInstructor){
+  // v8.40: pedido de Daniel — regla endurecida: bloqueo duro (ya no un aviso) si no hay
+  // instructor disponible ese día/horario para un turno de instrucción, sea alumno o
+  // piloto. Antes el piloto tenía un bypass (pilotoLibre en renderSlots, ya eliminado)
+  // que dejaba pedir el turno igual marcado sinInstructor:true, y quedaba pendiente sin
+  // que nadie pudiera aprobarlo nunca — caso real: un piloto pidió instrucción un día sin
+  // ningún instructor disponible, se lo dejó pedir igual, y después se quejó de que nadie
+  // se lo aprobaba. renderSlots() ya filtra estos horarios de la grilla (avail), este
+  // chequeo es la defensa en profundidad de siempre para la ventana entre que se pintó
+  // la grilla y se confirma el turno (mismo patrón que okAnticipacion más arriba).
+  if(requiereInstructor){
     const slotsInst=await slotsConInstructorParaDia(selectedDay);
-    sinInstructor=!slotsInst.has(selectedSlot);
+    if(!slotsInst.has(selectedSlot)){
+      showErr('turno-err','⚠ No hay instructor con horario cargado para este día/horario — no se puede pedir un turno de instrucción sin instructor disponible. Probá otro horario o esperá a que un instructor cargue disponibilidad.');
+      return;
+    }
   }
   const esRango=esPiloto&&!requiereInstructor&&selectedSlotFin&&selectedSlotFin!==selectedSlot;
   const nuevaKey=push(ref(db,'reservas')).key; // genera un ID único sin escribir (no hace round-trip al server)
@@ -7314,7 +7341,6 @@ window._guardarTurnoConfirmado=async function(){
     obs,
     estado,
     rol:session.rol||'alumno',
-    ...(sinInstructor?{sinInstructor:true}:{}),
     ts:new Date().toISOString()
   };
   // ── Transacción atómica (v6.51) ─────────────────────────────────────────────
@@ -7353,7 +7379,7 @@ window._guardarTurnoConfirmado=async function(){
   }
   const labelAudit=(esRango?selectedSlot+' a '+selectedSlotFin+' hs':selectedSlot+' hs');
   await registrarAuditoria('alta_turno',session.rol||'alumno','exito',
-    session.nombre+' — '+selectedAvion+' — '+selectedDay+' '+labelAudit+(sinInstructor?' — SIN INSTRUCTOR':''));
+    session.nombre+' — '+selectedAvion+' — '+selectedDay+' '+labelAudit);
   selectedSlot=null;
   document.getElementById('slot-confirm').style.display='none';
   clearVal('al-obs');
