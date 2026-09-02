@@ -448,6 +448,24 @@ Registro de eventos (`registrarAuditoria`): login (éxito/fallo/bloqueado), regi
 - **API de feriados argentinos:** `https://api.argentinadatos.com/v1/feriados/{año}` (`getFeriados`, con caché). Marca feriados en grillas y calendarios.
 - (La meteorología METAR/TAF de SAWE vive en el archivo aparte `fpl.html`, no en turnos.html.)
 
+### Servicios externos y facturación (2026-09-02)
+
+Todos los servicios de los que depende el sistema para funcionar, y cuáles tienen un componente pago que Daniel debe mantener al día. **Los estados de "gratis"/"pago" de abajo son los planes con los que el sistema fue armado, no una confirmación de facturación actual** — conviene que Daniel los revise en cada panel una vez y los corrija acá si cambiaron.
+
+| Servicio | Para qué se usa | ¿Tiene costo? |
+|---|---|---|
+| **Dominio `aeroclubriogrande.com.ar`** | Dirección del sitio | **Sí, pago recurrente** (renovación anual de NIC Argentina) — sin esto el sitio deja de resolver aunque todo lo demás siga funcionando. |
+| **Firebase Realtime Database** (`turnos-lv-oad`) | Toda la base de datos del sistema (reservas, alumnos, instructores, auditoría, GPS, FPL, etc.) | Nace en plan gratuito (Spark) de Google, con límites de uso mensual (conexiones simultáneas, ancho de banda, almacenamiento). Si el club crece y se supera el límite gratuito, Google exige pasar a plan pago (Blaze) para seguir funcionando — **a verificar si ya está en Blaze o sigue en Spark**, y si hay tarjeta cargada para el caso de que Google lo pase automáticamente. |
+| **Cloudflare** (CDN + DNS) | Sirve el sitio, cachea assets, la Cache Rule de `.html` sin caché | Nace en plan Free — normalmente alcanza para un sitio de este tamaño, sin costo. |
+| **GitHub Pages** (hosting del sitio) | Aloja los archivos `.html` | Gratis mientras el repo sea público (o el plan de GitHub lo permita). |
+| **GitHub Actions** (crons `vencimiento_turnos.py` y `recordatorio_instructor.py`) | Corridas periódicas automáticas | Gratis hasta cierta cantidad de minutos/mes; si se supera, GitHub cobra por minuto excedente — **a verificar consumo actual en Settings → Billing del repo/cuenta**. |
+| **EmailJS — Cuenta A** (`aeroclubgra@gmail.com`, browser) | Mails desde turnos.html: cancelaciones, resets, aprobaciones, liberaciones | Tiene un límite de envíos gratis por mes; superado eso, EmailJS cobra por plan. **A verificar el plan actual y si se está acercando al límite.** |
+| **EmailJS — Cuenta B** (`instructoresacrg@gmail.com`, server-side) | Recordatorio diario a instructores + aviso de vencimiento (los dos crons) | Mismo esquema que Cuenta A — cuenta separada, límite y plan a verificar por separado. |
+| **CheckWX API** | METAR/TAF (fpl.html, y METAR inicio/fin en vuelo.html/vuelo-piloto.html) | Tiene un plan gratuito con límite de requests/mes; si el club lo excede, exige upgrade pago — **a verificar plan y consumo actual en checkwxapi.com**. |
+| **API de feriados argentinos** (`api.argentinadatos.com`) | Feriados en calendarios | Pública y gratuita, sin key. |
+
+**Recomendación:** revisar al menos una vez cada tanto los paneles de Firebase (Billing), EmailJS (ambas cuentas, Usage) y CheckWX (Usage) para confirmar que ninguno esté por tocar un límite o requiera acción de pago — ninguno de estos avisa a Daniel proactivamente si el sistema no está en el plan pago correspondiente.
+
 ## 15. Helpers y convenciones de código
 
 - **Firebase:** `fbGet`, `fbSet`, `fbUpdate` (merge), `fbPush`, `fbRemove`; `ek(email)` convierte email a clave; `rArr(data)` convierte objeto Firebase a array con `key`.
