@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v1.1 · agregado estado 'volado' al filtro y al badge (mismo estado nuevo que turnos.html v8.39) -->
+<!-- v1.2 · agregado estado 'volado' al filtro y al badge (turnos.html v8.39) + texto de versión visible en pantalla -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -33,11 +33,12 @@
   .b-volado { background:#2a1a3a; color:#c4aef8; }
   .b-cancelado { background:#2a2a2a; color:#999; }
   .count { color:#6b7680; font-size:12px; }
+  .version { color:#4a555e; font-size:11px; font-family:monospace; }
 </style>
 </head>
 <body>
 
-<h1>Browser de Reservas — /reservas</h1>
+<h1>Browser de Reservas — /reservas <span class="version">v1.2</span></h1>
 <div class="toolbar">
   <input id="q" placeholder="Buscar (nombre, fecha, aeronave, key...)" style="width:280px">
   <input id="fFecha" type="date" title="Filtrar por fecha exacta">
