@@ -1,5 +1,22 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.42
+  CAMBIOS : Pedido de Daniel — piloto pidiendo instrucción en LV-ART/LV-MPH ahora
+            también puede elegir varios slots consecutivos (antes esRango se forzaba
+            false si requiereInstructor era true, y el turno se guardaba truncado a un
+            solo slot, descartando en silencio el resto de lo elegido en la grilla).
+            LV-OAD sigue siendo siempre un solo slot (no cambió). De paso, al construir
+            el chequeo de instructor sobre el rango completo, encontré y corregí un bug
+            pre-existente más serio en la transacción atómica de guardarTurno(): el
+            chequeo de conflicto de horario SOLO validaba la hora de inicio del rango
+            pedido (taken.includes(selectedSlot)), nunca las horas intermedias — si
+            alguien más ya tenía ocupado un tramo del medio (ej. pido 10:00-11:00 y
+            10:30 ya estaba tomado por otro turno, pero 10:00 seguía libre), el chequeo
+            viejo no lo detectaba y se colaba un doble booking real del mismo avión.
+            Afectaba a CUALQUIER reserva multi-slot (ya existía para piloto+particular
+            antes de este cambio, no es nuevo de hoy) — ahora valida horasRango
+            completo, no solo selectedSlot.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.41
   CAMBIOS : Autorrevisión (/revisar) de los cambios de v8.39/v8.40. Dos bugs reales
             corregidos: (1) guardarObsPrivada() no revertía 'volado'→'vencido'/'aprobado'
@@ -3976,7 +3993,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.41</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.42</div>
   </div>
 
 </div>
@@ -7323,6 +7340,16 @@ window._guardarTurnoConfirmado=async function(){
     return;
   }
   const estado=requiereInstructor?'pendiente':'aprobado';
+  const esRango=esPiloto&&!esOAD&&selectedSlotFin&&selectedSlotFin!==selectedSlot;
+  // Horas que ocupa el pedido actual (rango completo si esRango, si no solo selectedSlot)
+  // — se usa tanto para el chequeo de instructor de abajo como para el chequeo de
+  // conflicto de slot en la transacción atómica más abajo.
+  const horasRango=(()=>{
+    if(!esRango) return[selectedSlot];
+    const horasDia=horasParaDia(selectedDay,selectedAvion);
+    const idxIni=horasDia.indexOf(selectedSlot),idxFin=horasDia.indexOf(selectedSlotFin);
+    return horasDia.slice(idxIni,idxFin);
+  })();
   // v8.40: pedido de Daniel — regla endurecida: bloqueo duro (ya no un aviso) si no hay
   // instructor disponible ese día/horario para un turno de instrucción, sea alumno o
   // piloto. Antes el piloto tenía un bypass (pilotoLibre en renderSlots, ya eliminado)
@@ -7332,14 +7359,18 @@ window._guardarTurnoConfirmado=async function(){
   // se lo aprobaba. renderSlots() ya filtra estos horarios de la grilla (avail), este
   // chequeo es la defensa en profundidad de siempre para la ventana entre que se pintó
   // la grilla y se confirma el turno (mismo patrón que okAnticipacion más arriba).
+  // v8.42: con multi-slot habilitado para instrucción, el chequeo cubre TODO el rango
+  // elegido (horasRango), no solo la hora de inicio — aunque en la práctica
+  // clickSlotMulti() ya corta la extensión del rango en cualquier hora sin instructor
+  // (_multiDisponibles sale de avail, que ya los excluye), así que esto es defensa en
+  // profundidad, no la única barrera.
   if(requiereInstructor){
     const slotsInst=await slotsConInstructorParaDia(selectedDay);
-    if(!slotsInst.has(selectedSlot)){
-      showErr('turno-err','⚠ No hay instructor con horario cargado para este día/horario — no se puede pedir un turno de instrucción sin instructor disponible. Probá otro horario o esperá a que un instructor cargue disponibilidad.');
+    if(horasRango.some(h=>!slotsInst.has(h))){
+      showErr('turno-err','⚠ No hay instructor con horario cargado para todo ese rango — no se puede pedir un turno de instrucción sin instructor disponible en cada tramo. Probá otro horario o un rango más corto.');
       return;
     }
   }
-  const esRango=esPiloto&&!requiereInstructor&&selectedSlotFin&&selectedSlotFin!==selectedSlot;
   const nuevaKey=push(ref(db,'reservas')).key; // genera un ID único sin escribir (no hace round-trip al server)
   const nuevoTurno={
     nombre:session.nombre,
@@ -7369,7 +7400,15 @@ window._guardarTurnoConfirmado=async function(){
     motivoAborto=null;
     const actual=data||{};
     const taken=slotsTomados(selectedDay,selectedAvion,actual);
-    if(taken.includes(selectedSlot)){motivoAborto='slot';return;} // undefined = aborta la transacción
+    // v8.42 (bug pre-existente encontrado al habilitar multi-slot para instrucción):
+    // esto antes chequeaba SOLO taken.includes(selectedSlot) — la hora de INICIO del
+    // rango — sin mirar el resto de horasRango. slotsTomados() sí devuelve todas las
+    // horas ocupadas expandiendo rangos ajenos, pero si el pedido nuevo es un rango
+    // (ej. 10:00 a 11:00) y solo 10:30 estaba tomado por otro turno, el chequeo viejo
+    // no lo detectaba porque 10:00 (el único que miraba) seguía libre — se colaba un
+    // doble booking real de avión en el tramo del medio. Ahora valida TODAS las horas
+    // que ocupa el pedido.
+    if(horasRango.some(h=>taken.includes(h))){motivoAborto='slot';return;} // undefined = aborta la transacción
     if(!esPiloto&&rol==='alumno'){
       const{usados,limite}=turnosRestantesSemana(selectedDay,actual);
       if(usados>=limite){motivoAborto='cuota';return;}
