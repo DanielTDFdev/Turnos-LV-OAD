@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.75 · 2026-09-03
+  Fix del marcador de aterrizaje final (v5.74): faltaba el chequeo de mínimo local en
+  _detectarAterrizajeFinal(). Ver turnos.html v8.48 para el detalle completo del bug y
+  el fix. Mismo fix en vuelo-piloto.html v4.60.
+
   v5.74 · 2026-09-03
   Análisis del vuelo: nuevo marcador de "aterrizaje final" en el gráfico de altitud.
   Mismo cambio que turnos.html v8.47 (ver ese archivo para el detalle completo) —
@@ -1858,7 +1863,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.74'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.75'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3977,6 +3982,7 @@ function _detectarToques(segmentos, altMinTraza){
 // ATERRIZAJE_VENTANA_SEG siguientes (en vez de exigirla, que es lo que define
 // un toque y despegue). Busca solo en el último tramo 'real' y devuelve el
 // primer punto que cumple. Ver turnos.html v8.47 para el historial completo.
+// v5.75 FIX: faltaba el chequeo de mínimo local (ver turnos.html v8.48).
 const ATERRIZAJE_VENTANA_SEG = 40;
 function _detectarAterrizajeFinal(segmentos, altMinTraza){
   const reales = segmentos.filter(s=>s.tipo==='real');
@@ -3990,6 +3996,7 @@ function _detectarAterrizajeFinal(segmentos, altMinTraza){
     return (a0+a+a2)/3;
   });
   for(let i=1;i<suaves.length-1;i++){
+    if(suaves[i]>suaves[i-1] || suaves[i]>suaves[i+1]) continue; // v8.48 FIX: faltaba el chequeo de mínimo local — sin esto disparaba apenas la traza entraba en la banda de altura baja, aunque siguiera bajando (ver nota arriba)
     if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
     let descensoAntes=false;
     for(let j=i-1;j>=0;j--){

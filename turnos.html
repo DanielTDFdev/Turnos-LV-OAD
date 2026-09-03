@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.48
+  CAMBIOS : Fix reportado por Daniel con captura: el triángulo de "aterrizaje final"
+            (v8.47) quedaba dibujado bastante más arriba que el toque real y ni cerca del
+            aterrizaje verdadero. _detectarAterrizajeFinal() no tenía el chequeo de mínimo
+            local que sí tiene _detectarToques — sin eso, "sin ascenso en los próximos
+            40s" se cumplía en cualquier punto de un descenso lento (mientras siga
+            bajando, nunca "sube"), así que disparaba apenas la traza entraba en la banda
+            de altura baja, mucho antes de tocar tierra, y como la función corta en el
+            primer match, nunca llegaba a evaluar el aterrizaje real más adelante. Ahora
+            solo evalúa mínimos locales (igual que _detectarToques): un touch-and-go real
+            sí sube después de su mínimo (se descarta bien) y el aterrizaje final es el
+            primer mínimo local sin subida posterior. Mismo fix en vuelo.html v5.75 /
+            vuelo-piloto.html v4.60.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.47
   CAMBIOS : Análisis del vuelo (mapa GPS → 📊 Análisis): nuevo marcador de "aterrizaje
             final" en el gráfico de altitud, pedido de Daniel. _detectarToques() ya
@@ -4055,7 +4069,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.47</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.48</div>
   </div>
 
 </div>
@@ -12562,6 +12576,20 @@ function _detectarToques(segmentos, altMinTraza){
 // 'real' de la traza (ahí está el aterrizaje, si lo hay) y se devuelve el
 // PRIMER punto que cumple ambas condiciones, para marcar el momento del toque
 // final y no varios puntos de la rodada/detención posterior.
+// v8.48 FIX (reportado por Daniel con captura: triángulo bastante más arriba
+// que el punto real de toque, y ni cerca del aterrizaje real): faltaba el
+// chequeo de mínimo local (suaves[i]<=vecinos) que sí tiene _detectarToques.
+// Sin eso, la condición "sin ascenso en los próximos 40s" podía cumplirse en
+// CUALQUIER punto de un descenso lento — mientras siga bajando (o se mantenga
+// parejo) sin llegar a SUBIR, "no hay ascenso" es válido aunque el avión
+// todavía no haya tocado tierra. Eso disparaba el marcador apenas la traza
+// entraba en la banda de altura baja (TOQUE_ALTURA_MAX_FT), mucho antes del
+// toque real, y además cortaba la búsqueda ahí (return en el primer i que
+// matcheaba) sin llegar nunca a evaluar el aterrizaje verdadero más adelante.
+// Con el chequeo de mínimo local, solo se evalúan los puntos que son
+// realmente el fondo de un descenso — un touch-and-go real sí tiene subida
+// después de su mínimo (se descarta, correcto) y el aterrizaje final es el
+// primer mínimo local sin subida posterior.
 const ATERRIZAJE_VENTANA_SEG = 40;
 function _detectarAterrizajeFinal(segmentos, altMinTraza){
   const reales = segmentos.filter(s=>s.tipo==='real');
@@ -12575,6 +12603,7 @@ function _detectarAterrizajeFinal(segmentos, altMinTraza){
     return (a0+a+a2)/3;
   });
   for(let i=1;i<suaves.length-1;i++){
+    if(suaves[i]>suaves[i-1] || suaves[i]>suaves[i+1]) continue; // v8.48 FIX: faltaba el chequeo de mínimo local — sin esto disparaba apenas la traza entraba en la banda de altura baja, aunque siguiera bajando (ver nota arriba)
     if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
     let descensoAntes=false;
     for(let j=i-1;j>=0;j--){
