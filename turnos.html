@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.46
+  CAMBIOS : Auditoría FPL (Configuración → Audit. FPL): mismo paginador de v8.45 aplicado
+            acá. Antes cargarAuditoriaFpl() renderizaba TODAS las filas en una sola tabla
+            sin paginar (podía ser una tabla larguísima). Ahora pagina de a 20 filas
+            (AUDIT_PER_PAGE, mismo valor que la auditoría general) con ventana de 20
+            páginas y botones ‹‹/›› / «/». Estado propio (_auditFplLista, _auditFplPage,
+            auditFplGoPage) separado del de la auditoría general — no comparten paginado.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.45
   CAMBIOS : Auditoría: paginador simplificado. Antes renderAuditoria() dibujaba un botón
             por cada página del total (con miles de registros, cientos de botones sueltos
@@ -4032,7 +4040,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.45</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.46</div>
   </div>
 
 </div>
@@ -10958,16 +10966,36 @@ async function cargarAuditoria(){
   _auditPage=0;filtrarAuditoria();
 }
 
+let _auditFplLista=[];
+let _auditFplPage=0;
+
 async function cargarAuditoriaFpl(){
   if(session?.user!=='admin') return;   // doble candado: solo admin
   const el=document.getElementById('audit-fpl-tabla');
   if(!el) return;
   el.innerHTML='<div class="empty">// Cargando registros...</div>';
   const data=await fbGet('auditoria');
-  const filas=Object.entries(data||{}).map(([k,v])=>({...v,key:k}))
+  _auditFplLista=Object.entries(data||{}).map(([k,v])=>({...v,key:k}))
     .filter(r=>r.rol==='fpl'||String(r.accion||'').indexOf('fpl')===0)
     .sort((a,b)=>String(b.ts||'').localeCompare(String(a.ts||'')));
+  _auditFplPage=0;
+  renderAuditoriaFpl();
+}
+
+window.auditFplGoPage=function(p){
+  _auditFplPage=p;
+  renderAuditoriaFpl();
+};
+
+function renderAuditoriaFpl(){
+  const el=document.getElementById('audit-fpl-tabla');
+  if(!el) return;
+  const filas=_auditFplLista;
   if(!filas.length){el.innerHTML='<div class="empty">// SIN REGISTROS DE FPL</div>';return;}
+  const total=filas.length;
+  const totalPages=Math.ceil(total/AUDIT_PER_PAGE);
+  const page=Math.min(_auditFplPage,totalPages-1);
+  const slice=filas.slice(page*AUDIT_PER_PAGE,(page+1)*AUDIT_PER_PAGE);
   const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const fmtTs=t=>{try{const d=new Date(t);const p=n=>String(n).padStart(2,'0');return p(d.getDate())+'/'+p(d.getMonth()+1)+' '+p(d.getHours())+':'+p(d.getMinutes());}catch(e){return t||'';}};
   const fFecha=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(s||''));return m?m[3]+'/'+m[2]+'/'+m[1]:(s||'');};
@@ -10977,12 +11005,27 @@ async function cargarAuditoriaFpl(){
     '<thead><tr style="border-bottom:1px solid var(--border2)">'+
     ['Registrado','Usuario','Fecha','Origen','Destino','Hora','T. vuelo','Matrícula','Comandante',''].map(th).join('')+
     '</tr></thead><tbody>';
-  filas.forEach(r=>{const f=r.fpl||{};
+  slice.forEach(r=>{const f=r.fpl||{};
     h+='<tr>'+td(fmtTs(r.ts))+td(r.usuario||'—')+td(fFecha(f.fecha))+td(f.origen)+td(f.destino)+
        td(f.hora)+td(f.tiempo_vuelo)+td(f.matricula)+td(f.comandante)+
        '<td style="padding:7px 8px;text-align:center;border-bottom:1px solid var(--border)"><button onclick="borrarAuditoriaFpl(\''+r.key+'\')" title="Borrar esta entrada" style="padding:3px 8px;font-size:12px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);color:var(--red);border-radius:var(--radius);cursor:pointer">✕</button></td>'+
        '</tr>';});
   h+='</tbody></table>';
+  if(totalPages>1){
+    const AUDIT_WIN=20;
+    const winStart=Math.floor(page/AUDIT_WIN)*AUDIT_WIN;
+    const winEnd=Math.min(winStart+AUDIT_WIN,totalPages);
+    h+=`<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:.75rem;flex-wrap:wrap;font-family:var(--font-mono);font-size:12px">
+      <button onclick="auditFplGoPage(0)" ${page===0?'disabled':''} title="Primera página" style="padding:4px 10px;font-size:11px">«</button>
+      <button onclick="auditFplGoPage(${winStart-AUDIT_WIN})" ${winStart===0?'disabled':''} title="20 páginas atrás" style="padding:4px 10px;font-size:11px">‹‹</button>
+      <button onclick="auditFplGoPage(${page-1})" ${page===0?'disabled':''} title="Página anterior" style="padding:4px 10px;font-size:11px">‹</button>
+      ${Array.from({length:winEnd-winStart},(_,i)=>winStart+i).map(i=>`<button onclick="auditFplGoPage(${i})" style="padding:4px 10px;font-size:11px;${i===page?'background:var(--cyan);color:var(--bg);border-color:var(--cyan)':''}">${i+1}</button>`).join('')}
+      <button onclick="auditFplGoPage(${page+1})" ${page===totalPages-1?'disabled':''} title="Página siguiente" style="padding:4px 10px;font-size:11px">›</button>
+      <button onclick="auditFplGoPage(${winEnd})" ${winEnd>=totalPages?'disabled':''} title="20 páginas adelante" style="padding:4px 10px;font-size:11px">››</button>
+      <button onclick="auditFplGoPage(${totalPages-1})" ${page===totalPages-1?'disabled':''} title="Última página" style="padding:4px 10px;font-size:11px">»</button>
+      <span style="color:var(--text3);margin-left:4px">${page*AUDIT_PER_PAGE+1}–${Math.min((page+1)*AUDIT_PER_PAGE,total)} de ${total}</span>
+    </div>`;
+  }
   el.innerHTML=h;
 }
 
@@ -10990,7 +11033,8 @@ window.borrarAuditoriaFpl=async function(key){
   if(session?.user!=='admin')return;
   if(!confirm('¿Borrar esta entrada de auditoría FPL? Es permanente.'))return;
   await fbRemove('auditoria/'+key);
-  cargarAuditoriaFpl();
+  _auditFplLista=_auditFplLista.filter(r=>r.key!==key);
+  renderAuditoriaFpl();
 };
 
 window.filtrarAuditoria=function(){
