@@ -1,5 +1,22 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.44
+  CAMBIOS : Revisión contra las versiones live del repo (todo lo publicado coincidía
+            byte a byte con lo entregado). Tres hallazgos nuevos:
+            (1) RESTORE DE BACKUP SIN VALIDAR: iniciarRestore() aceptaba cualquier JSON
+            válido y confirmarRestore() hacía fbSet() (REEMPLAZA el nodo completo). Un
+            archivo equivocado o un backup truncado podía dejar 'alumnos' en {} y borrar
+            el padrón entero, irreversible. Ahora se exige que el archivo contenga al
+            menos una tabla conocida del esquema, y se avisa explícitamente antes de
+            restaurar una tabla que venga VACÍA en el backup.
+            (2) DOBLE DESCARGA DE /reservas EN CADA EVENTO: el listener onValue hacía
+            siempre un get() completo del nodo después de vencerTurnosPendientes(),
+            aunque no se hubiera vencido nada — y como vencer escribe en /reservas, cada
+            vencimiento re-disparaba el listener sumando otro get() completo. Ahora
+            vencerTurnosPendientes() devuelve cuántos venció y solo se refetchea si
+            efectivamente hubo cambios; si no, se usa el snapshot que ya llegó.
+            (3) Ver vuelo.html v5.72 / vuelo-piloto.html v4.57 (reserva borrada).
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.43
   CAMBIOS : Autorrevisión exhaustiva (/revisar). Corregido: (1) _guardarTurnoConfirmado()
             no limpiaba selectedSlotFin tras guardar con éxito — quedaba el horaFin del
@@ -4006,7 +4023,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.43</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.44</div>
   </div>
 
 </div>
@@ -9483,7 +9500,7 @@ document.addEventListener('click',e=>{if(e.target.id==='modal-turno')cerrarModal
 // de pasar por 'vencido' primero. Un pendiente que expira SIEMPRE va a 'vencido' (nunca
 // puede tener datos — no está aprobado, nadie carga datos sobre un turno sin aprobar).
 async function vencerTurnosPendientes(data){
-  if(!data)return;
+  if(!data)return 0;
   const ahora=Date.now()+_serverOffsetMs;
   const promesas=[];
   for(const[k,r] of Object.entries(data)){
@@ -9502,6 +9519,7 @@ async function vencerTurnosPendientes(data){
     }
   }
   if(promesas.length)await Promise.all(promesas);
+  return promesas.length; // v8.44: el listener lo usa para decidir si hace falta refetch
 }
 
 // ── SUSCRIPCIÓN RESERVAS ───────────────────────────────────────
@@ -9509,8 +9527,15 @@ function suscribirReservas(){
   if(unsubReservas)unsubReservas();
   unsubReservas=onValue(ref(db,'reservas'),async snap=>{
     const data=snap.val();
-    await vencerTurnosPendientes(data);
-    const dataFresh=(await get(child(dbRef(),'reservas'))).val();
+    // v8.44: vencerTurnosPendientes() ahora devuelve cuántos turnos venció. Si no venció
+    // ninguno (el caso normal en la enorme mayoría de los disparos del listener), no hace
+    // falta el get() completo de /reservas de abajo: el snapshot que acaba de llegar YA es
+    // el dato fresco. Antes se re-descargaba el nodo entero en cada actualización — y como
+    // vencer un turno escribe en /reservas, cada vencimiento disparaba de nuevo este mismo
+    // listener, sumando otro get() completo encima. Con /reservas creciendo (350+ registros
+    // y subiendo) eso era el nodo más pesado de la base bajado dos veces por evento.
+    const vencidos=await vencerTurnosPendientes(data);
+    const dataFresh=vencidos?(await get(child(dbRef(),'reservas'))).val():data;
     _reservasCache={};
     if(dataFresh)Object.entries(dataFresh).forEach(([k,v])=>{_reservasCache[k]={...v,key:k};});
     if(session?.tipo==='alumno'){window._misTurnosData=dataFresh;renderMisTurnos(dataFresh);}
@@ -11580,7 +11605,25 @@ window.iniciarRestore=function(input){
   reader.onload=function(e){
     try{
       _restoreData=JSON.parse(e.target.result);
-      const tablas=Object.keys(_restoreData).filter(k=>k!=='_meta');
+      // v8.44: validación de forma antes de dejar restaurar. JSON.parse acepta CUALQUIER
+      // JSON válido — un archivo equivocado (otro export, un JSON de otro sistema, o un
+      // backup truncado) llegaba entero hasta confirmarRestore(), que hace fbSet() y
+      // REEMPLAZA el nodo completo. Restaurar 'alumnos' desde un archivo sin esa clave
+      // dejaba el nodo en {} y borraba el padrón entero, irreversible sin otro backup.
+      // Se exige: objeto plano, y al menos una clave conocida del esquema con contenido.
+      const TABLAS_VALIDAS=['reservas','alumnos','instructores','config','auditoria'];
+      const esObjPlano=_restoreData&&typeof _restoreData==='object'&&!Array.isArray(_restoreData);
+      const tablasReconocidas=esObjPlano?Object.keys(_restoreData).filter(k=>TABLAS_VALIDAS.includes(k)):[];
+      if(!tablasReconocidas.length){
+        _restoreData=null;
+        const st=document.getElementById('backup-status');
+        st.textContent='✗ El archivo no parece un backup de este sistema (no contiene ninguna de: '+TABLAS_VALIDAS.join(', ')+').';
+        st.style.color='var(--red)';
+        document.getElementById('restore-preview').style.display='none';
+        input.value='';
+        return;
+      }
+      const tablas=tablasReconocidas;
       const meta=_restoreData._meta||{};
       const preview=document.getElementById('restore-preview');
       const tablasEl=document.getElementById('restore-tablas');
@@ -11605,9 +11648,14 @@ window.iniciarRestore=function(input){
 
 window.confirmarRestore=async function(){
   if(!_restoreData)return;
-  const tablas=Object.keys(_restoreData).filter(k=>k!=='_meta');
+  const TABLAS_VALIDAS=['reservas','alumnos','instructores','config','auditoria'];
+  const tablas=Object.keys(_restoreData).filter(k=>TABLAS_VALIDAS.includes(k));
   const seleccionadas=tablas.filter(t=>document.getElementById('restore-chk-'+t)?.checked);
   if(!seleccionadas.length){alert('Seleccioná al menos una tabla.');return;}
+  // v8.44: segundo guard — una tabla presente pero vacía ({} o null) borraría el nodo
+  // entero en producción vía fbSet. Se avisa explícitamente en vez de hacerlo callado.
+  const vacias=seleccionadas.filter(t=>!_restoreData[t]||Object.keys(_restoreData[t]).length===0);
+  if(vacias.length&&!confirm('⚠ ATENCIÓN: '+vacias.join(', ')+' está VACÍA en el backup.\n\nRestaurarla va a BORRAR todos los registros actuales de esa tabla, sin reemplazo.\n\n¿Seguro que querés continuar?'))return;
   if(!confirm('⚠ Esto va a REEMPLAZAR los datos de:\n'+seleccionadas.join(', ')+'\n\n¿Confirmás?'))return;
   const statusEl=document.getElementById('backup-status');
   statusEl.textContent='// Restaurando...';

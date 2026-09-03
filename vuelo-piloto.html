@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.57 · 2026-09-02
+  Mismo fix que vuelo.html v5.72: el guard de v4.56 cubría el turno CANCELADO pero no el
+  BORRADO — update() sobre una key inexistente recreaba la reserva como registro
+  huérfano. Ahora se descarta el pendiente si la reserva ya no existe.
+
   v4.56 · 2026-09-02
   Autorrevisión (/revisar): mismo fix que vuelo.html v5.71 — escribirPendiente() pisaba
   el estado con 'volado' a ciegas sobre un turno existente, y la cola de pendientes
@@ -1671,7 +1676,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.56';
+const APP_VERSION = '4.57';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3056,7 +3061,15 @@ async function escribirPendiente(item){
       // app cerrada, iOS sin Background Sync), y en ese lapso un instructor pudo haber
       // cancelado el turno. Escribir 'volado' a ciegas resucitaba un turno cancelado
       // sin que nadie se enterara. Se relee el estado fresco justo antes de escribir.
+      // v4.57: además se contempla que la reserva haya sido BORRADA entremedio — un
+      // update() sobre una key inexistente la RECREA como registro huérfano (sin
+      // nombre/email/fecha/avión, invisible en el calendario pero contando en queries).
+      // Mismo fix que vuelo.html v5.72.
       const estadoFresco=(await conTimeout(get(ref(db,`reservas/${key}/estado`)))).val();
+      if(estadoFresco==null){
+        console.warn('Pendiente descartado: la reserva',key,'ya no existe en /reservas (borrada).');
+        return;
+      }
       if(estadoFresco!=='cancelado') datosVuelo.estado='volado';
       await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
     } else {

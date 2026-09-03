@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.72 · 2026-09-02
+  Revisión contra el repo live: el guard de v5.71 cubría el turno CANCELADO pero no el
+  turno BORRADO. Si la reserva ya no existe (Zona Peligrosa / borrado manual mientras el
+  pendiente esperaba en cola), update() sobre una key inexistente la RECREA como registro
+  huérfano: sin nombre/email/fecha/avión, invisible en el calendario pero contando en
+  queries y reportes. Ahora, si el estado fresco vuelve null, el pendiente se descarta
+  sin escribir (se saca de la cola, no se reintenta para siempre).
+
   v5.71 · 2026-09-02
   Autorrevisión (/revisar): escribirPendiente() pisaba el estado con 'volado' a ciegas
   sobre un turno existente. La cola de pendientes puede sincronizar mucho después
@@ -1840,7 +1848,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.71'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.72'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3021,7 +3029,16 @@ async function escribirPendiente(item){
     // cerrada, iOS sin Background Sync), y en ese lapso un instructor pudo haber
     // cancelado el turno. Escribir 'volado' a ciegas resucitaba un turno cancelado sin
     // que nadie se enterara. Se relee el estado fresco justo antes de escribir.
+    // v5.72: además se contempla que la reserva haya sido BORRADA entremedio (Zona
+    // Peligrosa / borrado manual). En ese caso .val() devuelve null y un update() sobre
+    // una key inexistente la RECREA como un registro huérfano, sin nombre/email/fecha/
+    // avión — solo con los campos de datos de vuelo, invisible en el calendario pero
+    // contando en queries. Si no existe, se descarta el pendiente sin escribir.
     const estadoFresco=(await conTimeout(get(ref(db,`reservas/${item.key}/estado`)))).val();
+    if(estadoFresco==null){
+      console.warn('Pendiente descartado: la reserva',item.key,'ya no existe en /reservas (borrada).');
+      return;
+    }
     if(estadoFresco!=='cancelado') datos.estado='volado';
     await conTimeout(update(ref(db,`reservas/${item.key}`),datos));
   }
