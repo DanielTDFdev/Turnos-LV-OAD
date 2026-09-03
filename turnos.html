@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.51
+  CAMBIOS : Fix reportado por Daniel con captura: el triángulo de aterrizaje final quedó
+            marcado en un toque intermedio (13:53) en vez del aterrizaje real (más
+            adelante en la traza). _detectarAterrizajeFinal() devolvía el PRIMER punto que
+            cumplía "sin ascenso significativo en los próximos 40s" — pero si un toque
+            intermedio tiene una rodada lenta antes de volver a despegar (más de 40s),
+            también cumple esa condición sin ser el aterrizaje final: puede haber más de
+            un candidato válido. Definición correcta (aclarada por Daniel): "el ÚLTIMO
+            toque donde se queda en la altitud más baja más de 40s", no el primero. Ahora
+            se juntan TODOS los candidatos, se deduplican por cercanía temporal (<2min =
+            mismo evento, mismo criterio que usa _detectarToques) y se devuelve el ÚLTIMO
+            cronológicamente. Sigue siendo solo turnos.html (prototipo/en pulido).
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.50
   CAMBIOS : Patrones de maniobra (prototipo de v8.49), dos cambios pedidos por Daniel tras
             ver la primera versión:
@@ -4108,7 +4121,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.50</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.51</div>
   </div>
 
 </div>
@@ -12612,23 +12625,23 @@ function _detectarToques(segmentos, altMinTraza){
 // a un toque y despegue) exige que NO haya ninguna subida significativa en los
 // próximos ATERRIZAJE_VENTANA_SEG segundos — así se diferencia el aterrizaje
 // que no vuelve a despegar de un touch-and-go. Se busca solo en el ÚLTIMO tramo
-// 'real' de la traza (ahí está el aterrizaje, si lo hay) y se devuelve el
-// PRIMER punto que cumple ambas condiciones, para marcar el momento del toque
-// final y no varios puntos de la rodada/detención posterior.
+// 'real' de la traza (ahí está el aterrizaje, si lo hay).
 // v8.48 FIX (reportado por Daniel con captura: triángulo bastante más arriba
-// que el punto real de toque, y ni cerca del aterrizaje real): faltaba el
-// chequeo de mínimo local (suaves[i]<=vecinos) que sí tiene _detectarToques.
-// Sin eso, la condición "sin ascenso en los próximos 40s" podía cumplirse en
-// CUALQUIER punto de un descenso lento — mientras siga bajando (o se mantenga
-// parejo) sin llegar a SUBIR, "no hay ascenso" es válido aunque el avión
-// todavía no haya tocado tierra. Eso disparaba el marcador apenas la traza
-// entraba en la banda de altura baja (TOQUE_ALTURA_MAX_FT), mucho antes del
-// toque real, y además cortaba la búsqueda ahí (return en el primer i que
-// matcheaba) sin llegar nunca a evaluar el aterrizaje verdadero más adelante.
-// Con el chequeo de mínimo local, solo se evalúan los puntos que son
-// realmente el fondo de un descenso — un touch-and-go real sí tiene subida
-// después de su mínimo (se descarta, correcto) y el aterrizaje final es el
-// primer mínimo local sin subida posterior.
+// que el punto real de toque): faltaba el chequeo de mínimo local
+// (suaves[i]<=vecinos) que sí tiene _detectarToques — sin eso, "sin ascenso en
+// los próximos 40s" se cumplía en cualquier punto de un descenso lento (nunca
+// llega a SUBIR mientras sigue bajando). Con el chequeo de mínimo local, solo
+// se evalúan los puntos que son realmente el fondo de un descenso.
+// v8.51 FIX (reportado por Daniel con captura: el triángulo quedó marcado en
+// un toque intermedio, no en el aterrizaje real): la función devolvía el
+// PRIMER punto que cumplía las condiciones. Pero si un toque intermedio tiene
+// una rodada lenta antes de volver a despegar (más de ATERRIZAJE_VENTANA_SEG),
+// también cumple "sin ascenso en los próximos 40s" aunque no sea el aterrizaje
+// final — hay más de un candidato válido. La definición correcta (aclarada
+// por Daniel) es "el ÚLTIMO toque donde se queda en la altitud más baja más de
+// 40s", no el primero. Ahora se juntan TODOS los candidatos, se deduplican por
+// cercanía temporal (mismo criterio de _detectarToques: <2min = mismo evento,
+// se queda el de menor altitud) y se devuelve el ÚLTIMO cronológicamente.
 const ATERRIZAJE_VENTANA_SEG = 40;
 function _detectarAterrizajeFinal(segmentos, altMinTraza){
   const reales = segmentos.filter(s=>s.tipo==='real');
@@ -12641,8 +12654,9 @@ function _detectarAterrizajeFinal(segmentos, altMinTraza){
     const a0=alts[Math.max(0,i-1)], a2=alts[Math.min(alts.length-1,i+1)];
     return (a0+a+a2)/3;
   });
+  const candidatos=[];
   for(let i=1;i<suaves.length-1;i++){
-    if(suaves[i]>suaves[i-1] || suaves[i]>suaves[i+1]) continue; // v8.48 FIX: faltaba el chequeo de mínimo local — sin esto disparaba apenas la traza entraba en la banda de altura baja, aunque siguiera bajando (ver nota arriba)
+    if(suaves[i]>suaves[i-1] || suaves[i]>suaves[i+1]) continue;
     if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
     let descensoAntes=false;
     for(let j=i-1;j>=0;j--){
@@ -12658,9 +12672,20 @@ function _detectarAterrizajeFinal(segmentos, altMinTraza){
       if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ ascensoDespues=true; break; }
     }
     if(ascensoDespues) continue;
-    return pts[i];
+    candidatos.push(pts[i]);
   }
-  return null;
+  if(!candidatos.length) return null;
+  candidatos.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  const dedup=[];
+  for(const c of candidatos){
+    const ult=dedup[dedup.length-1];
+    if(ult && (new Date(c.ts)-new Date(ult.ts))/60000<2){
+      if(c.alt<ult.alt) dedup[dedup.length-1]=c;
+      continue;
+    }
+    dedup.push(c);
+  }
+  return dedup[dedup.length-1];
 }
 
 // Crucero vs maniobra: régimen de giro (°/seg). v8.05: se descartó el ruido de
