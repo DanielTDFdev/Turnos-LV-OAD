@@ -1,5 +1,20 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.47
+  CAMBIOS : Análisis del vuelo (mapa GPS → 📊 Análisis): nuevo marcador de "aterrizaje
+            final" en el gráfico de altitud, pedido de Daniel. _detectarToques() ya
+            identificaba mínimos locales con descenso antes Y subida después (eso es lo
+            que define un toque y despegue) — el aterrizaje final quedaba afuera a
+            propósito porque no tiene subida después. Nueva _detectarAterrizajeFinal():
+            mismo criterio de descenso previo (TOQUE_PROMINENCIA_FT/TOQUE_VENTANA_MIN),
+            pero exige que NO haya subida significativa en los ATERRIZAJE_VENTANA_SEG
+            (40s) siguientes — así se distingue del touch-and-go. Busca solo en el último
+            tramo 'real' de la traza y devuelve el primer punto que cumple (momento del
+            toque, no la rodada posterior). Se dibuja como triángulo verde en el gráfico
+            (_renderChartAltitud, nuevo parámetro `aterrizaje`) y se resume en texto
+            arriba del gráfico (analisis-aterrizaje-resumen), con su propia línea en la
+            leyenda. Mismo cambio en vuelo.html v5.74 / vuelo-piloto.html v4.59.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.46
   CAMBIOS : Auditoría FPL (Configuración → Audit. FPL): mismo paginador de v8.45 aplicado
             acá. Antes cargarAuditoriaFpl() renderizaba TODAS las filas en una sola tabla
@@ -4040,7 +4055,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.46</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.47</div>
   </div>
 
 </div>
@@ -12538,6 +12553,48 @@ function _detectarToques(segmentos, altMinTraza){
   return dedup;
 }
 
+// Aterrizaje final: mismo criterio de "venía descendiendo" que _detectarToques
+// (descenso de al menos TOQUE_PROMINENCIA_FT en los TOQUE_VENTANA_MIN previos),
+// pero en vez de exigir una subida después (que es justamente lo que distingue
+// a un toque y despegue) exige que NO haya ninguna subida significativa en los
+// próximos ATERRIZAJE_VENTANA_SEG segundos — así se diferencia el aterrizaje
+// que no vuelve a despegar de un touch-and-go. Se busca solo en el ÚLTIMO tramo
+// 'real' de la traza (ahí está el aterrizaje, si lo hay) y se devuelve el
+// PRIMER punto que cumple ambas condiciones, para marcar el momento del toque
+// final y no varios puntos de la rodada/detención posterior.
+const ATERRIZAJE_VENTANA_SEG = 40;
+function _detectarAterrizajeFinal(segmentos, altMinTraza){
+  const reales = segmentos.filter(s=>s.tipo==='real');
+  if(!reales.length) return null;
+  const seg = reales[reales.length-1];
+  const pts = seg.pts.filter(p=>p.alt!=null);
+  if(pts.length<5) return null;
+  const alts = pts.map(p=>p.alt);
+  const suaves = alts.map((a,i)=>{
+    const a0=alts[Math.max(0,i-1)], a2=alts[Math.min(alts.length-1,i+1)];
+    return (a0+a+a2)/3;
+  });
+  for(let i=1;i<suaves.length-1;i++){
+    if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
+    let descensoAntes=false;
+    for(let j=i-1;j>=0;j--){
+      const dtMin=(new Date(pts[i].ts)-new Date(pts[j].ts))/60000;
+      if(dtMin>TOQUE_VENTANA_MIN) break;
+      if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ descensoAntes=true; break; }
+    }
+    if(!descensoAntes) continue;
+    let ascensoDespues=false;
+    for(let j=i+1;j<suaves.length;j++){
+      const dtSeg=(new Date(pts[j].ts)-new Date(pts[i].ts))/1000;
+      if(dtSeg>ATERRIZAJE_VENTANA_SEG) break;
+      if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ ascensoDespues=true; break; }
+    }
+    if(ascensoDespues) continue;
+    return pts[i];
+  }
+  return null;
+}
+
 // Crucero vs maniobra: régimen de giro (°/seg). v8.05: se descartó el ruido de
 // taxi/tierra exigiendo un desplazamiento mínimo entre puntos. v8.06: ventana
 // más ancha (MANIOBRA_STEP) para que el ruido de posición GPS pese menos sobre
@@ -12610,7 +12667,7 @@ function _clasificarTramosVuelo(segmentos, altMinTraza){
 
 // Gráfico SVG altitud/tiempo — sin librería nueva, mismo criterio "vanilla"
 // del resto del proyecto. Franjas ámbar = maniobra; puntos amarillos = toques.
-function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
+function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques, aterrizaje){
   const W=680, H=220, PAD_L=42, PAD_R=10, PAD_T=10, PAD_B=30;
   const validPts = puntos.filter(p=>p.alt!=null);
   if(validPts.length<2) return '<div style="font-family:var(--font-mono);font-size:12px;color:var(--text3)">// Sin datos de altitud suficientes para graficar.</div>';
@@ -12653,6 +12710,10 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques){
   for(const t of toques){
     svg += `<circle cx="${xOf(t.ts).toFixed(1)}" cy="${yOf(t.alt).toFixed(1)}" r="4.5" fill="#f0a500" stroke="#000" stroke-width="0.6"/>`;
   }
+  if(aterrizaje){
+    const ax=xOf(aterrizaje.ts), ay=yOf(aterrizaje.alt);
+    svg += `<path d="M ${ax.toFixed(1)} ${(ay-7).toFixed(1)} L ${(ax-6).toFixed(1)} ${(ay+5).toFixed(1)} L ${(ax+6).toFixed(1)} ${(ay+5).toFixed(1)} Z" fill="#39d353" stroke="#000" stroke-width="0.6"/>`;
+  }
   svg += `<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${ejeYBase}" stroke="var(--border)" stroke-width="1"/>`;
   svg += `<line x1="${PAD_L}" y1="${ejeYBase}" x2="${W-PAD_R}" y2="${ejeYBase}" stroke="var(--border)" stroke-width="1"/>`;
   for(let f=0; f<=1; f+=0.25){
@@ -12672,10 +12733,18 @@ window.abrirAnalisisVuelo = function(){
   document.getElementById('analisis-sub').textContent = (nombre?`${nombre} — ${avion}`:avion) + (hora?` · Turno ${hora} hs`:'');
   const bandas = _clasificarTramosVuelo(segmentos, altMinTraza);
   const toques = _detectarToques(segmentos, altMinTraza);
+  const aterrizaje = _detectarAterrizajeFinal(segmentos, altMinTraza);
   const fmtT = iso => { const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
   document.getElementById('analisis-toques-resumen').textContent = toques.length
     ? `🟡 ${toques.length} toque${toques.length!==1?'s':''} y despegue${toques.length!==1?'s':''} detectado${toques.length!==1?'s':''} — ${toques.map(t=>fmtT(t.ts)).join(', ')}`
     : '// Sin toques y despegues detectados en este vuelo.';
+  const aterrEl = document.getElementById('analisis-aterrizaje-resumen');
+  if(aterrizaje){
+    aterrEl.textContent = `🟢 Aterrizaje final aprox. ${fmtT(aterrizaje.ts)} hs`;
+    aterrEl.style.display = 'block';
+  } else {
+    aterrEl.style.display = 'none';
+  }
   // v8.13 — METAR de inicio/fin, si el turno los tiene. Escapado con el mismo
   // criterio que el resto del código (viene de metar_inicio/metar_fin en
   // Firebase, escritura abierta — no hay garantía de que sea 100% confiable).
@@ -12690,7 +12759,7 @@ window.abrirAnalisisVuelo = function(){
   } else {
     metarEl.style.display = 'none';
   }
-  document.getElementById('analisis-chart-wrap').innerHTML = _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques);
+  document.getElementById('analisis-chart-wrap').innerHTML = _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques, aterrizaje);
   document.getElementById('modal-analisis-vuelo').classList.add('open');
 };
 window.cerrarAnalisisVuelo = function(){
@@ -13070,13 +13139,16 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
   </div>
   <div style="flex:1;overflow-y:auto;padding:16px">
     <div id="analisis-toques-resumen" style="font-family:var(--font-mono);font-size:13px;color:var(--text);margin-bottom:10px"></div>
+    <div id="analisis-aterrizaje-resumen" style="display:none;font-family:var(--font-mono);font-size:13px;color:var(--text);margin-bottom:10px"></div>
     <div id="analisis-metar" style="display:none;font-family:var(--font-mono);font-size:12px;color:var(--text2);background:rgba(0,200,212,.06);border:1px solid rgba(0,200,212,.2);border-radius:var(--radius);padding:8px 12px;margin-bottom:10px;line-height:1.6"></div>
     <div id="analisis-chart-wrap"></div>
     <div style="margin-top:12px;font-family:var(--font-mono);font-size:10px;color:var(--text3);line-height:1.9">
       <span style="display:inline-block;width:11px;height:11px;background:rgba(240,165,0,.32);border:1px solid rgba(240,165,0,.5);border-radius:2px;vertical-align:-1px;margin-right:4px"></span>
       franja = tramo con maniobra (viraje sostenido) · resto del gráfico = crucero.<br>
       <span style="display:inline-block;width:11px;height:11px;background:#f0a500;border:1px solid rgba(0,0,0,.55);border-radius:50%;vertical-align:-1px;margin-right:4px"></span>
-      punto = toque y despegue detectado (aproximado — puede haber falsos positivos si el GPS es impreciso cerca de la pista).
+      punto = toque y despegue detectado (aproximado — puede haber falsos positivos si el GPS es impreciso cerca de la pista).<br>
+      <span style="display:inline-block;width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:9px solid #39d353;vertical-align:-2px;margin-right:4px"></span>
+      triángulo = aterrizaje final detectado (sin subida significativa en los 40s siguientes — aproximado, mismo criterio que arriba).
     </div>
   </div>
 </div>
