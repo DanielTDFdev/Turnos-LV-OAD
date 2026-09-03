@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.45
+  CAMBIOS : Auditoría: paginador simplificado. Antes renderAuditoria() dibujaba un botón
+            por cada página del total (con miles de registros, cientos de botones sueltos
+            abajo de la tabla). Ahora se muestra una ventana de 20 páginas a la vez (la
+            primera ventana son las 20 páginas más recientes, page 0 en adelante) más
+            botones ‹‹/›› para saltar de a 20 páginas y «/» para ir al principio/final.
+            Sin cambios de lógica de paginado (AUDIT_PER_PAGE, _auditPage, auditGoPage
+            intactos), solo qué botones se dibujan.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.44
   CAMBIOS : Revisión contra las versiones live del repo (todo lo publicado coincidía
             byte a byte con lo entregado). Tres hallazgos nuevos:
@@ -4023,7 +4032,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.44</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.45</div>
   </div>
 
 </div>
@@ -11029,13 +11038,18 @@ function renderAuditoria(lista,skipPageReset){
   const ACCION_LABEL={'login':'Login','registro':'Registro','alta_turno':'Alta turno','aprobacion_turno':'Aprobación turno','cancelacion_turno':'Cancelación turno','liberacion_turno':'Liberación turno','vencimiento_turno':'Vencimiento turno','obs_post_turno':'Obs. post-vuelo','avion_habilitado':'Avión habilitado','avion_deshabilitado':'Avión deshabilitado','dia_bloqueado':'Día bloqueado','dia_desbloqueado':'Día desbloqueado','aprobacion_usuario':'Usuario aprobado','usuario_rechazado':'Usuario rechazado'};
   const ROL_ICON={'alumno':'🛩️','instructor':'👨‍✈️','piloto':'✈️','pendiente':'⏳'};
   const esAdmin=session?.user==='admin';
+  const AUDIT_WIN=20;
+  const winStart=Math.floor(page/AUDIT_WIN)*AUDIT_WIN;
+  const winEnd=Math.min(winStart+AUDIT_WIN,totalPages);
   const paginador=totalPages>1?`
     <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:.75rem;flex-wrap:wrap;font-family:var(--font-mono);font-size:12px">
-      <button onclick="auditGoPage(0)" ${page===0?'disabled':''} style="padding:4px 10px;font-size:11px">«</button>
-      <button onclick="auditGoPage(${page-1})" ${page===0?'disabled':''} style="padding:4px 10px;font-size:11px">‹</button>
-      ${Array.from({length:totalPages},(_,i)=>`<button onclick="auditGoPage(${i})" style="padding:4px 10px;font-size:11px;${i===page?'background:var(--cyan);color:var(--bg);border-color:var(--cyan)':''}">${i+1}</button>`).join('')}
-      <button onclick="auditGoPage(${page+1})" ${page===totalPages-1?'disabled':''} style="padding:4px 10px;font-size:11px">›</button>
-      <button onclick="auditGoPage(${totalPages-1})" ${page===totalPages-1?'disabled':''} style="padding:4px 10px;font-size:11px">»</button>
+      <button onclick="auditGoPage(0)" ${page===0?'disabled':''} title="Primera página" style="padding:4px 10px;font-size:11px">«</button>
+      <button onclick="auditGoPage(${winStart-AUDIT_WIN})" ${winStart===0?'disabled':''} title="20 páginas atrás" style="padding:4px 10px;font-size:11px">‹‹</button>
+      <button onclick="auditGoPage(${page-1})" ${page===0?'disabled':''} title="Página anterior" style="padding:4px 10px;font-size:11px">‹</button>
+      ${Array.from({length:winEnd-winStart},(_,i)=>winStart+i).map(i=>`<button onclick="auditGoPage(${i})" style="padding:4px 10px;font-size:11px;${i===page?'background:var(--cyan);color:var(--bg);border-color:var(--cyan)':''}">${i+1}</button>`).join('')}
+      <button onclick="auditGoPage(${page+1})" ${page===totalPages-1?'disabled':''} title="Página siguiente" style="padding:4px 10px;font-size:11px">›</button>
+      <button onclick="auditGoPage(${winEnd})" ${winEnd>=totalPages?'disabled':''} title="20 páginas adelante" style="padding:4px 10px;font-size:11px">››</button>
+      <button onclick="auditGoPage(${totalPages-1})" ${page===totalPages-1?'disabled':''} title="Última página" style="padding:4px 10px;font-size:11px">»</button>
       <span style="color:var(--text3);margin-left:4px">${page*AUDIT_PER_PAGE+1}–${Math.min((page+1)*AUDIT_PER_PAGE,total)} de ${total}</span>
     </div>`:'' ;
   el.innerHTML=`<table style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:12px;min-width:480px">
