@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.43
+  CAMBIOS : Autorrevisión exhaustiva (/revisar). Corregido: (1) _guardarTurnoConfirmado()
+            no limpiaba selectedSlotFin tras guardar con éxito — quedaba el horaFin del
+            turno anterior en la variable global, y un pedido siguiente que no pasara por
+            selectSlot()/cancelarSeleccion() podía guardarse con un rango viejo.
+            (2) Tres URL.createObjectURL() sin revoke (exportarCSVAlumnos, exportar CSV de
+            turnos, ejecutarBackup) — el Blob quedaba retenido hasta recargar la página,
+            leak acumulativo al exportar repetidas veces. (3) ejecutarBackup() traía los 5
+            nodos con await secuencial en un for; ahora Promise.all — el backup tardaba la
+            SUMA de las 5 lecturas (con /reservas y /auditoria, los dos nodos más pesados)
+            en vez del máximo. Ver también vuelo.html v5.71 / vuelo-piloto.html v4.56 (fix
+            de sobreescritura de 'cancelado' desde la cola de pendientes).
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.42
   CAMBIOS : Pedido de Daniel — piloto pidiendo instrucción en LV-ART/LV-MPH ahora
             también puede elegir varios slots consecutivos (antes esRango se forzaba
@@ -3993,7 +4006,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.42</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.43</div>
   </div>
 
 </div>
@@ -7431,6 +7444,12 @@ window._guardarTurnoConfirmado=async function(){
   await registrarAuditoria('alta_turno',session.rol||'alumno','exito',
     session.nombre+' — '+selectedAvion+' — '+selectedDay+' '+labelAudit);
   selectedSlot=null;
+  // v8.43: selectedSlotFin también se limpia acá. Antes solo se reseteaba selectedSlot,
+  // y selectedSlotFin quedaba con el valor del turno recién guardado — si el usuario
+  // pedía otro turno sin recargar la página y el flujo no pasaba por selectSlot()/
+  // cancelarSeleccion() (que sí lo limpian), esRango podía evaluar true con un horaFin
+  // viejo de la reserva anterior, guardando un rango incorrecto.
+  selectedSlotFin=null;
   document.getElementById('slot-confirm').style.display='none';
   clearVal('al-obs');
   // v8.24: pedido de Daniel — al confirmar, ir directo a "Mis Turnos" con el filtro del
@@ -11336,9 +11355,14 @@ window.exportarCSVAlumnos=function(){
   ].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','));
   const csv='\uFEFF'+[headers.join(','),...rows].join('\n');
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  // v8.43: se revoca el object URL después de disparar la descarga (antes quedaba el
+  // Blob retenido en memoria hasta recargar la página — leak acumulativo si se exporta
+  // varias veces seguidas). Mismo patrón que ya usaba la exportación de GPX.
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.href=url;
   a.download='turnos_por_alumno_'+new Date().toISOString().slice(0,10)+'.csv';
   a.click();
+  URL.revokeObjectURL(url);
 };
 
 // ── GRÁFICO POR ALUMNO (v6.69) ──────────────────────────────────
@@ -11510,9 +11534,11 @@ window.exportarCSV=function(){
   ].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(','));
   const csv='\uFEFF'+[headers.join(','),...rows].join('\n');
   const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); // v8.43: revocado abajo (ver exportarCSVAlumnos)
+  a.href=url;
   a.download='turnos_'+new Date().toISOString().slice(0,10)+'.csv';
   a.click();
+  URL.revokeObjectURL(url);
 };
 
 // ── BACKUP ─────────────────────────────────────────────────────
@@ -11523,13 +11549,20 @@ window.ejecutarBackup=async function(){
   try{
     const tablas=['reservas','alumnos','instructores','config','auditoria'];
     const backup={_meta:{fecha:new Date().toISOString(),version:'3.4',generado_por:session?.nombre||session?.user||'admin'}};
-    for(const tabla of tablas) backup[tabla]=await fbGet(tabla)||{};
+    // v8.43: los 5 nodos se traen en paralelo. Antes era un for con await secuencial —
+    // 5 round-trips encadenados, y /reservas + /auditoria son los dos nodos más pesados
+    // de la base, así que el backup tardaba la SUMA de las 5 lecturas en vez del máximo.
+    // No hay dependencia entre ellas, nada justificaba serializarlas.
+    const valores=await Promise.all(tablas.map(t=>fbGet(t)));
+    tablas.forEach((t,i)=>{backup[t]=valores[i]||{};});
     const json=JSON.stringify(backup,null,2);
     const fecha=new Date().toISOString().slice(0,10);
     const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));
+    const url=URL.createObjectURL(new Blob([json],{type:'application/json'})); // v8.43: revocado abajo (ver exportarCSVAlumnos)
+    a.href=url;
     a.download='backup_lvoad_'+fecha+'.json';
     a.click();
+    URL.revokeObjectURL(url);
     statusEl.textContent='✓ Backup descargado — '+fecha;
     statusEl.style.color='var(--green)';
   }catch(e){

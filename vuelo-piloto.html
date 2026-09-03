@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.56 · 2026-09-02
+  Autorrevisión (/revisar): mismo fix que vuelo.html v5.71 — escribirPendiente() pisaba
+  el estado con 'volado' a ciegas sobre un turno existente, y la cola de pendientes
+  puede sincronizar mucho después, resucitando como 'volado' un turno que un instructor
+  canceló entremedio. Ahora se relee el estado fresco y no se pisa si es 'cancelado'.
+  El tercer punto de escritura (abrirCargaDatosVuelo, botón del Libro) NO necesitó el
+  fix: escribe inmediatamente tras la interacción, sin cola diferida.
+
   v4.55 · 2026-09-02
   Pedido de Daniel: nuevo estado real 'volado' (ver turnos.html v8.39 para el diseño
   completo). Los 3 puntos de escritura de esta app (turno in-situ nuevo, cierre de turno
@@ -1663,7 +1671,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.55';
+const APP_VERSION = '4.56';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3043,7 +3051,13 @@ async function escribirPendiente(item){
       // v4.0: turno ya vinculado al loguearse (buscarTurnoPropioParaAhora,
       // match directo o confirmado) — se usa directo.
       key=item.turnoKey;
-      datosVuelo.estado='volado'; // v4.55: se están grabando datos de vuelo — pasa a 'volado' sea cual sea su estado previo ('aprobado' o 'vencido')
+      // v4.56: se están grabando datos de vuelo → 'volado'. PERO nunca se pisa un
+      // 'cancelado': la cola de pendientes puede sincronizar mucho después (offline,
+      // app cerrada, iOS sin Background Sync), y en ese lapso un instructor pudo haber
+      // cancelado el turno. Escribir 'volado' a ciegas resucitaba un turno cancelado
+      // sin que nadie se enterara. Se relee el estado fresco justo antes de escribir.
+      const estadoFresco=(await conTimeout(get(ref(db,`reservas/${key}/estado`)))).val();
+      if(estadoFresco!=='cancelado') datosVuelo.estado='volado';
       await conTimeout(update(ref(db,`reservas/${key}`),datosVuelo));
     } else {
       // Sin vínculo (no había ningún turno de hoy sin volar, o el piloto

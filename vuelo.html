@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.71 · 2026-09-02
+  Autorrevisión (/revisar): escribirPendiente() pisaba el estado con 'volado' a ciegas
+  sobre un turno existente. La cola de pendientes puede sincronizar mucho después
+  (offline, app cerrada, iOS sin Background Sync) y en ese lapso un instructor pudo
+  haber CANCELADO el turno — el write lo resucitaba silenciosamente como 'volado'.
+  Ahora se relee reservas/{key}/estado justo antes de escribir y no se toca el estado
+  si quedó en 'cancelado' (los datos de vuelo sí se guardan igual, para no perder el
+  registro de lo que efectivamente se voló).
+
   v5.70 · 2026-09-02
   Pedido de Daniel: nuevo estado real 'volado' (ver turnos.html v8.39 para el diseño
   completo). Esta app SIEMPRE graba datos cuando escribe una reserva (guardar() exige
@@ -1831,7 +1840,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.70'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.71'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3007,7 +3016,13 @@ async function escribirPendiente(item){
       }));
       datos.tiene_traza_gps=true;
     }
-    datos.estado='volado'; // v5.70: se están grabando datos de vuelo — pasa a 'volado' sea cual sea su estado previo ('aprobado' o 'vencido')
+    // v5.71: se están grabando datos de vuelo → 'volado'. PERO nunca se pisa un
+    // 'cancelado': la cola de pendientes puede sincronizar mucho después (offline, app
+    // cerrada, iOS sin Background Sync), y en ese lapso un instructor pudo haber
+    // cancelado el turno. Escribir 'volado' a ciegas resucitaba un turno cancelado sin
+    // que nadie se enterara. Se relee el estado fresco justo antes de escribir.
+    const estadoFresco=(await conTimeout(get(ref(db,`reservas/${item.key}/estado`)))).val();
+    if(estadoFresco!=='cancelado') datos.estado='volado';
     await conTimeout(update(ref(db,`reservas/${item.key}`),datos));
   }
 }
