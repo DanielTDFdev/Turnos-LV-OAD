@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.73 · 2026-09-03
+  GPS_MUESTREO_MS bajado de 3000 a 2000 (2s entre puntos) a pedido de Daniel. Mismo
+  cambio en vuelo-piloto.html v4.58. Sin cambios en HUECO_UMBRAL_MS (45s) ni en el
+  resto de la lógica de tracking/GPX.
+
   v5.72 · 2026-09-02
   Revisión contra el repo live: el guard de v5.71 cubría el turno CANCELADO pero no el
   turno BORRADO. Si la reserva ya no existe (Zona Peligrosa / borrado manual mientras el
@@ -1848,13 +1853,13 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.72'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.73'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
 const LS_GPS_HUECOS = 'acrg-vuelo-v2-gps-huecos'; // v5.29: huecos detectados (ver gpsGaps)
 const LS_GPS_PREF    = 'acrg-vuelo-gps-pref';      // preferencia recordada entre vuelos (on/off)
-const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v5.14 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
+const GPS_MUESTREO_MS = 2000; // 2s entre puntos (v5.73 — bajado de 3s a pedido de Daniel, más margen de puntos aún en vuelos cortos)
 const GPS_WATCHDOG_INTERVALO_MS = 15000; // v5.27: cada cuánto chequea el watchdog
 const GPS_WATCHDOG_UMBRAL_MS    = 45000; // v5.27: sin actividad de GPS por más de esto, reinicia el watch
 let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1'; // toggle actual (editable solo antes de iniciar)

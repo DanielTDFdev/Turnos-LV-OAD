@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.58 · 2026-09-03
+  GPS_MUESTREO_MS bajado de 3000 a 2000 (2s entre puntos) a pedido de Daniel. Mismo
+  cambio en vuelo.html v5.73. Sin cambios en HUECO_UMBRAL_MS ni el resto del tracking.
+
   v4.57 · 2026-09-02
   Mismo fix que vuelo.html v5.72: el guard de v4.56 cubría el turno CANCELADO pero no el
   BORRADO — update() sobre una key inexistente recreaba la reserva como registro
@@ -1676,14 +1680,14 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.57';
+const APP_VERSION = '4.58';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
 const LS_GPS_PUNTOS = 'acrg-piloto-v1-gps-puntos';
 const LS_GPS_HUECOS = 'acrg-piloto-v1-gps-huecos'; // v4.7: huecos detectados (ver gpsGaps)
 const LS_GPS_PREF   = 'acrg-piloto-gps-pref';
-const GPS_MUESTREO_MS = 3000; // 3s entre puntos (v2.7 — 5s dejaba circuitos/pattern cortos (20-30min) al límite de los 300 puntos mínimos de CloudAhoy; 3s da margen cómodo desde vuelos de ~15min)
+const GPS_MUESTREO_MS = 2000; // 2s entre puntos (v4.58 — bajado de 3s a pedido de Daniel, mismo cambio en vuelo.html v5.73)
 const GPS_WATCHDOG_INTERVALO_MS = 15000; // v4.5: cada cuánto chequea el watchdog
 const GPS_WATCHDOG_UMBRAL_MS    = 45000; // v4.5: sin actividad de GPS por más de esto, reinicia el watch
 let gpsHabilitado  = localStorage.getItem(LS_GPS_PREF) === '1';
