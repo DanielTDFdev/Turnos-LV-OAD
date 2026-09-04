@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.27 ·  Pedido de Daniel: tarjetas por tema en la tab MANUALES en vez de la lista
+           plana de nombres de archivo — grid de tarjetas (.man-grid/.man-card), una
+           por cada PDF de /manuales del repo (9 hoy), con título derivado del nombre
+           de archivo (_tituloDesdeArchivo: saca extensión, cambia guiones/underscores
+           por espacios — no hay metadata propia todavía). Cada tarjeta abre el PDF en
+           un visor embebido (modal con <iframe>, sin librería — el navegador ya
+           renderiza PDF nativo dentro de un iframe) en vez de descargar/abrir pestaña
+           nueva: el alumno no sale de la página. Primer .modal-overlay/.modal de este
+           archivo (mismo patrón que usa el resto de la suite, turnos.html etc.). El
+           catálogo Firebase de abajo (CATÁLOGO / LINKS, para links externos y entradas
+           manuales) no cambió.
   v1.26 ·  Mismo fix en paralelo que turnos.html v7.86 (ver ese comentario para
            el detalle completo): navigator.serviceWorker.register('/sw.js',
            {scope:'/portal-alumno.html'}) — antes sin scope explícito, tomaba
@@ -336,6 +347,24 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
   border-radius:3px;padding:2px 7px;color:var(--text2)}
 .tag.ok{color:var(--green);border-color:var(--green)}
 .tag.bad{color:var(--red);border-color:var(--red)}
+/* v1.27 — tarjetas de manuales (pedido de Daniel) + modal visor PDF embebido */
+.man-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;text-align:left}
+.man-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;
+  display:flex;flex-direction:column;gap:10px;transition:.15s}
+.man-card:hover{border-color:var(--cyan)}
+.man-card .man-ic{font-size:28px;line-height:1}
+.man-card .man-ttl{font-weight:700;color:var(--text);font-size:14px;line-height:1.3;flex:1}
+.man-card .man-sz{font-family:var(--font-mono);font-size:10px;color:var(--text3)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;
+  align-items:center;justify-content:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-lg);
+  width:100%;max-width:960px;height:92vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 16px;border-bottom:1px solid var(--border)}
+.modal-head h3{margin:0;font-size:14px;color:var(--text)}
+.modal-body{flex:1;overflow:hidden;background:#525659}
+.modal-body iframe{width:100%;height:100%;border:0}
 #gate-msg{max-width:480px;margin:80px auto;text-align:center;font-family:var(--font-mono);color:var(--text2)}
 .theme-toggle{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;}
 .theme-toggle-track{width:36px;height:20px;border-radius:10px;background:var(--bg4);border:1px solid var(--border2);position:relative;transition:background .25s;}
@@ -429,7 +458,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.26</span>
+      <span class="ver">v1.27</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -447,6 +476,16 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
   <section id="screen-manuales" class="screen"></section>
   <section id="screen-quiz" class="screen"></section>
   <section id="screen-flashcards" class="screen"></section>
+</div>
+
+<div class="modal-overlay" id="man-visor-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="man-visor-titulo">// MANUAL</h3>
+      <button onclick="cerrarVisorPdf()">✕ CERRAR</button>
+    </div>
+    <div class="modal-body"><iframe id="man-visor-iframe" src=""></iframe></div>
+  </div>
 </div>
 
 <script type="module">
@@ -671,7 +710,7 @@ const GH_REPO='danieltdfdev/Web-Aeroclub'; // repo del sitio, para listar /manua
 
 async function renderManuales(){
   const el=document.getElementById('screen-manuales');
-  el.innerHTML='<div class="card"><h2>// ARCHIVOS EN /manuales (REPOSITORIO)</h2>'+
+  el.innerHTML='<div class="card"><h2>// MANUALES POR TEMA</h2>'+
     '<div id="man-repo-lista" class="empty">Cargando…</div></div>'+
     '<div class="card"><h2>// CATÁLOGO / LINKS</h2>'+
     (esStaff?'<button class="primary" id="man-nuevo" style="margin-bottom:14px">+ NUEVO MANUAL</button>':'')+
@@ -688,15 +727,19 @@ async function cargarManualesRepo(){
     const r=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/manuales');
     if(!r.ok) throw new Error('HTTP '+r.status);
     const items=await r.json();
-    const archivos=(Array.isArray(items)?items:[]).filter(it=>it.type==='file');
+    const archivos=(Array.isArray(items)?items:[]).filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
     if(!archivos.length){ el.innerHTML='<div class="empty">// CARPETA /manuales VACÍA EN EL REPO</div>'; return; }
     archivos.sort((a,b)=>a.name.localeCompare(b.name));
-    el.innerHTML=archivos.map(f=>`
-      <div class="item">
-        <div class="meta"><div class="ttl">${escHtml(f.name)}</div>
-          <div class="sub">${(f.size/1024).toFixed(0)} KB</div></div>
-        <a href="${escHtml(f.download_url)}" target="_blank" rel="noopener"><button class="primary">DESCARGAR</button></a>
-      </div>`).join('');
+    el.innerHTML='<div class="man-grid">'+archivos.map(f=>{
+      const titulo=_tituloDesdeArchivo(f.name);
+      return `
+      <div class="man-card">
+        <div class="man-ic">📄</div>
+        <div class="man-ttl">${escHtml(titulo)}</div>
+        <div class="man-sz">${(f.size/1024).toFixed(0)} KB</div>
+        <button class="primary" onclick="abrirVisorPdf('${escHtml(f.download_url)}','${escHtml(titulo).replace(/'/g,"\\'")}')">LEER</button>
+      </div>`;
+    }).join('')+'</div>';
   }catch(e){
     // Típico: repo privado, carpeta inexistente, o límite de la API de GitHub sin autenticar
     // (60 req/hora por IP — para el tráfico de un aeroclub no debería ser problema, pero
@@ -705,6 +748,31 @@ async function cargarManualesRepo(){
     el.innerHTML='<div class="empty">✗ No se pudo leer /manuales del repo ('+escHtml(e.message)+')</div>';
   }
 }
+
+// v1.27 — pedido de Daniel: tarjetas por tema en vez de lista plana de nombres
+// de archivo. No hay metadata propia todavía (categoría/descripción) para
+// estos 9 PDFs — el título de la tarjeta se deriva del NOMBRE DE ARCHIVO,
+// limpiando guiones/underscores y sacando la extensión. Si en algún momento
+// se quiere un título más prolijo por archivo, ahí sí habría que sumarle
+// metadata real (mismo patrón que ya tiene el catálogo Firebase de abajo,
+// con campo titulo propio) en vez de derivarlo del nombre.
+function _tituloDesdeArchivo(nombre){
+  return nombre.replace(/\.pdf$/i,'').replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+}
+
+// Visor embebido: <iframe> apuntando al raw del repo — no hace falta ninguna
+// librería, los navegadores ya renderizan PDF nativo dentro de un iframe. El
+// alumno no sale de la página. Mismo patrón .modal-overlay/.modal que ya usa
+// el resto de la suite (turnos.html, etc.) para no usar prompt()/confirm().
+window.abrirVisorPdf=function(url,titulo){
+  document.getElementById('man-visor-titulo').textContent='// '+titulo;
+  document.getElementById('man-visor-iframe').src=url;
+  document.getElementById('man-visor-overlay').classList.add('open');
+};
+window.cerrarVisorPdf=function(){
+  document.getElementById('man-visor-overlay').classList.remove('open');
+  document.getElementById('man-visor-iframe').src=''; // corta la descarga/render si el PDF es pesado
+};
 
 function formManual(item,key){
   const box=document.getElementById('man-form-box');
