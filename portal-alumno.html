@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.29 ·  Pedido de Daniel: la sección "PLACAS" (nombre crudo de la subcarpeta) pasa a
+           mostrarse como "BRIEFINGS OPERACIONALES" — mapeo opcional nuevo
+           SECCION_DISPLAY por nombre de carpeta (minúsculas), con fallback al nombre en
+           mayúsculas para cualquier subcarpeta futura que no esté mapeada. También
+           cambió el ícono de las tarjetas: antes 📄 fijo para todas, ahora por sección
+           (📚 Generales, 🛫 Briefings Operacionales, 📘 default para lo no mapeado) — a
+           Daniel no le gustaba la hoja en blanco genérica.
   v1.28 ·  FIX reportado por Daniel: subió 9 PDFs a /manuales/placas (una subcarpeta) y
            no aparecían en las tarjetas de v1.27. La API de contenidos de GitHub NO es
            recursiva — listar /manuales solo trae lo que está directo ahí, una
@@ -471,7 +478,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.28</span>
+      <span class="ver">v1.29</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -749,6 +756,17 @@ async function _listarCarpetaGH(ruta){
   return Array.isArray(items)?items:[];
 }
 
+// v1.29 — pedido de Daniel: nombre de sección más humano para /placas
+// ("BRIEFINGS OPERACIONALES" en vez del nombre crudo de la carpeta) e íconos
+// más vistosos que la hoja en blanco genérica. SECCION_DISPLAY es un mapeo
+// opcional por nombre de carpeta (minúsculas) — cualquier subcarpeta nueva
+// que no esté acá sigue funcionando con el fallback (nombre en mayúsculas +
+// ícono de libro), no hace falta tocar código para que aparezca.
+const SECCION_DISPLAY = {
+  placas: {titulo:'BRIEFINGS OPERACIONALES', icono:'🛫'},
+};
+const SECCION_ICONO_DEFAULT = '📘';
+
 async function cargarManualesRepo(){
   const el=document.getElementById('man-repo-lista');
   try{
@@ -756,15 +774,18 @@ async function cargarManualesRepo(){
     const archivosRoot=root.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
     const subcarpetas=root.filter(it=>it.type==='dir').sort((a,b)=>a.name.localeCompare(b.name));
     let html='';
-    if(archivosRoot.length) html+=_seccionManualesHtml('GENERALES', archivosRoot, null);
+    if(archivosRoot.length) html+=_seccionManualesHtml('GENERALES', archivosRoot, null, '📚');
     for(const sub of subcarpetas){
+      const disp=SECCION_DISPLAY[sub.name.toLowerCase()];
+      const tituloSeccion=disp?disp.titulo:sub.name.toUpperCase();
+      const iconoSeccion=disp?disp.icono:SECCION_ICONO_DEFAULT;
       try{
         const items=await _listarCarpetaGH('manuales/'+sub.name);
         const archivos=items.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
-        if(archivos.length) html+=_seccionManualesHtml(sub.name.toUpperCase(), archivos, sub.name);
+        if(archivos.length) html+=_seccionManualesHtml(tituloSeccion, archivos, sub.name, iconoSeccion);
       }catch(e){
         // una subcarpeta que falla no tira abajo el resto — se avisa y se sigue
-        html+='<h3 style="margin-top:18px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(sub.name.toUpperCase())+'</h3>'+
+        html+='<h3 style="margin-top:18px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(tituloSeccion)+'</h3>'+
           '<div class="empty">✗ No se pudo leer manuales/'+escHtml(sub.name)+' ('+escHtml(e.message)+')</div>';
       }
     }
@@ -783,7 +804,9 @@ async function cargarManualesRepo(){
 // (mismo tema, uno con sufijo " (1)" del navegador al re-subir sin borrar el
 // viejo). Se agrupan por título limpio SIN el sufijo "(N)" y se queda con la
 // versión sin sufijo si existe alguna; si no, con la primera que aparezca.
-function _seccionManualesHtml(titulo, archivos, prefijoRedundante){
+// v1.29 — cuarto parámetro icono: antes era fijo (📄) para toda tarjeta, ahora
+// se pasa por sección (ver SECCION_DISPLAY/SECCION_ICONO_DEFAULT arriba).
+function _seccionManualesHtml(titulo, archivos, prefijoRedundante, icono){
   const vistos=new Map();
   for(const f of archivos){
     const t=_tituloDesdeArchivo(f.name, prefijoRedundante);
@@ -802,7 +825,7 @@ function _seccionManualesHtml(titulo, archivos, prefijoRedundante){
   return '<h3 style="margin-top:18px;margin-bottom:10px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(titulo)+'</h3>'+
     '<div class="man-grid">'+lista.map(f=>`
       <div class="man-card">
-        <div class="man-ic">📄</div>
+        <div class="man-ic">${icono||SECCION_ICONO_DEFAULT}</div>
         <div class="man-ttl">${escHtml(f.titulo)}</div>
         <div class="man-sz">${(f.size/1024).toFixed(0)} KB</div>
         <button class="primary" onclick="abrirVisorPdf('${escHtml(f.download_url)}','${escHtml(f.titulo).replace(/'/g,"\\'")}')">LEER</button>
