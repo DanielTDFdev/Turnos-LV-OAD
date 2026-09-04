@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.35 ·  Dos pedidos de Daniel sobre el visor del PDF (placas/manuales): (1) FIX del
+           zoom, que no hacía nada visible — la regla CSS .modal-body canvas tenía
+           max-width:100%, así que aunque _renderizarPaginaPdf agrandaba el canvas de
+           verdad (canvas.width en píxeles), el navegador lo volvía a achicar al ancho
+           del contenedor para MOSTRARLO. Sacada esa regla; .modal-body ya tenía
+           overflow:auto, así que ahora al hacer zoom-in aparece scroll para ver el
+           resto. (2) Botón "⬇ DESCARGAR" nuevo en el modal-nav del visor — usa el
+           ArrayBuffer que abrirVisorPdf YA bajó por fetch (copiado con .slice(0)
+           porque pdf.js puede transferir/neutear el original al pasarlo a
+           getDocument), arma un Blob y dispara la descarga con un <a download> — no
+           depende de que GitHub mande Content-Disposition.
+
   v1.34 ·  Pedido de Daniel: el visor de PDF.js (v1.32) solo tenía fit-to-width, sin
            forma de acercar el texto — difícil de leer en manuales con letra chica.
            Agregados controles de zoom (− ZOOM / 100% / + ZOOM) en el modal-nav, junto
@@ -486,7 +498,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
   padding:12px 16px;border-bottom:1px solid var(--border)}
 .modal-head h3{margin:0;font-size:14px;color:var(--text)}
 .modal-body{flex:1;overflow:auto;background:#525659;display:flex;align-items:flex-start;justify-content:center;padding:16px}
-.modal-body canvas{max-width:100%;box-shadow:0 2px 12px rgba(0,0,0,.5);background:#fff}
+.modal-body canvas{box-shadow:0 2px 12px rgba(0,0,0,.5);background:#fff}
 .modal-nav{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 16px;flex-wrap:wrap;
   border-top:1px solid var(--border);font-family:var(--font-mono);font-size:12px;color:var(--text2)}
 .modal-nav-group{display:flex;align-items:center;gap:8px}
@@ -583,7 +595,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.34</span>
+      <span class="ver">v1.35</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -618,6 +630,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <button onclick="visorZoomOut()" title="Alejar">− ZOOM</button>
         <button onclick="visorZoomReset()" id="man-visor-zoom-pct" title="Ajustar al ancho">100%</button>
         <button onclick="visorZoomIn()" title="Acercar">+ ZOOM</button>
+        <button onclick="visorDescargarPdf()" title="Guardar el PDF en este dispositivo">⬇ DESCARGAR</button>
       </div>
       <div class="modal-nav-group" id="man-visor-paginacion">
         <button onclick="visorPaginaAnterior()">‹ ANTERIOR</button>
@@ -1065,6 +1078,16 @@ let _visorPaginaActual=1;
 let _visorZoomFactor=1;
 const VISOR_ZOOM_MIN=0.6, VISOR_ZOOM_MAX=3, VISOR_ZOOM_STEP=0.25;
 let _visorReqId=0; // anti-reentrancia: si se clickea LEER en otro manual mientras el actual todavía está cargando, descarta la respuesta vieja cuando llegue
+// v1.35 — pedido de Daniel: botón DESCARGAR en el visor para que el alumno se lleve
+// el PDF a su dispositivo. Se guarda el ArrayBuffer YA DESCARGADO por abrirVisorPdf
+// (con .slice(0), copia aparte) en vez de volver a pedirlo por fetch: pdf.js puede
+// transferir/neutear el ArrayBuffer original al pasarlo a getDocument({data:buf}),
+// así que sin la copia _visorPdfBuf podría quedar vacío para cuando el alumno toque
+// DESCARGAR. visorDescargarPdf() arma un Blob local y dispara la descarga con un
+// <a download> — no depende de que raw.githubusercontent.com mande el header
+// Content-Disposition correcto.
+let _visorPdfBuf=null;
+let _visorPdfTitulo='';
 
 window.abrirVisorPdf=async function(url,titulo){
   const miReqId=++_visorReqId;
@@ -1076,6 +1099,8 @@ window.abrirVisorPdf=async function(url,titulo){
   nav.style.display='none';
   if(_visorPdfDoc){ _visorPdfDoc.destroy(); _visorPdfDoc=null; } // libera la memoria del PDF anterior (pueden pesar >10MB)
   _visorZoomFactor=1;
+  _visorPdfBuf=null;
+  _visorPdfTitulo=titulo;
   status.style.display='block';
   status.textContent='Cargando…';
   document.getElementById('man-visor-overlay').classList.add('open');
@@ -1084,6 +1109,7 @@ window.abrirVisorPdf=async function(url,titulo){
     if(!r.ok) throw new Error('HTTP '+r.status);
     const buf=await r.arrayBuffer();
     if(miReqId!==_visorReqId) return;
+    _visorPdfBuf=buf.slice(0);
     _visorPdfDoc=await pdfjsLib.getDocument({data:buf}).promise;
     if(miReqId!==_visorReqId){ _visorPdfDoc.destroy(); _visorPdfDoc=null; return; }
     _visorPaginaActual=1;
@@ -1094,8 +1120,20 @@ window.abrirVisorPdf=async function(url,titulo){
     document.getElementById('man-visor-paginacion').style.display=_visorPdfDoc.numPages>1?'flex':'none';
   }catch(e){
     if(miReqId!==_visorReqId) return;
+    _visorPdfBuf=null;
     status.textContent='✗ No se pudo cargar el PDF ('+e.message+')';
   }
+};
+
+window.visorDescargarPdf=function(){
+  if(!_visorPdfBuf) return;
+  const blob=new Blob([_visorPdfBuf],{type:'application/pdf'});
+  const blobUrl=URL.createObjectURL(blob);
+  const nombre=(_visorPdfTitulo||'documento').replace(/[\\/:*?"<>|]/g,'_')+'.pdf';
+  const a=document.createElement('a');
+  a.href=blobUrl; a.download=nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(blobUrl),1000);
 };
 
 // Ajusta el ancho de renderizado al ancho disponible del modal (fit-to-width,
@@ -1142,6 +1180,7 @@ window.visorZoomReset=function(){
 window.cerrarVisorPdf=function(){
   document.getElementById('man-visor-overlay').classList.remove('open');
   if(_visorPdfDoc){ _visorPdfDoc.destroy(); _visorPdfDoc=null; } // libera la memoria del PDF (pueden pesar >10MB)
+  _visorPdfBuf=null;
 };
 
 function formManual(item,key){
