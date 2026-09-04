@@ -1,5 +1,24 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.54
+  CAMBIOS : Rediseño completo de _detectarAterrizajeFinal (pedido de Daniel con captura:
+            el triángulo quedaba casi al final de la meseta de tierra, no al principio).
+            El criterio anterior ("sin ascenso significativo en los próximos 40s") no era
+            la definición correcta — quedó demostrado con dos bugs reportados en fila
+            (v8.48, v8.51) que eran síntomas de estar resolviendo el problema equivocado.
+            Nueva definición, dada por Daniel: el aterrizaje final es el INICIO del vector
+            que se arma al quedarse el avión, más de 1 minuto seguido
+            (ATERRIZAJE_DURACION_MIN_SEG=60), a la altitud MÍNIMA REGISTRADA de todo el
+            vuelo ± tolerancia de ruido GPS (ATERRIZAJE_ALTURA_TOL_FT=60ft), con
+            desplazamiento neto en un sentido predominante
+            (ATERRIZAJE_DESPLAZ_MIN_KM=50m) — eso es el rollout real (tren en pista,
+            frenando/carreteando). Un touch-and-go nunca sostiene un minuto de contacto,
+            así que ya no hace falta el chequeo de "descenso antes/ascenso después" ni el
+            mínimo local — la duración sostenida sola alcanza para distinguirlo. Busca en
+            TODOS los tramos 'real' (no solo el último) y se queda con el ÚLTIMO
+            candidato si hay más de uno (mismo principio de v8.51). Constantes viejas
+            (ATERRIZAJE_VENTANA_SEG) eliminadas, ya no se usan.
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.53
   CAMBIOS : Pedido de Daniel: los íconos de toques/aterrizaje/patrones (v8.52) no
             escalaban con el zoom del mapa, a diferencia de las flechitas de dirección.
@@ -4148,7 +4167,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.53</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.54</div>
   </div>
 
 </div>
@@ -12680,73 +12699,49 @@ function _detectarToques(segmentos, altMinTraza){
   return dedup;
 }
 
-// Aterrizaje final: mismo criterio de "venía descendiendo" que _detectarToques
-// (descenso de al menos TOQUE_PROMINENCIA_FT en los TOQUE_VENTANA_MIN previos),
-// pero en vez de exigir una subida después (que es justamente lo que distingue
-// a un toque y despegue) exige que NO haya ninguna subida significativa en los
-// próximos ATERRIZAJE_VENTANA_SEG segundos — así se diferencia el aterrizaje
-// que no vuelve a despegar de un touch-and-go. Se busca solo en el ÚLTIMO tramo
-// 'real' de la traza (ahí está el aterrizaje, si lo hay).
-// v8.48 FIX (reportado por Daniel con captura: triángulo bastante más arriba
-// que el punto real de toque): faltaba el chequeo de mínimo local
-// (suaves[i]<=vecinos) que sí tiene _detectarToques — sin eso, "sin ascenso en
-// los próximos 40s" se cumplía en cualquier punto de un descenso lento (nunca
-// llega a SUBIR mientras sigue bajando). Con el chequeo de mínimo local, solo
-// se evalúan los puntos que son realmente el fondo de un descenso.
-// v8.51 FIX (reportado por Daniel con captura: el triángulo quedó marcado en
-// un toque intermedio, no en el aterrizaje real): la función devolvía el
-// PRIMER punto que cumplía las condiciones. Pero si un toque intermedio tiene
-// una rodada lenta antes de volver a despegar (más de ATERRIZAJE_VENTANA_SEG),
-// también cumple "sin ascenso en los próximos 40s" aunque no sea el aterrizaje
-// final — hay más de un candidato válido. La definición correcta (aclarada
-// por Daniel) es "el ÚLTIMO toque donde se queda en la altitud más baja más de
-// 40s", no el primero. Ahora se juntan TODOS los candidatos, se deduplican por
-// cercanía temporal (mismo criterio de _detectarToques: <2min = mismo evento,
-// se queda el de menor altitud) y se devuelve el ÚLTIMO cronológicamente.
-const ATERRIZAJE_VENTANA_SEG = 40;
+// v8.54 REDISEÑO COMPLETO (pedido de Daniel: el criterio anterior — "sin
+// ascenso en los próximos 40s" — no era la definición correcta y terminaba
+// marcando el punto equivocado, ya sea en un toque intermedio de rodada lenta
+// o bien casi al final de la meseta de tierra en vez de al principio). Nueva
+// definición, dada por Daniel: el aterrizaje final es el INICIO del vector que
+// se arma al quedarse el avión, durante MÁS DE UN MINUTO seguido, a la altitud
+// MÍNIMA REGISTRADA de todo el vuelo (± tolerancia por ruido de GPS) Y con
+// desplazamiento neto en un sentido predominante — eso es el rollout real
+// (tren en la pista, frenando/carreteando), a diferencia de un touch-and-go
+// (contacto de un par de segundos, nunca sostiene un minuto) o de quedarse
+// detenido sin moverse (desplazamiento neto ~0, no es rodaje).
+// No depende más de si "venía descendiendo" ni de un lóbulo temporal fijo:
+// busca en TODOS los tramos 'real' (no solo el último) las ventanas que
+// cumplan altura+duración+desplazamiento, y si hay más de una (un touch con
+// una rodada larga inusual también podría calificar) se queda con la ÚLTIMA
+// cronológicamente — mismo principio de "el último, no el primero" de v8.51,
+// ahora aplicado a una definición más robusta en vez de un parche sobre la
+// anterior.
+const ATERRIZAJE_ALTURA_TOL_FT = 60;   // tolerancia sobre la altitud mínima registrada del vuelo (ruido de GPS en el eje vertical)
+const ATERRIZAJE_DURACION_MIN_SEG = 60; // más de 1 minuto sostenido — un touch-and-go real no llega a esto
+const ATERRIZAJE_DESPLAZ_MIN_KM = 0.05; // 50m de desplazamiento neto en la ventana — confirma que es rodaje y no ruido GPS estando detenido
 function _detectarAterrizajeFinal(segmentos, altMinTraza){
+  if(altMinTraza==null) return null;
   const reales = segmentos.filter(s=>s.tipo==='real');
-  if(!reales.length) return null;
-  const seg = reales[reales.length-1];
-  const pts = seg.pts.filter(p=>p.alt!=null);
-  if(pts.length<5) return null;
-  const alts = pts.map(p=>p.alt);
-  const suaves = alts.map((a,i)=>{
-    const a0=alts[Math.max(0,i-1)], a2=alts[Math.min(alts.length-1,i+1)];
-    return (a0+a+a2)/3;
-  });
   const candidatos=[];
-  for(let i=1;i<suaves.length-1;i++){
-    if(suaves[i]>suaves[i-1] || suaves[i]>suaves[i+1]) continue;
-    if(altMinTraza!=null && (suaves[i]-altMinTraza)*3.28084>TOQUE_ALTURA_MAX_FT) continue;
-    let descensoAntes=false;
-    for(let j=i-1;j>=0;j--){
-      const dtMin=(new Date(pts[i].ts)-new Date(pts[j].ts))/60000;
-      if(dtMin>TOQUE_VENTANA_MIN) break;
-      if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ descensoAntes=true; break; }
+  for(const seg of reales){
+    const pts = seg.pts.filter(p=>p.alt!=null);
+    let i=0;
+    while(i<pts.length){
+      if((pts[i].alt-altMinTraza)*3.28084 > ATERRIZAJE_ALTURA_TOL_FT){ i++; continue; }
+      let j=i;
+      while(j+1<pts.length && (pts[j+1].alt-altMinTraza)*3.28084<=ATERRIZAJE_ALTURA_TOL_FT) j++;
+      const durSeg = (new Date(pts[j].ts)-new Date(pts[i].ts))/1000;
+      if(durSeg>=ATERRIZAJE_DURACION_MIN_SEG){
+        const dispKm = _haversineKm(pts[i].lat,pts[i].lng,pts[j].lat,pts[j].lng);
+        if(dispKm>=ATERRIZAJE_DESPLAZ_MIN_KM) candidatos.push(pts[i]); // el INICIO del vector, no el final
+      }
+      i=j+1;
     }
-    if(!descensoAntes) continue;
-    let ascensoDespues=false;
-    for(let j=i+1;j<suaves.length;j++){
-      const dtSeg=(new Date(pts[j].ts)-new Date(pts[i].ts))/1000;
-      if(dtSeg>ATERRIZAJE_VENTANA_SEG) break;
-      if((suaves[j]-suaves[i])*3.28084>=TOQUE_PROMINENCIA_FT){ ascensoDespues=true; break; }
-    }
-    if(ascensoDespues) continue;
-    candidatos.push(pts[i]);
   }
   if(!candidatos.length) return null;
   candidatos.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
-  const dedup=[];
-  for(const c of candidatos){
-    const ult=dedup[dedup.length-1];
-    if(ult && (new Date(c.ts)-new Date(ult.ts))/60000<2){
-      if(c.alt<ult.alt) dedup[dedup.length-1]=c;
-      continue;
-    }
-    dedup.push(c);
-  }
-  return dedup[dedup.length-1];
+  return candidatos[candidatos.length-1];
 }
 
 // Crucero vs maniobra: régimen de giro (°/seg). v8.05: se descartó el ruido de
