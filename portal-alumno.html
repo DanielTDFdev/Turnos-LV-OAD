@@ -2,6 +2,28 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.32 ·  REDISEÑO del visor — pedido de Daniel: en su celular seguía sin funcionar
+           (mostraba una tarjeta "PDF" con nombre tipo UUID y un botón "Abrir" que no
+           hacía nada). Causa: iOS Safari trata un PDF en blob: dentro de un iframe
+           como ADJUNTO, no como contenido para renderizar inline — pasa incluso con
+           el Blob bien tipado (eso arregló v1.31, pero no esto). Es una limitación de
+           WebKit con iframes, no de nuestro código — no había vuelta que darle
+           quedándose con esa estrategia.
+           Salida (repensado de cero): dejar de depender del visor nativo del
+           navegador y renderizar el PDF a mano con PDF.js (Mozilla, la misma librería
+           que usa Firefox internamente), dibujando cada página en un <canvas> — no es
+           un iframe ni un plugin nativo, es JS + Canvas 2D, funciona igual en
+           cualquier navegador/plataforma.
+           Cambios: <script> de pdf.js (cdnjs, v3.11.174 — pineada, con nota en el
+           comentario del <head> de dónde revisar si algún día cdnjs la retira) +
+           worker configurado (misma versión, si no hay mismatch). Modal ya NO tiene
+           <iframe> — tiene <canvas id="man-visor-canvas"> + una barra de navegación
+           nueva (ANTERIOR/Página N de M/SIGUIENTE, oculta si el PDF tiene 1 sola
+           página). Se muestra UNA página a la vez (no todas juntas) para no cargar de
+           memoria en manuales largos — fit-to-width recalculado en cada página.
+           abrirVisorPdf/cerrarVisorPdf reescritas: _visorPdfDoc.destroy() en vez de
+           URL.revokeObjectURL() (ya no hay blob: URL, PDF.js maneja su propia
+           memoria). Guard anti-reentrancia (_visorReqId) se mantiene igual que v1.31.
   v1.31 ·  /revisar sobre el visor de v1.30 (Daniel seguía viendo la descarga, con un
            nombre de archivo tipo UUID sin extensión) — 4 hallazgos, ordenados por
            severidad, los 4 corregidos:
@@ -329,6 +351,15 @@
 <html lang="es">
 <head>
 <script>if(localStorage.getItem('lvoad-theme')==='light')document.documentElement.classList.add('light');</script>
+<!-- v1.32 — PDF.js para el visor de manuales (ver comentario junto a abrirVisorPdf
+     más abajo): renderiza el PDF a mano en un <canvas>, no depende del visor nativo
+     del navegador (que en iOS/Safari mostraba una tarjeta de "adjunto" en vez de
+     abrir el PDF, incluso con el blob bien tipado). Si esta URL/versión llega a
+     devolver 404 en algún momento (cdnjs puede retirar versiones viejas), revisar
+     https://cdnjs.com/libraries/pdf.js por una versión vigente y actualizar acá Y en
+     pdfjsLib.GlobalWorkerOptions.workerSrc (deben ser la MISMA versión, si no tira
+     error de mismatch entre el build principal y el worker). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portal Educativo · Aeroclub Río Grande</title>
@@ -425,8 +456,10 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
 .modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:12px 16px;border-bottom:1px solid var(--border)}
 .modal-head h3{margin:0;font-size:14px;color:var(--text)}
-.modal-body{flex:1;overflow:hidden;background:#525659}
-.modal-body iframe{width:100%;height:100%;border:0}
+.modal-body{flex:1;overflow:auto;background:#525659;display:flex;align-items:flex-start;justify-content:center;padding:16px}
+.modal-body canvas{max-width:100%;box-shadow:0 2px 12px rgba(0,0,0,.5);background:#fff}
+.modal-nav{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 16px;
+  border-top:1px solid var(--border);font-family:var(--font-mono);font-size:12px;color:var(--text2)}
 #gate-msg{max-width:480px;margin:80px auto;text-align:center;font-family:var(--font-mono);color:var(--text2)}
 .theme-toggle{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;}
 .theme-toggle-track{width:36px;height:20px;border-radius:10px;background:var(--bg4);border:1px solid var(--border2);position:relative;transition:background .25s;}
@@ -520,7 +553,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.31</span>
+      <span class="ver">v1.32</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -546,9 +579,14 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
       <h3 id="man-visor-titulo">// MANUAL</h3>
       <button onclick="cerrarVisorPdf()">✕ CERRAR</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" id="man-visor-body">
       <div id="man-visor-status" class="empty">Cargando…</div>
-      <iframe id="man-visor-iframe" src="" style="display:none"></iframe>
+      <canvas id="man-visor-canvas" style="display:none"></canvas>
+    </div>
+    <div class="modal-nav" id="man-visor-nav" style="display:none">
+      <button onclick="visorPaginaAnterior()">‹ ANTERIOR</button>
+      <span id="man-visor-pagina">Página 1 / 1</span>
+      <button onclick="visorPaginaSiguiente()">SIGUIENTE ›</button>
     </div>
   </div>
 </div>
@@ -924,61 +962,83 @@ function _tituloDesdeArchivo(nombre, prefijoRedundante){
   return (num?num+'. ':'')+resto;
 }
 
-// Visor embebido: <iframe> con el PDF como blob: URL, NO apuntando directo al
-// raw del repo. v1.30 FIX (reportado por Daniel: al tocar LEER, el PDF se
-// terminaba bajando a la compu y abriendo en Acrobat Reader en vez de verse
-// adentro). Causa real: raw.githubusercontent.com manda
-// "Content-Type: application/octet-stream" (no "application/pdf") y
-// "X-Frame-Options: deny" en TODOS los archivos que sirve, sin importar la
-// extensión — eso bloquea a propósito que se lo pueda meter en un iframe, así
-// que nunca iba a funcionar apuntando el iframe directo ahí, ni de este ni de
-// ningún otro sitio con GitHub raw. Sí tiene CORS abierto
-// (access-control-allow-origin: *), así que un fetch() normal SÍ puede leer
-// los bytes del PDF sin problema — la política de framing no aplica a
-// fetch/XHR, solo a cargar el recurso como documento embebido. Se baja el PDF
-// con fetch(), se arma un blob: URL (mismo origen que la página, ya no
-// "viene" de github) y RECIÉN ahí se lo pone de src al iframe — el navegador
-// sí lo renderiza porque un blob: no lleva los headers del servidor original.
-let _visorBlobUrlActual=null;
-let _visorReqId=0; // anti-reentrancia: si se clickea LEER en otro manual mientras el actual todavía está bajando, descarta la respuesta vieja cuando llegue
+// v1.32 REDISEÑO — pedido de Daniel: el visor con iframe+blob (v1.30/v1.31)
+// no andaba en su celular. En vez de un placeholder con ícono "PDF" y un
+// nombre tipo UUID, mostraba un botón "Abrir" que no hacía nada. Causa: iOS
+// Safari trata un PDF en blob: dentro de un iframe como ADJUNTO, no como
+// contenido para renderizar inline — pasa incluso con el Blob bien tipado
+// como application/pdf (eso arregló el bug de v1.31, pero no este). Es una
+// limitación de WebKit en iframes, no de nuestro código.
+// Salida: dejar de depender del visor nativo del navegador (que varía por
+// plataforma) y renderizar el PDF nosotros mismos con PDF.js (Mozilla, la
+// misma librería que usa Firefox internamente) dibujando cada página en un
+// <canvas> — funciona igual en cualquier navegador porque no es un iframe ni
+// un plugin nativo, es JS + Canvas 2D puro. Se muestra UNA página a la vez
+// (con navegación ANTERIOR/SIGUIENTE) en vez de todas juntas: los manuales
+// más largos (el de LV-ART ronda 13MB) tardarían y pesarían mucho en memoria
+// si se renderizaran enteros de una.
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; // MISMA versión que el <script> del <head>, si no tira mismatch
+let _visorPdfDoc=null;
+let _visorPaginaActual=1;
+let _visorReqId=0; // anti-reentrancia: si se clickea LEER en otro manual mientras el actual todavía está cargando, descarta la respuesta vieja cuando llegue
+
 window.abrirVisorPdf=async function(url,titulo){
   const miReqId=++_visorReqId;
   document.getElementById('man-visor-titulo').textContent='// '+titulo;
   const status=document.getElementById('man-visor-status');
-  const iframe=document.getElementById('man-visor-iframe');
-  iframe.style.display='none';
-  iframe.src='';
-  if(_visorBlobUrlActual){ URL.revokeObjectURL(_visorBlobUrlActual); _visorBlobUrlActual=null; }
+  const canvas=document.getElementById('man-visor-canvas');
+  const nav=document.getElementById('man-visor-nav');
+  canvas.style.display='none';
+  nav.style.display='none';
+  if(_visorPdfDoc){ _visorPdfDoc.destroy(); _visorPdfDoc=null; } // libera la memoria del PDF anterior (pueden pesar >10MB)
   status.style.display='block';
   status.textContent='Cargando…';
   document.getElementById('man-visor-overlay').classList.add('open');
   try{
     const r=await fetch(url);
     if(!r.ok) throw new Error('HTTP '+r.status);
-    if(miReqId!==_visorReqId) return; // el usuario ya pidió otro PDF mientras este bajaba
-    // v1.31 FIX (causa raíz real del "se descarga con nombre random"): r.blob()
-    // hereda el Content-Type de la respuesta HTTP, y raw.githubusercontent.com
-    // manda "application/octet-stream" para TODO lo que sirve, sin importar la
-    // extensión real del archivo. Con ese tipo el navegador no reconoce el blob
-    // como PDF y lo descarga en vez de renderizarlo (de ahí el nombre UUID sin
-    // extensión). Se ignora el Content-Type del servidor: se lee como bytes
-    // crudos (arrayBuffer) y se arma el Blob a mano forzando el tipo correcto.
     const buf=await r.arrayBuffer();
     if(miReqId!==_visorReqId) return;
-    const blob=new Blob([buf],{type:'application/pdf'});
-    _visorBlobUrlActual=URL.createObjectURL(blob);
-    iframe.src=_visorBlobUrlActual;
+    _visorPdfDoc=await pdfjsLib.getDocument({data:buf}).promise;
+    if(miReqId!==_visorReqId){ _visorPdfDoc.destroy(); _visorPdfDoc=null; return; }
+    _visorPaginaActual=1;
+    await _renderizarPaginaPdf(1);
     status.style.display='none';
-    iframe.style.display='block';
+    canvas.style.display='block';
+    nav.style.display=_visorPdfDoc.numPages>1?'flex':'none';
   }catch(e){
     if(miReqId!==_visorReqId) return;
     status.textContent='✗ No se pudo cargar el PDF ('+e.message+')';
   }
 };
+
+// Ajusta el ancho de renderizado al ancho disponible del modal (fit-to-width)
+// — se recalcula en cada página porque el usuario puede haber rotado el
+// celular o cambiado de página con otro tamaño.
+async function _renderizarPaginaPdf(num){
+  if(!_visorPdfDoc) return;
+  const page=await _visorPdfDoc.getPage(num);
+  const canvas=document.getElementById('man-visor-canvas');
+  const cuerpo=document.getElementById('man-visor-body');
+  const anchoDisp=Math.max(280,cuerpo.clientWidth-32); // -32 = padding del modal-body
+  const viewportBase=page.getViewport({scale:1});
+  const escala=anchoDisp/viewportBase.width;
+  const viewport=page.getViewport({scale:escala});
+  canvas.width=viewport.width;
+  canvas.height=viewport.height;
+  await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+  document.getElementById('man-visor-pagina').textContent='Página '+num+' / '+_visorPdfDoc.numPages;
+}
+
+window.visorPaginaAnterior=function(){
+  if(_visorPdfDoc && _visorPaginaActual>1){ _visorPaginaActual--; _renderizarPaginaPdf(_visorPaginaActual); }
+};
+window.visorPaginaSiguiente=function(){
+  if(_visorPdfDoc && _visorPaginaActual<_visorPdfDoc.numPages){ _visorPaginaActual++; _renderizarPaginaPdf(_visorPaginaActual); }
+};
 window.cerrarVisorPdf=function(){
   document.getElementById('man-visor-overlay').classList.remove('open');
-  document.getElementById('man-visor-iframe').src='';
-  if(_visorBlobUrlActual){ URL.revokeObjectURL(_visorBlobUrlActual); _visorBlobUrlActual=null; } // libera la memoria del blob (los PDF pueden pesar >10MB)
+  if(_visorPdfDoc){ _visorPdfDoc.destroy(); _visorPdfDoc=null; } // libera la memoria del PDF (pueden pesar >10MB)
 };
 
 function formManual(item,key){
