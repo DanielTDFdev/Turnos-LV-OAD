@@ -1,5 +1,19 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.53
+  CAMBIOS : Pedido de Daniel: los íconos de toques/aterrizaje/patrones (v8.52) no
+            escalaban con el zoom del mapa, a diferencia de las flechitas de dirección.
+            Mismo patrón que _flechaMarkers/_dibujarFlechasDireccion/
+            _actualizarTamanioFlechas (v8.33): nuevo array _iconoMarkers (reseteado en
+            abrirMapaVuelo) donde ahora solo se juntan los datos (lat/lng/color/glifo/
+            tooltip) — los markers de Leaflet recién se crean en _dibujarIconosManiobra(),
+            llamada DESPUÉS de fitBounds (cuando el mapa ya tiene un zoom real), y un
+            listener 'zoomend' propio (_actualizarTamanioIconosManiobra) recrea el ícono
+            de cada uno con el tamaño nuevo. Reutiliza la MISMA _tamanioFlechaPorZoom que
+            las flechas (mismo rango de zoom/tamaño) con un factor por categoría
+            (ICONO_TAM_FACTOR: toque=1, aterrizaje=1.2, patrón=1.35) para mantener la
+            jerarquía visual que antes daban los tamaños fijos (15/18/20px).
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.52
   CAMBIOS : Pedido de Daniel: la misma iconografía del Análisis del vuelo (toques y
             despegue, aterrizaje final, patrones de maniobra) ahora también se dibuja
@@ -4134,7 +4148,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.52</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.53</div>
   </div>
 
 </div>
@@ -12535,6 +12549,40 @@ function _actualizarTamanioFlechas(mapa){
     if(f.marker) f.marker.setIcon(_iconoFlecha(f.bearing,f.color,tam));
   }
 }
+
+// v8.53 — pedido de Daniel: los íconos de toques/aterrizaje/patrones (v8.52)
+// no escalaban con el zoom, a diferencia de las flechitas de dirección.
+// Mismo patrón que _flechaMarkers/_dibujarFlechasDireccion/_actualizarTamanioFlechas
+// de arriba: se guardan los datos en _iconoMarkers (reseteado en abrirMapaVuelo),
+// los markers recién se crean en _dibujarIconosManiobra() (después de
+// fitBounds, cuando el mapa ya tiene un zoom real) y un listener 'zoomend'
+// propio recrea el ícono (setIcon) de cada uno con el tamaño nuevo. Se
+// reutiliza la MISMA _tamanioFlechaPorZoom (mismo rango de zoom/tamaño que las
+// flechas) como base, con un factor por categoría para mantener la jerarquía
+// visual entre toque < aterrizaje < patrón que ya tenían los tamaños fijos.
+let _iconoMarkers = [];
+const ICONO_TAM_FACTOR = {toque:1, aterrizaje:1.2, patron:1.35};
+function _iconoManiobra(color, glifo, tam){
+  return L.divIcon({
+    html: `<div style="background:${color};width:${tam}px;height:${tam}px;border-radius:50%;border:2px solid #000;box-shadow:0 0 6px ${color}88;display:flex;align-items:center;justify-content:center;font-size:${Math.round(tam*0.55)}px;line-height:1;color:#000;font-family:var(--font-mono)">${glifo}</div>`,
+    className:'', iconSize:[tam,tam], iconAnchor:[tam/2,tam/2],
+  });
+}
+function _dibujarIconosManiobra(mapa){
+  const base=_tamanioFlechaPorZoom(mapa.getZoom());
+  for(const m of _iconoMarkers){
+    const tam=Math.round(base*(ICONO_TAM_FACTOR[m.cat]||1));
+    m.marker = L.marker([m.lat,m.lng], {icon:_iconoManiobra(m.color,m.glifo,tam)}).bindTooltip(m.tooltip).addTo(mapa);
+  }
+  mapa.on('zoomend', ()=>_actualizarTamanioIconosManiobra(mapa));
+}
+function _actualizarTamanioIconosManiobra(mapa){
+  const base=_tamanioFlechaPorZoom(mapa.getZoom());
+  for(const m of _iconoMarkers){
+    const tam=Math.round(base*(ICONO_TAM_FACTOR[m.cat]||1));
+    if(m.marker) m.marker.setIcon(_iconoManiobra(m.color,m.glifo,tam));
+  }
+}
 function _bearingDeg(lat1,lon1,lat2,lon2){
   const φ1=lat1*Math.PI/180, φ2=lat2*Math.PI/180, Δλ=(lon2-lon1)*Math.PI/180;
   const y=Math.sin(Δλ)*Math.cos(φ2);
@@ -13152,19 +13200,17 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     // _detectarPatronesManiobra) y las mismas constantes de color/glifo
     // (PATRON_COLOR/PATRON_GLIFO/PATRON_NOMBRES) que ya usa _renderChartAltitud
     // — un solo lugar para tocar si se ajustan colores o criterios.
-    const mkIcoGlifo = (color, glifo, size) => L.divIcon({
-      html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid #000;box-shadow:0 0 6px ${color}88;display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.55)}px;line-height:1;color:#000;font-family:var(--font-mono)">${glifo}</div>`,
-      className:'', iconSize:[size,size], iconAnchor:[size/2,size/2],
-    });
+    // v8.53 — igual que las flechas, los datos se juntan ACÁ pero los markers
+    // recién se crean en _dibujarIconosManiobra() después de fitBounds (ver
+    // comentario junto a _iconoMarkers), para que escalen con el zoom.
+    _iconoMarkers = [];
     const bandasMapa = _clasificarTramosVuelo(segmentos, altMinTraza);
     for(const t of _detectarToques(segmentos, altMinTraza)){
-      L.marker([t.lat,t.lng], {icon: mkIcoGlifo('#f0a500','',15)})
-        .bindTooltip('🟡 Toque y despegue — ' + fmtT(t.ts)).addTo(_mapaVueloLeaflet);
+      _iconoMarkers.push({lat:t.lat, lng:t.lng, cat:'toque', color:'#f0a500', glifo:'', tooltip:'🟡 Toque y despegue — ' + fmtT(t.ts)});
     }
     const aterrizajeMapa = _detectarAterrizajeFinal(segmentos, altMinTraza);
     if(aterrizajeMapa){
-      L.marker([aterrizajeMapa.lat,aterrizajeMapa.lng], {icon: mkIcoGlifo('#39d353','▼',18)})
-        .bindTooltip('🟢 Aterrizaje final — ' + fmtT(aterrizajeMapa.ts)).addTo(_mapaVueloLeaflet);
+      _iconoMarkers.push({lat:aterrizajeMapa.lat, lng:aterrizajeMapa.lng, cat:'aterrizaje', color:'#39d353', glifo:'▼', tooltip:'🟢 Aterrizaje final — ' + fmtT(aterrizajeMapa.ts)});
     }
     for(const p of _detectarPatronesManiobra(segmentos, bandasMapa)){
       const tMid = new Date((new Date(p.t0).getTime()+new Date(p.t1).getTime())/2).toISOString();
@@ -13175,12 +13221,12 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
         if(dif<mejorDif){ mejorDif=dif; cercano=pt; }
       }
       if(!cercano) continue;
-      L.marker([cercano.lat,cercano.lng], {icon: mkIcoGlifo(PATRON_COLOR[p.tipo]||'#888', PATRON_GLIFO[p.tipo]||'•', 20)})
-        .bindTooltip(`${PATRON_NOMBRES[p.tipo]||p.tipo} — ${p.detalle} (aprox. ${fmtT(cercano.ts)})`).addTo(_mapaVueloLeaflet);
+      _iconoMarkers.push({lat:cercano.lat, lng:cercano.lng, cat:'patron', color:PATRON_COLOR[p.tipo]||'#888', glifo:PATRON_GLIFO[p.tipo]||'•', tooltip:`${PATRON_NOMBRES[p.tipo]||p.tipo} — ${p.detalle} (aprox. ${fmtT(cercano.ts)})`});
     }
 
     _mapaVueloLeaflet.fitBounds(L.latLngBounds(coords), { padding: [40,40], maxZoom: 15 });
     _dibujarFlechasDireccion(_mapaVueloLeaflet);
+    _dibujarIconosManiobra(_mapaVueloLeaflet);
 
     // Info bar
     const durMs = new Date(puntos[puntos.length-1].ts) - new Date(puntos[0].ts);
