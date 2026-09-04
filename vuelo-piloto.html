@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.61 · 2026-09-04
+  Fix: las flechas de sentido sobre la traza GPS quedaban desalineadas al rotar el mapa
+  (gesto o control de rotación) — el bearing se aplicaba como rotación CSS fija en el
+  SVG del ícono, ciega a la orientación del mapa. Ahora se usa el soporte nativo de
+  leaflet-rotate para L.Marker (options.rotation en radianes + rotateWithView:true),
+  que se recalcula solo con cada evento 'rotate'. Mismo fix en vuelo.html v5.76.
+
   v4.60 · 2026-09-03
   Fix del marcador de aterrizaje final (v4.59): faltaba el chequeo de mínimo local en
   _detectarAterrizajeFinal(). Ver turnos.html v8.48 para el detalle completo del bug y
@@ -1690,7 +1697,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.60';
+const APP_VERSION = '4.61';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3830,23 +3837,30 @@ function _tamanioFlechaPorZoom(zoom){
   const t = Math.max(0, Math.min(1, (zoom-FLECHA_ZOOM_MIN)/(FLECHA_ZOOM_MAX-FLECHA_ZOOM_MIN)));
   return Math.round(FLECHA_TAM_MIN + t*(FLECHA_TAM_MAX-FLECHA_TAM_MIN));
 }
-function _iconoFlecha(bearing,color,tam){
+function _iconoFlecha(color,tam){
+  // v5.76/v4.61: la rotación YA NO va hardcodeada en el SVG (eso era rotación fija en
+  // pantalla, ciega a la orientación del mapa). Se usa el soporte nativo de
+  // leaflet-rotate para L.Marker (options.rotation en RADIANES + rotateWithView:true,
+  // ver _dibujarFlechasDireccion) que suma el bearing del mapa automáticamente y se
+  // recalcula solo en cada evento 'rotate' — sin esto las flechas apuntaban al bearing
+  // real del vuelo pero fijo respecto a la pantalla, así que al girar el mapa (gesto/
+  // control de rotación) quedaban desalineadas con la traza.
   return L.divIcon({
-    html:`<svg width="${tam}" height="${tam}" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
+    html:`<svg width="${tam}" height="${tam}" viewBox="0 0 14 14"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
     className:'', iconSize:[tam,tam], iconAnchor:[tam/2,tam/2],
   });
 }
 function _dibujarFlechasDireccion(mapa){
   const tam=_tamanioFlechaPorZoom(mapa.getZoom());
   for(const f of _flechaMarkers){
-    f.marker = L.marker([f.lat,f.lng], {icon:_iconoFlecha(f.bearing,f.color,tam), interactive:false}).addTo(mapa);
+    f.marker = L.marker([f.lat,f.lng], {icon:_iconoFlecha(f.color,tam), interactive:false, rotation:f.bearing*Math.PI/180, rotateWithView:true}).addTo(mapa);
   }
   mapa.on('zoomend', ()=>_actualizarTamanioFlechas(mapa));
 }
 function _actualizarTamanioFlechas(mapa){
   const tam=_tamanioFlechaPorZoom(mapa.getZoom());
   for(const f of _flechaMarkers){
-    if(f.marker) f.marker.setIcon(_iconoFlecha(f.bearing,f.color,tam));
+    if(f.marker) f.marker.setIcon(_iconoFlecha(f.color,tam));
   }
 }
 function _bearingDeg(lat1,lon1,lat2,lon2){

@@ -1,5 +1,13 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.56
+  CAMBIOS : Fix: las flechas de sentido sobre la traza GPS quedaban desalineadas al rotar
+            el mapa (gesto o control de rotación) — el bearing se aplicaba como rotación
+            CSS fija en el SVG del ícono, ciega a la orientación del mapa. Ahora se usa
+            el soporte nativo de leaflet-rotate para L.Marker (options.rotation en
+            radianes + rotateWithView:true), que se recalcula solo con cada evento
+            'rotate'. Mismo fix en vuelo.html v5.76 y vuelo-piloto.html v4.61.
+
   VERSION : 8.55
   CAMBIOS : Pedido de Daniel con captura: seguía detectando un "toque" a ~300ft, muy por
             encima de un toque real. Causa: TOQUE_ALTURA_MAX_FT (300ft) se mide contra
@@ -4188,7 +4196,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.55</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.56</div>
   </div>
 
 </div>
@@ -12570,23 +12578,29 @@ function _tamanioFlechaPorZoom(zoom){
   const t = Math.max(0, Math.min(1, (zoom-FLECHA_ZOOM_MIN)/(FLECHA_ZOOM_MAX-FLECHA_ZOOM_MIN)));
   return Math.round(FLECHA_TAM_MIN + t*(FLECHA_TAM_MAX-FLECHA_TAM_MIN));
 }
-function _iconoFlecha(bearing,color,tam){
+function _iconoFlecha(color,tam){
+  // v8.56: la rotación YA NO va hardcodeada en el SVG (eso era rotación fija en
+  // pantalla, ciega a la orientación del mapa). Se usa el soporte nativo de
+  // leaflet-rotate para L.Marker (options.rotation en RADIANES + rotateWithView:true,
+  // ver _dibujarFlechasDireccion) que suma el bearing del mapa automáticamente y se
+  // recalcula solo en cada evento 'rotate'. Mismo fix en vuelo.html v5.76 y
+  // vuelo-piloto.html v4.61.
   return L.divIcon({
-    html:`<svg width="${tam}" height="${tam}" viewBox="0 0 14 14" style="transform:rotate(${bearing}deg)"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
+    html:`<svg width="${tam}" height="${tam}" viewBox="0 0 14 14"><polygon points="7,1 12,12 7,9 2,12" fill="${color}" stroke="rgba(0,0,0,.55)" stroke-width="0.6"/></svg>`,
     className:'', iconSize:[tam,tam], iconAnchor:[tam/2,tam/2],
   });
 }
 function _dibujarFlechasDireccion(mapa){
   const tam=_tamanioFlechaPorZoom(mapa.getZoom());
   for(const f of _flechaMarkers){
-    f.marker = L.marker([f.lat,f.lng], {icon:_iconoFlecha(f.bearing,f.color,tam), interactive:false}).addTo(mapa);
+    f.marker = L.marker([f.lat,f.lng], {icon:_iconoFlecha(f.color,tam), interactive:false, rotation:f.bearing*Math.PI/180, rotateWithView:true}).addTo(mapa);
   }
   mapa.on('zoomend', ()=>_actualizarTamanioFlechas(mapa));
 }
 function _actualizarTamanioFlechas(mapa){
   const tam=_tamanioFlechaPorZoom(mapa.getZoom());
   for(const f of _flechaMarkers){
-    if(f.marker) f.marker.setIcon(_iconoFlecha(f.bearing,f.color,tam));
+    if(f.marker) f.marker.setIcon(_iconoFlecha(f.color,tam));
   }
 }
 
