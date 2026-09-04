@@ -2,6 +2,35 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.31 ·  /revisar sobre el visor de v1.30 (Daniel seguía viendo la descarga, con un
+           nombre de archivo tipo UUID sin extensión) — 4 hallazgos, ordenados por
+           severidad, los 4 corregidos:
+           (1) CRÍTICO, causa raíz real: r.blob() hereda el Content-Type de la
+           respuesta HTTP, y raw.githubusercontent.com manda
+           "application/octet-stream" para TODO lo que sirve sin importar la extensión
+           — el Blob quedaba tipado como binario genérico, no como PDF, y el navegador
+           lo descargaba con nombre random en vez de renderizarlo. Fix: se lee
+           arrayBuffer() (bytes crudos, ignora el Content-Type del servidor) y se arma
+           el Blob a mano forzando {type:'application/pdf'}.
+           (2) MEDIO, correctness/seguridad: el título/URL se interpolaban en el
+           onclick escapando solo con escHtml (pensado para texto DENTRO de un
+           atributo HTML, no para el borde de un string de JS) — el navegador
+           decodifica entidades HTML del atributo ANTES de parsear el onclick como JS,
+           así que una comilla simple en un nombre de archivo podía cortar el string a
+           mitad de camino. El .replace(/'/g,...) que había después de escHtml no
+           hacía nada (para ese momento ya no quedaban comillas simples literales,
+           escHtml ya las había convertido a &#39;). Nueva _jsAttrEsc(): escapa
+           primero para JS (\ y '), recién después para HTML, en ese orden.
+           (3) BAJO-MEDIO, correctness: sin guard, si se clickeaba LEER en dos
+           manuales distintos rápido, la respuesta que tardara más en llegar pisaba a
+           la que llegó primero. Nuevo _visorReqId (mismo patrón de anti-reentrancia
+           que ya usa el resto de la suite en botones INICIAR/FINALIZAR/CONFIRMAR):
+           una respuesta vieja se descarta si el usuario ya pidió otro PDF mientras
+           tanto.
+           (4) BAJO, performance: los fetches de subcarpetas eran en serie
+           (for+await) en vez de en paralelo. Ahora Promise.all — no cambia el orden
+           de aparición en la página (se arma recorriendo la lista de subcarpetas en
+           orden, no en el orden en que cada fetch termina).
   v1.30 ·  FIX reportado por Daniel: al tocar LEER, el PDF se terminaba descargando y
            abriendo en Acrobat Reader en vez de verse dentro del portal. Causa real:
            raw.githubusercontent.com manda "Content-Type: application/octet-stream" (no
@@ -491,7 +520,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.30</span>
+      <span class="ver">v1.31</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -791,20 +820,27 @@ async function cargarManualesRepo(){
     const subcarpetas=root.filter(it=>it.type==='dir').sort((a,b)=>a.name.localeCompare(b.name));
     let html='';
     if(archivosRoot.length) html+=_seccionManualesHtml('GENERALES', archivosRoot, null, '📚');
-    for(const sub of subcarpetas){
+    // v1.31 — en paralelo (Promise.all) en vez de en serie (for+await): con 1
+    // subcarpeta no se nota, pero si se agregan más antes esperaba a que cada
+    // una termine para arrancar la siguiente, sumando los tiempos en vez de
+    // solaparlos. El orden de aparición en la página se preserva igual porque
+    // se arma el HTML recorriendo `subcarpetas` en orden al final, no en el
+    // orden en que cada fetch termina.
+    const resultados=await Promise.all(subcarpetas.map(async sub=>{
       const disp=SECCION_DISPLAY[sub.name.toLowerCase()];
       const tituloSeccion=disp?disp.titulo:sub.name.toUpperCase();
       const iconoSeccion=disp?disp.icono:SECCION_ICONO_DEFAULT;
       try{
         const items=await _listarCarpetaGH('manuales/'+sub.name);
         const archivos=items.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
-        if(archivos.length) html+=_seccionManualesHtml(tituloSeccion, archivos, sub.name, iconoSeccion);
+        return archivos.length ? _seccionManualesHtml(tituloSeccion, archivos, sub.name, iconoSeccion) : '';
       }catch(e){
         // una subcarpeta que falla no tira abajo el resto — se avisa y se sigue
-        html+='<h3 style="margin-top:18px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(tituloSeccion)+'</h3>'+
+        return '<h3 style="margin-top:18px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(tituloSeccion)+'</h3>'+
           '<div class="empty">✗ No se pudo leer manuales/'+escHtml(sub.name)+' ('+escHtml(e.message)+')</div>';
       }
-    }
+    }));
+    html+=resultados.join('');
     el.innerHTML = html || '<div class="empty">// CARPETA /manuales VACÍA EN EL REPO</div>';
   }catch(e){
     // Típico: repo privado, carpeta inexistente, o límite de la API de GitHub sin autenticar
@@ -822,6 +858,20 @@ async function cargarManualesRepo(){
 // versión sin sufijo si existe alguna; si no, con la primera que aparezca.
 // v1.29 — cuarto parámetro icono: antes era fijo (📄) para toda tarjeta, ahora
 // se pasa por sección (ver SECCION_DISPLAY/SECCION_ICONO_DEFAULT arriba).
+// v1.31 FIX (hallado en /revisar, no reportado por Daniel): el título y la
+// URL se interpolaban en un onclick="...('...','...')" escapando solo con
+// escHtml (pensado para texto DENTRO de un atributo HTML, no para strings de
+// JS). El navegador decodifica entidades HTML del atributo ANTES de parsear
+// el onclick como JS — así que escHtml sola no evita que una comilla simple
+// en el nombre de archivo corte el string de JS a mitad de camino. Hacía
+// falta escapar primero para el borde JS (\ y ') y RECIÉN DESPUÉS para HTML,
+// en ese orden — el .replace(/'/g,...) que había DESPUÉS de escHtml no hacía
+// nada porque para ese momento ya no quedaba ninguna ' literal (escHtml ya
+// las había convertido a &#39;).
+function _jsAttrEsc(s){
+  return escHtml(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"));
+}
+
 function _seccionManualesHtml(titulo, archivos, prefijoRedundante, icono){
   const vistos=new Map();
   for(const f of archivos){
@@ -844,7 +894,7 @@ function _seccionManualesHtml(titulo, archivos, prefijoRedundante, icono){
         <div class="man-ic">${icono||SECCION_ICONO_DEFAULT}</div>
         <div class="man-ttl">${escHtml(f.titulo)}</div>
         <div class="man-sz">${(f.size/1024).toFixed(0)} KB</div>
-        <button class="primary" onclick="abrirVisorPdf('${escHtml(f.download_url)}','${escHtml(f.titulo).replace(/'/g,"\\'")}')">LEER</button>
+        <button class="primary" onclick="abrirVisorPdf('${_jsAttrEsc(f.download_url)}','${_jsAttrEsc(f.titulo)}')">LEER</button>
       </div>`).join('')+'</div>';
 }
 
@@ -890,7 +940,9 @@ function _tituloDesdeArchivo(nombre, prefijoRedundante){
 // "viene" de github) y RECIÉN ahí se lo pone de src al iframe — el navegador
 // sí lo renderiza porque un blob: no lleva los headers del servidor original.
 let _visorBlobUrlActual=null;
+let _visorReqId=0; // anti-reentrancia: si se clickea LEER en otro manual mientras el actual todavía está bajando, descarta la respuesta vieja cuando llegue
 window.abrirVisorPdf=async function(url,titulo){
+  const miReqId=++_visorReqId;
   document.getElementById('man-visor-titulo').textContent='// '+titulo;
   const status=document.getElementById('man-visor-status');
   const iframe=document.getElementById('man-visor-iframe');
@@ -903,12 +955,23 @@ window.abrirVisorPdf=async function(url,titulo){
   try{
     const r=await fetch(url);
     if(!r.ok) throw new Error('HTTP '+r.status);
-    const blob=await r.blob();
+    if(miReqId!==_visorReqId) return; // el usuario ya pidió otro PDF mientras este bajaba
+    // v1.31 FIX (causa raíz real del "se descarga con nombre random"): r.blob()
+    // hereda el Content-Type de la respuesta HTTP, y raw.githubusercontent.com
+    // manda "application/octet-stream" para TODO lo que sirve, sin importar la
+    // extensión real del archivo. Con ese tipo el navegador no reconoce el blob
+    // como PDF y lo descarga en vez de renderizarlo (de ahí el nombre UUID sin
+    // extensión). Se ignora el Content-Type del servidor: se lee como bytes
+    // crudos (arrayBuffer) y se arma el Blob a mano forzando el tipo correcto.
+    const buf=await r.arrayBuffer();
+    if(miReqId!==_visorReqId) return;
+    const blob=new Blob([buf],{type:'application/pdf'});
     _visorBlobUrlActual=URL.createObjectURL(blob);
     iframe.src=_visorBlobUrlActual;
     status.style.display='none';
     iframe.style.display='block';
   }catch(e){
+    if(miReqId!==_visorReqId) return;
     status.textContent='✗ No se pudo cargar el PDF ('+e.message+')';
   }
 };
