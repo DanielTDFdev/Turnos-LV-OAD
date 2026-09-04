@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.28 ·  FIX reportado por Daniel: subió 9 PDFs a /manuales/placas (una subcarpeta) y
+           no aparecían en las tarjetas de v1.27. La API de contenidos de GitHub NO es
+           recursiva — listar /manuales solo trae lo que está directo ahí, una
+           subcarpeta aparece como type:'dir' sin sus archivos. Ahora cargarManualesRepo
+           lista la raíz y, aparte, CADA subcarpeta que haya (genérico, no hardcodeado a
+           "placas" — para que cualquier tema nuevo organizado en su propia carpeta
+           aparezca solo). Cada subcarpeta es su propia sección con su propio grid.
+           Bonus: dedup de 2 pares de archivos duplicados que había en /placas (mismo
+           tema con sufijo " (1)" de un re-subido sin borrar el viejo) — se agrupan por
+           título limpio y se prioriza la versión sin sufijo. _tituloDesdeArchivo ahora
+           acepta un prefijoRedundante opcional (el nombre de la subcarpeta) para sacar
+           ese texto repetido del título de la tarjeta y separar el número inicial para
+           poder ordenar 1..9 en vez de alfabético.
   v1.27 ·  Pedido de Daniel: tarjetas por tema en la tab MANUALES en vez de la lista
            plana de nombres de archivo — grid de tarjetas (.man-grid/.man-card), una
            por cada PDF de /manuales del repo (9 hoy), con título derivado del nombre
@@ -458,7 +471,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.27</span>
+      <span class="ver">v1.28</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -721,43 +734,105 @@ async function renderManuales(){
   await cargarManuales();
 }
 
+// v1.28 FIX (reportado por Daniel: subió 9 PDFs a /manuales/placas — una
+// subcarpeta — y no aparecían). La API de contenidos de GitHub NO es
+// recursiva: listar /manuales solo trae lo que está directo ahí, cualquier
+// subcarpeta aparece como type:'dir' sin sus archivos. Ahora se lista la raíz
+// y, aparte, CADA subcarpeta que haya (genérico — no hardcodeado a "placas",
+// para que cualquier tema nuevo que se organice en su propia carpeta aparezca
+// solo, mismo espíritu de "se listan solos" del diseño original). Cada
+// subcarpeta es su propia sección con su propio grid de tarjetas.
+async function _listarCarpetaGH(ruta){
+  const r=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+ruta);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const items=await r.json();
+  return Array.isArray(items)?items:[];
+}
+
 async function cargarManualesRepo(){
   const el=document.getElementById('man-repo-lista');
   try{
-    const r=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/manuales');
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const items=await r.json();
-    const archivos=(Array.isArray(items)?items:[]).filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
-    if(!archivos.length){ el.innerHTML='<div class="empty">// CARPETA /manuales VACÍA EN EL REPO</div>'; return; }
-    archivos.sort((a,b)=>a.name.localeCompare(b.name));
-    el.innerHTML='<div class="man-grid">'+archivos.map(f=>{
-      const titulo=_tituloDesdeArchivo(f.name);
-      return `
-      <div class="man-card">
-        <div class="man-ic">📄</div>
-        <div class="man-ttl">${escHtml(titulo)}</div>
-        <div class="man-sz">${(f.size/1024).toFixed(0)} KB</div>
-        <button class="primary" onclick="abrirVisorPdf('${escHtml(f.download_url)}','${escHtml(titulo).replace(/'/g,"\\'")}')">LEER</button>
-      </div>`;
-    }).join('')+'</div>';
+    const root=await _listarCarpetaGH('manuales');
+    const archivosRoot=root.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
+    const subcarpetas=root.filter(it=>it.type==='dir').sort((a,b)=>a.name.localeCompare(b.name));
+    let html='';
+    if(archivosRoot.length) html+=_seccionManualesHtml('GENERALES', archivosRoot, null);
+    for(const sub of subcarpetas){
+      try{
+        const items=await _listarCarpetaGH('manuales/'+sub.name);
+        const archivos=items.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
+        if(archivos.length) html+=_seccionManualesHtml(sub.name.toUpperCase(), archivos, sub.name);
+      }catch(e){
+        // una subcarpeta que falla no tira abajo el resto — se avisa y se sigue
+        html+='<h3 style="margin-top:18px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(sub.name.toUpperCase())+'</h3>'+
+          '<div class="empty">✗ No se pudo leer manuales/'+escHtml(sub.name)+' ('+escHtml(e.message)+')</div>';
+      }
+    }
+    el.innerHTML = html || '<div class="empty">// CARPETA /manuales VACÍA EN EL REPO</div>';
   }catch(e){
     // Típico: repo privado, carpeta inexistente, o límite de la API de GitHub sin autenticar
     // (60 req/hora por IP — para el tráfico de un aeroclub no debería ser problema, pero
     // si varios alumnos abren la página casi a la vez desde la misma red podría pegarles
-    // a todos el mismo contador).
+    // a todos el mismo contador; con subcarpetas cada una suma una llamada más, a tener
+    // en cuenta si algún día hay muchas).
     el.innerHTML='<div class="empty">✗ No se pudo leer /manuales del repo ('+escHtml(e.message)+')</div>';
   }
 }
 
+// v1.28 — dedup: en /manuales/placas había 2 pares de archivos duplicados
+// (mismo tema, uno con sufijo " (1)" del navegador al re-subir sin borrar el
+// viejo). Se agrupan por título limpio SIN el sufijo "(N)" y se queda con la
+// versión sin sufijo si existe alguna; si no, con la primera que aparezca.
+function _seccionManualesHtml(titulo, archivos, prefijoRedundante){
+  const vistos=new Map();
+  for(const f of archivos){
+    const t=_tituloDesdeArchivo(f.name, prefijoRedundante);
+    const esDup=/\(\d+\)\s*$/.test(t);
+    const clave=t.replace(/\s*\(\d+\)\s*$/,'').trim().toLowerCase();
+    const existente=vistos.get(clave);
+    if(!existente || (!esDup && /\(\d+\)\s*$/.test(existente.titulo))){
+      vistos.set(clave,{...f,titulo:t});
+    }
+  }
+  const lista=[...vistos.values()].sort((a,b)=>{
+    const na=parseInt(a.titulo,10), nb=parseInt(b.titulo,10);
+    if(!isNaN(na)&&!isNaN(nb)) return na-nb;
+    return a.titulo.localeCompare(b.titulo);
+  });
+  return '<h3 style="margin-top:18px;margin-bottom:10px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(titulo)+'</h3>'+
+    '<div class="man-grid">'+lista.map(f=>`
+      <div class="man-card">
+        <div class="man-ic">📄</div>
+        <div class="man-ttl">${escHtml(f.titulo)}</div>
+        <div class="man-sz">${(f.size/1024).toFixed(0)} KB</div>
+        <button class="primary" onclick="abrirVisorPdf('${escHtml(f.download_url)}','${escHtml(f.titulo).replace(/'/g,"\\'")}')">LEER</button>
+      </div>`).join('')+'</div>';
+}
+
 // v1.27 — pedido de Daniel: tarjetas por tema en vez de lista plana de nombres
-// de archivo. No hay metadata propia todavía (categoría/descripción) para
-// estos 9 PDFs — el título de la tarjeta se deriva del NOMBRE DE ARCHIVO,
-// limpiando guiones/underscores y sacando la extensión. Si en algún momento
-// se quiere un título más prolijo por archivo, ahí sí habría que sumarle
-// metadata real (mismo patrón que ya tiene el catálogo Firebase de abajo,
-// con campo titulo propio) en vez de derivarlo del nombre.
-function _tituloDesdeArchivo(nombre){
-  return nombre.replace(/\.pdf$/i,'').replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+// de archivo. No hay metadata propia todavía (categoría/descripción) — el
+// título de la tarjeta se deriva del NOMBRE DE ARCHIVO, limpiando
+// guiones/underscores y sacando la extensión. Si en algún momento se quiere
+// un título más prolijo por archivo, ahí sí habría que sumarle metadata real
+// (mismo patrón que ya tiene el catálogo Firebase de abajo, con campo titulo
+// propio) en vez de derivarlo del nombre.
+// v1.28 — segundo parámetro opcional prefijoRedundante: cuando el archivo
+// está en una subcarpeta (ej. "placas") y el nombre repite ese mismo texto
+// (ej. "1.Placas - Taxi.pdf"), se saca esa parte del título ya que el header
+// de la sección ya lo dice — "1.Placas - Taxi" queda "1. Taxi" en vez de
+// "1 Placas Taxi". También separa un número inicial pegado al texto
+// ("1.Placas" → "1" + "Placas") para poder ordenar numéricamente después.
+function _tituloDesdeArchivo(nombre, prefijoRedundante){
+  let t=nombre.replace(/\.pdf$/i,'');
+  const m=/^(\d+)[.\s]*(.*)$/.exec(t);
+  let num=null, resto=t;
+  if(m && m[2]){ num=m[1]; resto=m[2]; }
+  resto=resto.replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+  if(prefijoRedundante){
+    const re=new RegExp('^'+prefijoRedundante.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*[-:]?\\s*','i');
+    resto=resto.replace(re,'').trim();
+  }
+  return (num?num+'. ':'')+resto;
 }
 
 // Visor embebido: <iframe> apuntando al raw del repo — no hace falta ninguna
