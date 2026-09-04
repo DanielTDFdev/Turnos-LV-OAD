@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.52
+  CAMBIOS : Pedido de Daniel: la misma iconografía del Análisis del vuelo (toques y
+            despegue, aterrizaje final, patrones de maniobra) ahora también se dibuja
+            sobre el mapa Leaflet, no solo en el gráfico de altitud — ahí se ve CUÁNDO
+            pasó cada cosa, acá se ve DÓNDE. Reutiliza las mismas funciones de detección
+            (_detectarToques, _detectarAterrizajeFinal, _detectarPatronesManiobra) y las
+            mismas constantes de color/glifo (PATRON_COLOR/PATRON_GLIFO/PATRON_NOMBRES)
+            que ya usa _renderChartAltitud — un solo lugar para tocar si se ajustan
+            colores o criterios más adelante. Los patrones de maniobra se ubican en el
+            punto de la traza más cercano en tiempo al punto medio del tramo detectado
+            (mismo criterio que en el gráfico). Cada marcador con su tooltip nativo al
+            pasar el mouse. Sigue siendo solo turnos.html (prototipo/en pulido).
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.51
   CAMBIOS : Fix reportado por Daniel con captura: el triángulo de aterrizaje final quedó
             marcado en un toque intermedio (13:53) en vez del aterrizaje real (más
@@ -4121,7 +4134,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.51</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.52</div>
   </div>
 
 </div>
@@ -13131,6 +13144,40 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     const fmtT = iso => { if(!iso) return '—'; const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')+':'+String(d.getUTCSeconds()).padStart(2,'0')+'Z'; };
     L.marker(coords[0], { icon: mkIco('#22c55e') }).bindTooltip('▶ ' + fmtT(puntos[0].ts)).addTo(_mapaVueloLeaflet);
     L.marker(coords[coords.length-1], { icon: mkIco('#ef4444') }).bindTooltip('⏹ ' + fmtT(puntos[puntos.length-1].ts)).addTo(_mapaVueloLeaflet);
+
+    // v8.52 — misma iconografía del Análisis del vuelo (toques, aterrizaje
+    // final, patrones de maniobra), ahora también sobre el mapa: acá sí se ve
+    // DÓNDE pasó cada cosa, no solo cuándo. Se reutilizan las mismas funciones
+    // de detección (_detectarToques, _detectarAterrizajeFinal,
+    // _detectarPatronesManiobra) y las mismas constantes de color/glifo
+    // (PATRON_COLOR/PATRON_GLIFO/PATRON_NOMBRES) que ya usa _renderChartAltitud
+    // — un solo lugar para tocar si se ajustan colores o criterios.
+    const mkIcoGlifo = (color, glifo, size) => L.divIcon({
+      html: `<div style="background:${color};width:${size}px;height:${size}px;border-radius:50%;border:2px solid #000;box-shadow:0 0 6px ${color}88;display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.55)}px;line-height:1;color:#000;font-family:var(--font-mono)">${glifo}</div>`,
+      className:'', iconSize:[size,size], iconAnchor:[size/2,size/2],
+    });
+    const bandasMapa = _clasificarTramosVuelo(segmentos, altMinTraza);
+    for(const t of _detectarToques(segmentos, altMinTraza)){
+      L.marker([t.lat,t.lng], {icon: mkIcoGlifo('#f0a500','',15)})
+        .bindTooltip('🟡 Toque y despegue — ' + fmtT(t.ts)).addTo(_mapaVueloLeaflet);
+    }
+    const aterrizajeMapa = _detectarAterrizajeFinal(segmentos, altMinTraza);
+    if(aterrizajeMapa){
+      L.marker([aterrizajeMapa.lat,aterrizajeMapa.lng], {icon: mkIcoGlifo('#39d353','▼',18)})
+        .bindTooltip('🟢 Aterrizaje final — ' + fmtT(aterrizajeMapa.ts)).addTo(_mapaVueloLeaflet);
+    }
+    for(const p of _detectarPatronesManiobra(segmentos, bandasMapa)){
+      const tMid = new Date((new Date(p.t0).getTime()+new Date(p.t1).getTime())/2).toISOString();
+      let cercano=null, mejorDif=Infinity;
+      for(const pt of puntos){
+        if(pt.lat==null) continue;
+        const dif=Math.abs(new Date(pt.ts)-new Date(tMid));
+        if(dif<mejorDif){ mejorDif=dif; cercano=pt; }
+      }
+      if(!cercano) continue;
+      L.marker([cercano.lat,cercano.lng], {icon: mkIcoGlifo(PATRON_COLOR[p.tipo]||'#888', PATRON_GLIFO[p.tipo]||'•', 20)})
+        .bindTooltip(`${PATRON_NOMBRES[p.tipo]||p.tipo} — ${p.detalle} (aprox. ${fmtT(cercano.ts)})`).addTo(_mapaVueloLeaflet);
+    }
 
     _mapaVueloLeaflet.fitBounds(L.latLngBounds(coords), { padding: [40,40], maxZoom: 15 });
     _dibujarFlechasDireccion(_mapaVueloLeaflet);
