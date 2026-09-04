@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.33 ·  FIX reportado por Daniel con captura: "No se pudo leer /manuales del repo
+           (HTTP 403)". El límite de 60 req/hora sin autenticar de la API de GitHub —
+           ya anotado como riesgo en el comentario de v1.28 — se pisó en la práctica:
+           cada carga de página hacía 1 (raíz) + N (subcarpetas) requests, y entre las
+           pruebas del visor de hoy alcanzó para agotarlo. No hace falta "mucha
+           gente a la vez": alcanza con recargar la página varias veces seguidas desde
+           la misma IP.
+           Fix: se cachea la estructura resuelta (raíz + subcarpetas, ya filtrada a
+           PDFs) en Firebase con TTL de 1 hora (MANUALES_CACHE_TTL_MIN) —
+           manuales_cache/estructura, misma base que ya usa toda la app, sin agregar
+           ningún token de GitHub al cliente (que sería la otra forma de subir el
+           límite, pero quedaría expuesto en el código fuente de un sitio 100%
+           client-side). La primera carga después de vencido el cache pega contra
+           GitHub y guarda el resultado con timestamp; el resto de las cargas — de
+           cualquier alumno, desde cualquier IP — leen directo de Firebase hasta que
+           venza. Si GitHub falla y hay cache vieja disponible, se muestra esa igual
+           (con aviso) en vez de la pantalla de error en blanco.
   v1.32 ·  REDISEÑO del visor — pedido de Daniel: en su celular seguía sin funcionar
            (mostraba una tarjeta "PDF" con nombre tipo UUID y un botón "Abrir" que no
            hacía nada). Causa: iOS Safari trata un PDF en blob: dentro de un iframe
@@ -553,7 +570,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.32</span>
+      <span class="ver">v1.33</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -850,43 +867,82 @@ const SECCION_DISPLAY = {
 };
 const SECCION_ICONO_DEFAULT = '📘';
 
+// v1.33 FIX (reportado por Daniel con captura: "No se pudo leer /manuales del
+// repo (HTTP 403)"): el límite de 60 req/hora sin autenticar de la API de
+// GitHub, que ya estaba anotado como riesgo en el comentario de arriba desde
+// v1.28, se pisó en la práctica — cada carga de página hacía 1 (raíz) + N
+// (subcarpetas) requests, y entre las pruebas de hoy alcanzó para agotarlo.
+// No es exclusivo de "muchos alumnos a la vez": basta con recargar la página
+// varias veces en poco tiempo desde la misma IP.
+// Fix: cachear la estructura resuelta (raíz + subcarpetas, ya filtrada a
+// PDFs) en Firebase — la misma base que ya usa toda la app, sin agregar
+// ninguna credencial nueva ni exponer un token de GitHub en el cliente (que
+// sería la otra forma de subir el límite, pero un token en un sitio 100%
+// client-side queda visible en el código fuente para cualquiera). Con TTL de
+// 1 hora: la primera carga después de vencido el cache pega contra GitHub y
+// graba el resultado con timestamp; todas las cargas siguientes (de
+// cualquier alumno, desde cualquier IP) leen directo de Firebase hasta que
+// venza. Si GitHub falla (rate limit u otra cosa) y hay cache vieja
+// disponible, se muestra esa igual — con aviso — en vez de la pantalla de
+// error en blanco.
+const MANUALES_CACHE_TTL_MIN = 60;
+const MANUALES_CACHE_PATH = 'manuales_cache/estructura';
+
+function _renderEstructuraManuales(archivosRoot, subcarpetasData){
+  let html='';
+  if(archivosRoot && archivosRoot.length) html+=_seccionManualesHtml('GENERALES', archivosRoot, null, '📚');
+  for(const nombreSub of Object.keys(subcarpetasData||{}).sort()){
+    const archivos=subcarpetasData[nombreSub];
+    const disp=SECCION_DISPLAY[nombreSub.toLowerCase()];
+    const tituloSeccion=disp?disp.titulo:nombreSub.toUpperCase();
+    const iconoSeccion=disp?disp.icono:SECCION_ICONO_DEFAULT;
+    if(archivos===null){
+      html+='<h3 style="margin-top:18px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(tituloSeccion)+'</h3>'+
+        '<div class="empty">✗ No se pudo leer esta sección</div>';
+    } else if(archivos.length){
+      html+=_seccionManualesHtml(tituloSeccion, archivos, nombreSub, iconoSeccion);
+    }
+  }
+  return html || '<div class="empty">// CARPETA /manuales VACÍA EN EL REPO</div>';
+}
+
 async function cargarManualesRepo(){
   const el=document.getElementById('man-repo-lista');
+  let cache=null;
+  try{ cache=await fbGet(MANUALES_CACHE_PATH); }catch(e){ /* sin cache disponible, seguimos igual */ }
+  const cacheEdadMin=cache&&cache.ts ? (Date.now()-cache.ts)/60000 : Infinity;
+  if(cache && cacheEdadMin<MANUALES_CACHE_TTL_MIN){
+    el.innerHTML=_renderEstructuraManuales(cache.raiz, cache.subcarpetas);
+    return;
+  }
   try{
     const root=await _listarCarpetaGH('manuales');
     const archivosRoot=root.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
     const subcarpetas=root.filter(it=>it.type==='dir').sort((a,b)=>a.name.localeCompare(b.name));
-    let html='';
-    if(archivosRoot.length) html+=_seccionManualesHtml('GENERALES', archivosRoot, null, '📚');
-    // v1.31 — en paralelo (Promise.all) en vez de en serie (for+await): con 1
-    // subcarpeta no se nota, pero si se agregan más antes esperaba a que cada
-    // una termine para arrancar la siguiente, sumando los tiempos en vez de
-    // solaparlos. El orden de aparición en la página se preserva igual porque
-    // se arma el HTML recorriendo `subcarpetas` en orden al final, no en el
-    // orden en que cada fetch termina.
-    const resultados=await Promise.all(subcarpetas.map(async sub=>{
-      const disp=SECCION_DISPLAY[sub.name.toLowerCase()];
-      const tituloSeccion=disp?disp.titulo:sub.name.toUpperCase();
-      const iconoSeccion=disp?disp.icono:SECCION_ICONO_DEFAULT;
+    // en paralelo (Promise.all): con pocas subcarpetas no se nota, pero si se
+    // agregan más no suman su tiempo una detrás de la otra.
+    const subcarpetasData={};
+    await Promise.all(subcarpetas.map(async sub=>{
       try{
         const items=await _listarCarpetaGH('manuales/'+sub.name);
-        const archivos=items.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
-        return archivos.length ? _seccionManualesHtml(tituloSeccion, archivos, sub.name, iconoSeccion) : '';
+        subcarpetasData[sub.name]=items.filter(it=>it.type==='file'&&/\.pdf$/i.test(it.name));
       }catch(e){
-        // una subcarpeta que falla no tira abajo el resto — se avisa y se sigue
-        return '<h3 style="margin-top:18px;color:var(--text2);font-size:13px;letter-spacing:.04em">// '+escHtml(tituloSeccion)+'</h3>'+
-          '<div class="empty">✗ No se pudo leer manuales/'+escHtml(sub.name)+' ('+escHtml(e.message)+')</div>';
+        subcarpetasData[sub.name]=null; // se avisa en el render, no tira abajo el resto
       }
     }));
-    html+=resultados.join('');
-    el.innerHTML = html || '<div class="empty">// CARPETA /manuales VACÍA EN EL REPO</div>';
+    el.innerHTML=_renderEstructuraManuales(archivosRoot, subcarpetasData);
+    try{ await fbSet(MANUALES_CACHE_PATH,{raiz:archivosRoot,subcarpetas:subcarpetasData,ts:Date.now()}); }
+    catch(e){ console.warn('[manuales] no se pudo guardar el cache en Firebase:',e.message); }
   }catch(e){
-    // Típico: repo privado, carpeta inexistente, o límite de la API de GitHub sin autenticar
-    // (60 req/hora por IP — para el tráfico de un aeroclub no debería ser problema, pero
-    // si varios alumnos abren la página casi a la vez desde la misma red podría pegarles
-    // a todos el mismo contador; con subcarpetas cada una suma una llamada más, a tener
-    // en cuenta si algún día hay muchas).
-    el.innerHTML='<div class="empty">✗ No se pudo leer /manuales del repo ('+escHtml(e.message)+')</div>';
+    // Típico: límite de la API de GitHub sin autenticar (60 req/hora por IP), repo
+    // privado, o carpeta inexistente. Si hay cache viejo (aunque vencido), se
+    // muestra igual en vez de dejar la pantalla en blanco con el error.
+    if(cache){
+      el.innerHTML=_renderEstructuraManuales(cache.raiz,cache.subcarpetas)+
+        '<div class="empty" style="margin-top:14px">⚠ No se pudo actualizar desde GitHub ('+escHtml(e.message)+') — mostrando la última versión guardada.</div>';
+    } else {
+      el.innerHTML='<div class="empty">✗ No se pudo leer /manuales del repo ('+escHtml(e.message)+')</div>';
+    }
   }
 }
 
