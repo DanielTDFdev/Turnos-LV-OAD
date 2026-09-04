@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   PORTAL ALUMNO — Aeroclub Río Grande
+  v1.30 ·  FIX reportado por Daniel: al tocar LEER, el PDF se terminaba descargando y
+           abriendo en Acrobat Reader en vez de verse dentro del portal. Causa real:
+           raw.githubusercontent.com manda "Content-Type: application/octet-stream" (no
+           "application/pdf") y "X-Frame-Options: deny" en TODO lo que sirve — bloquea a
+           propósito el embebido en iframe, sin importar la extensión del archivo. Sí
+           tiene CORS abierto (access-control-allow-origin: *), así que fetch() puede
+           leer los bytes sin problema (la política de framing no aplica a fetch/XHR,
+           solo a cargar como documento). abrirVisorPdf ahora hace fetch(url) → blob →
+           URL.createObjectURL() → RECIÉN ahí se lo pone de src al iframe — un blob: no
+           lleva los headers del servidor original, así que el navegador sí lo renderiza.
+           Estado de carga agregado (man-visor-status) mientras baja el PDF (pueden pesar
+           >10MB) y manejo de error si el fetch falla. cerrarVisorPdf ahora también hace
+           URL.revokeObjectURL() para no dejar el blob en memoria.
   v1.29 ·  Pedido de Daniel: la sección "PLACAS" (nombre crudo de la subcarpeta) pasa a
            mostrarse como "BRIEFINGS OPERACIONALES" — mapeo opcional nuevo
            SECCION_DISPLAY por nombre de carpeta (minúsculas), con fallback al nombre en
@@ -478,7 +491,7 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
         <span class="theme-toggle-icon">☀️</span>
       </div>
       <span class="who" id="who-label"></span>
-      <span class="ver">v1.29</span>
+      <span class="ver">v1.30</span>
       <a class="back" href="vor-trainer.html">◈ VOR TRAINER</a>
       <a class="back" href="turnos.html">← TURNERO</a>
       <button class="back" onclick="cerrarSesion()" title="Cerrar sesión">⏻ SALIR</button>
@@ -504,7 +517,10 @@ button.danger{background:rgba(248,81,73,.08);color:var(--red);border-color:var(-
       <h3 id="man-visor-titulo">// MANUAL</h3>
       <button onclick="cerrarVisorPdf()">✕ CERRAR</button>
     </div>
-    <div class="modal-body"><iframe id="man-visor-iframe" src=""></iframe></div>
+    <div class="modal-body">
+      <div id="man-visor-status" class="empty">Cargando…</div>
+      <iframe id="man-visor-iframe" src="" style="display:none"></iframe>
+    </div>
   </div>
 </div>
 
@@ -858,18 +874,48 @@ function _tituloDesdeArchivo(nombre, prefijoRedundante){
   return (num?num+'. ':'')+resto;
 }
 
-// Visor embebido: <iframe> apuntando al raw del repo — no hace falta ninguna
-// librería, los navegadores ya renderizan PDF nativo dentro de un iframe. El
-// alumno no sale de la página. Mismo patrón .modal-overlay/.modal que ya usa
-// el resto de la suite (turnos.html, etc.) para no usar prompt()/confirm().
-window.abrirVisorPdf=function(url,titulo){
+// Visor embebido: <iframe> con el PDF como blob: URL, NO apuntando directo al
+// raw del repo. v1.30 FIX (reportado por Daniel: al tocar LEER, el PDF se
+// terminaba bajando a la compu y abriendo en Acrobat Reader en vez de verse
+// adentro). Causa real: raw.githubusercontent.com manda
+// "Content-Type: application/octet-stream" (no "application/pdf") y
+// "X-Frame-Options: deny" en TODOS los archivos que sirve, sin importar la
+// extensión — eso bloquea a propósito que se lo pueda meter en un iframe, así
+// que nunca iba a funcionar apuntando el iframe directo ahí, ni de este ni de
+// ningún otro sitio con GitHub raw. Sí tiene CORS abierto
+// (access-control-allow-origin: *), así que un fetch() normal SÍ puede leer
+// los bytes del PDF sin problema — la política de framing no aplica a
+// fetch/XHR, solo a cargar el recurso como documento embebido. Se baja el PDF
+// con fetch(), se arma un blob: URL (mismo origen que la página, ya no
+// "viene" de github) y RECIÉN ahí se lo pone de src al iframe — el navegador
+// sí lo renderiza porque un blob: no lleva los headers del servidor original.
+let _visorBlobUrlActual=null;
+window.abrirVisorPdf=async function(url,titulo){
   document.getElementById('man-visor-titulo').textContent='// '+titulo;
-  document.getElementById('man-visor-iframe').src=url;
+  const status=document.getElementById('man-visor-status');
+  const iframe=document.getElementById('man-visor-iframe');
+  iframe.style.display='none';
+  iframe.src='';
+  if(_visorBlobUrlActual){ URL.revokeObjectURL(_visorBlobUrlActual); _visorBlobUrlActual=null; }
+  status.style.display='block';
+  status.textContent='Cargando…';
   document.getElementById('man-visor-overlay').classList.add('open');
+  try{
+    const r=await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const blob=await r.blob();
+    _visorBlobUrlActual=URL.createObjectURL(blob);
+    iframe.src=_visorBlobUrlActual;
+    status.style.display='none';
+    iframe.style.display='block';
+  }catch(e){
+    status.textContent='✗ No se pudo cargar el PDF ('+e.message+')';
+  }
 };
 window.cerrarVisorPdf=function(){
   document.getElementById('man-visor-overlay').classList.remove('open');
-  document.getElementById('man-visor-iframe').src=''; // corta la descarga/render si el PDF es pesado
+  document.getElementById('man-visor-iframe').src='';
+  if(_visorBlobUrlActual){ URL.revokeObjectURL(_visorBlobUrlActual); _visorBlobUrlActual=null; } // libera la memoria del blob (los PDF pueden pesar >10MB)
 };
 
 function formManual(item,key){
