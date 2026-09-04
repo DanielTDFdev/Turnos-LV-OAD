@@ -1,5 +1,26 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.55
+  CAMBIOS : Pedido de Daniel con captura: seguía detectando un "toque" a ~300ft, muy por
+            encima de un toque real. Causa: TOQUE_ALTURA_MAX_FT (300ft) se mide contra
+            altMinTraza, el mínimo PUNTUAL registrado en todo el vuelo — si ese punto
+            tiene ruido GPS hacia abajo, el margen de 300ft alcanza para colar algo que
+            no tocó tierra (pasada baja, simulacro sin aterrizar).
+            Nueva _calcPisoVirtual(): promedia la altitud de los primeros
+            PISO_VENTANA_MIN=5 minutos del vuelo (se asume tierra ahí, antes de despegar)
+            en vez de depender de un solo punto. Con guard explícito pedido por Daniel:
+            si esos primeros 5 minutos ya muestran variación de altitud
+            (PISO_VARIACION_MAX_FT=150ft) o un promedio muy por encima del mínimo
+            registrado en todo el vuelo (PISO_DESVIO_MAX_FT=200ft) — señal de que el
+            logging arrancó con el avión ya en vuelo — se descarta el piso virtual y se
+            cae al comportamiento viejo (altMinTraza directo), con aviso en consola.
+            _detectarToques/_clasificarTramosVuelo/_detectarAterrizajeFinal NO cambiaron
+            de lógica interna — solo se les pasa `piso` (el resultado de
+            _calcPisoVirtual) en vez de altMinTraza directo, en abrirAnalisisVuelo y
+            abrirMapaVuelo. El altMinTraza real se sigue usando sin cambios para el eje Y
+            del gráfico y el degradé de color por altitud (eso no necesita el piso
+            virtual, es solo escala visual).
+  ────────────────────────────────────────────────────────────────
   VERSION : 8.54
   CAMBIOS : Rediseño completo de _detectarAterrizajeFinal (pedido de Daniel con captura:
             el triángulo quedaba casi al final de la meseta de tierra, no al principio).
@@ -4167,7 +4188,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.54</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.55</div>
   </div>
 
 </div>
@@ -12638,6 +12659,57 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
 // abrirAnalisisVuelo() no tenga que volver a pedirle nada a Firebase.
 let _ultimaTraza = null;
 
+// v8.55 — pedido de Daniel con captura: seguía detectando un "toque" a
+// ~300ft, muy por encima de un toque real. Causa: TOQUE_ALTURA_MAX_FT
+// (300ft) se mide contra altMinTraza — el mínimo puntual registrado en TODO
+// el vuelo. Es UN punto: si tiene ruido GPS hacia abajo, o si casualmente el
+// aterrizaje real termina siendo apenas más bajo que ese "falso toque" de
+// 300ft, el margen de 300ft alcanza para que algo que no tocó tierra
+// (una pasada baja, un simulacro de falla de motor sin aterrizar) quede dentro
+// del margen igual.
+// Piso virtual: en vez de un solo punto, se promedia la altitud de los
+// primeros PISO_VENTANA_MIN minutos del vuelo — se asume que ahí el avión
+// está en tierra (parado/carreteando antes de despegar), y promediar sobre
+// varios minutos pesa mucho menos el ruido de un solo punto que altMinTraza.
+// OJO (aclarado por Daniel): si el logging arranca tarde — el avión ya en
+// vuelo cuando empieza a grabar — esos primeros minutos NO son tierra, y
+// promediarlos daría un piso a la altura de crucero, mucho peor que el
+// problema que se quiere resolver. Guard de sanity check, solo se usa el
+// piso virtual si:
+//  (1) la altitud varía poco en esa ventana (PISO_VARIACION_MAX_FT) — estable,
+//      no está en medio de un ascenso/descenso de vuelo.
+//  (2) el promedio de la ventana no está muy por encima del mínimo registrado
+//      en TODO el vuelo (PISO_DESVIO_MAX_FT) — si lo está, algo no cierra
+//      (el vuelo tocó más abajo en otro momento, la ventana inicial no
+//      representa "tierra").
+// Si cualquiera de los dos falla, se cae al comportamiento viejo (altMinTraza
+// directo) y se deja un aviso en consola (mismo criterio que el debug log de
+// _clasificarTramosVuelo) para que quede registro de que se descartó.
+const PISO_VENTANA_MIN = 5;
+const PISO_VARIACION_MAX_FT = 150;
+const PISO_DESVIO_MAX_FT = 200;
+function _calcPisoVirtual(segmentos, altMinTraza){
+  if(altMinTraza==null) return null;
+  const reales = segmentos.filter(s=>s.tipo==='real');
+  if(!reales.length) return altMinTraza;
+  let todos=[];
+  for(const seg of reales) todos=todos.concat(seg.pts.filter(p=>p.alt!=null));
+  todos.sort((a,b)=>new Date(a.ts)-new Date(b.ts));
+  if(!todos.length) return altMinTraza;
+  const t0=new Date(todos[0].ts).getTime();
+  const ventana = todos.filter(p=>(new Date(p.ts).getTime()-t0)/60000<=PISO_VENTANA_MIN);
+  if(ventana.length<5) return altMinTraza;
+  const alts=ventana.map(p=>p.alt);
+  const prom=alts.reduce((a,b)=>a+b,0)/alts.length;
+  const rango=(Math.max(...alts)-Math.min(...alts))*3.28084;
+  const desvio=(prom-altMinTraza)*3.28084;
+  if(rango>PISO_VARIACION_MAX_FT || desvio>PISO_DESVIO_MAX_FT){
+    console.warn('[análisis vuelo] piso virtual descartado (variación '+rango.toFixed(0)+'ft, desvío '+desvio.toFixed(0)+'ft sobre el mínimo registrado) — probablemente el logging empezó con el avión ya en vuelo. Se usa el mínimo registrado como referencia, como antes.');
+    return altMinTraza;
+  }
+  return prom;
+}
+
 // Toques y despegues: mínimo local de altitud (suavizada con media móvil de 3
 // para reducir ruido GPS) con una subida de al menos TOQUE_PROMINENCIA_FT
 // ANTES y DESPUÉS, dentro de TOQUE_VENTANA_MIN — así un aterrizaje final (sin
@@ -12653,6 +12725,9 @@ let _ultimaTraza = null;
 // profundo). Ahora es no-estricta (suaves[i]>vecino ⇒ descartado, permite
 // empate) — los varios puntos de una misma meseta pasan igual y el dedup de
 // siempre (candidatos a <2min se funden) los junta en un solo toque.
+// v8.55 — el parámetro altMinTraza que recibe esta función ahora puede ser el
+// PISO VIRTUAL (ver _calcPisoVirtual arriba) en vez del mínimo puntual — la
+// función en sí no cambió, solo qué "piso" le llega desde el llamador.
 const TOQUE_PROMINENCIA_FT = 100;
 const TOQUE_VENTANA_MIN = 4;
 const TOQUE_ALTURA_MAX_FT = 300;
@@ -12720,6 +12795,7 @@ function _detectarToques(segmentos, altMinTraza){
 const ATERRIZAJE_ALTURA_TOL_FT = 60;   // tolerancia sobre la altitud mínima registrada del vuelo (ruido de GPS en el eje vertical)
 const ATERRIZAJE_DURACION_MIN_SEG = 60; // más de 1 minuto sostenido — un touch-and-go real no llega a esto
 const ATERRIZAJE_DESPLAZ_MIN_KM = 0.05; // 50m de desplazamiento neto en la ventana — confirma que es rodaje y no ruido GPS estando detenido
+// v8.55 — altMinTraza acá también puede ser el PISO VIRTUAL (_calcPisoVirtual), no cambia la lógica de esta función.
 function _detectarAterrizajeFinal(segmentos, altMinTraza){
   if(altMinTraza==null) return null;
   const reales = segmentos.filter(s=>s.tipo==='real');
@@ -12765,6 +12841,7 @@ const MANIOBRA_PERCENTIL = 0.10; // top 10% de giro EN VUELO (ya excluido el tax
 const MANIOBRA_DIST_MIN_KM = 0.03;
 const MANIOBRA_STEP = 3;
 const MANIOBRA_ALTURA_MIN_FT = 150; // por debajo de esto sobre el punto más bajo del vuelo, se asume tierra/taxeo — nunca cuenta como maniobra de vuelo
+// v8.55 — altMinTraza acá también puede ser el PISO VIRTUAL (_calcPisoVirtual), no cambia la lógica de esta función.
 function _clasificarTramosVuelo(segmentos, altMinTraza){
   const porTramo = [];
   const todosLosGiros = [];
@@ -13022,9 +13099,10 @@ window.abrirAnalisisVuelo = function(){
   if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
   const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora, metarInicio, metarFin} = _ultimaTraza;
   document.getElementById('analisis-sub').textContent = (nombre?`${nombre} — ${avion}`:avion) + (hora?` · Turno ${hora} hs`:'');
-  const bandas = _clasificarTramosVuelo(segmentos, altMinTraza);
-  const toques = _detectarToques(segmentos, altMinTraza);
-  const aterrizaje = _detectarAterrizajeFinal(segmentos, altMinTraza);
+  const piso = _calcPisoVirtual(segmentos, altMinTraza) ?? altMinTraza; // v8.55 — ver comentario en _calcPisoVirtual
+  const bandas = _clasificarTramosVuelo(segmentos, piso);
+  const toques = _detectarToques(segmentos, piso);
+  const aterrizaje = _detectarAterrizajeFinal(segmentos, piso);
   const patrones = _detectarPatronesManiobra(segmentos, bandas);
   const fmtT = iso => { const d=new Date(iso); return String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); };
   document.getElementById('analisis-toques-resumen').textContent = toques.length
@@ -13199,11 +13277,12 @@ window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
     // recién se crean en _dibujarIconosManiobra() después de fitBounds (ver
     // comentario junto a _iconoMarkers), para que escalen con el zoom.
     _iconoMarkers = [];
-    const bandasMapa = _clasificarTramosVuelo(segmentos, altMinTraza);
-    for(const t of _detectarToques(segmentos, altMinTraza)){
+    const pisoMapa = _calcPisoVirtual(segmentos, altMinTraza) ?? altMinTraza; // v8.55 — ver comentario en _calcPisoVirtual
+    const bandasMapa = _clasificarTramosVuelo(segmentos, pisoMapa);
+    for(const t of _detectarToques(segmentos, pisoMapa)){
       _iconoMarkers.push({lat:t.lat, lng:t.lng, cat:'toque', color:'#f0a500', glifo:'', tooltip:'🟡 Toque y despegue — ' + fmtT(t.ts)});
     }
-    const aterrizajeMapa = _detectarAterrizajeFinal(segmentos, altMinTraza);
+    const aterrizajeMapa = _detectarAterrizajeFinal(segmentos, pisoMapa);
     if(aterrizajeMapa){
       _iconoMarkers.push({lat:aterrizajeMapa.lat, lng:aterrizajeMapa.lng, cat:'aterrizaje', color:'#39d353', glifo:'▼', tooltip:'🟢 Aterrizaje final — ' + fmtT(aterrizajeMapa.ts)});
     }
