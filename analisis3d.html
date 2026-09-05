@@ -2,6 +2,26 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.14 · Segundo fix reportado por Daniel sobre el humo (el de v1.13 no
+  alcanzaba: seguía viéndose nube a 1x, recién a 5x se notaba trail). La causa
+  real no era el espaciado entre puffs (eso ya quedó bien en v1.13) sino el
+  CRECIMIENTO y la DERIVA hacia arriba de cada puff, que usaban dt REAL
+  (`scale.multiplyScalar(1+dt*0.4)` y `position.y += dt*2`, cada frame). Un
+  puff tarda más tiempo REAL en apagarse cuanto más lento se reproduce (a 1x,
+  más segundos reales por cada largo de avión recorrido que a 5x) — y con
+  crecimiento compuesto por segundo real, esos puffs más longevos en tiempo
+  real terminaban mucho más grandes: a 1x se inflaban hasta juntarse en una
+  sola nube, a 5x apenas si les daba tiempo a crecer y por eso ahí sí se veía
+  fino y separado. Ahora tamaño y altura de cada puff se calculan directo en
+  función de "t" (0→1, el mismo avance por DISTANCIA que ya se usa para
+  decidir cuándo apagarlo — ver v1.12/v1.13), nunca de cuántos segundos reales
+  pasaron: mismo resultado visual sin importar a qué velocidad "x" se
+  reproduzca. De paso, el tamaño base de cada puff se desató de MODELO_ESCALA
+  (quedaba grande contra el objetivo de estela, que está en "largos de
+  avión") y pasa a ser una fracción de AVION_LARGO_MUNDO (14-20% de un largo
+  de avión), para que se vea fino: varios puffs distinguibles a lo largo de
+  la estela en vez de una bocha.
+
   v1.13 · Fix reportado por Daniel: a velocidad 1x el humo se veía como una
   nube pegada al avión en vez de una estela. Causa real: el DISPARADOR de
   emisión (v1.12 y anteriores) generaba un puff cada HUMO_INTERVALO segundos
@@ -236,7 +256,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.13</span>
+    <span class="badge" id="ver-badge">v1.14</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -717,6 +737,15 @@ const HUMO_LARGO_OBJETIVO_MULT = 3; // pedido de Daniel: la estela debe medir,
   // velocidad del avión: el mismo tiempo daba estelas de largo muy distinto
   // según qué tan rápido volara).
 let HUMO_LARGO_OBJETIVO = AVION_LARGO_MUNDO*HUMO_LARGO_OBJETIVO_MULT;
+const HUMO_TAM_MIN_MULT = 0.14, HUMO_TAM_MAX_MULT = 0.20; // tamaño de cada
+  // puff, en fracción del largo del avión — pensado para que se vea FINO
+  // (varios puffs distinguibles a lo largo de la estela) y no una sola bocha.
+const HUMO_CRECIMIENTO = 0.5; // cuánto crece cada puff, del tamaño inicial al
+  // final de su vida, a lo largo de SU AVANCE (0→1, por distancia — ver
+  // HUMO_LARGO_OBJETIVO más abajo, no por tiempo real).
+const HUMO_DERIVA_MAX_MULT = 0.35; // cuánto sube cada puff (fracción del
+  // largo del avión) a lo largo de su avance — mismo criterio: por avance,
+  // no por tiempo real.
 const HUMO_MAX = 140; // tope de puffs simultáneos (protección de memoria/perf)
 const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 1.4, 0.9).multiplyScalar(MODELO_ESCALA); // punto de
   // salida relativo al avión. Bajado de nuevo (2.0→1.4) — seguía alto.
@@ -724,16 +753,16 @@ const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 1.4, 0.9).multiplyScalar(MODELO_E
 function _emitirHumo(posMundo){
   const mat = new THREE.SpriteMaterial({map:_humoTextura, color:0xd8d8d8, transparent:true, opacity:0.5, depthWrite:false});
   const sprite = new THREE.Sprite(mat);
-  // Tope: el puff no puede medir más que ~1/3 del largo objetivo de la
-  // estela (3 largos de avión) — si no, con un objetivo tan corto, uno o dos
-  // puffs ya tapan toda la estela y se ve una sola bocha en vez de un
-  // rastro con varios puffs distinguibles (bug reportado por Daniel en v1.12).
-  const tam = Math.min(MODELO_ESCALA*(1.1+Math.random()*0.5), HUMO_LARGO_OBJETIVO*0.35);
-  sprite.scale.setScalar(tam);
-  const j = MODELO_ESCALA*0.4; // jitter de dispersión inicial — también atado a MODELO_ESCALA, no un 3 fijo
+  // v1.14: tamaño atado SOLO a AVION_LARGO_MUNDO (la unidad de medida que
+  // pidió Daniel), ya no a MODELO_ESCALA — son dos escalas relacionadas pero
+  // no idénticas, y mezclarlas es lo que daba puffs desproporcionados contra
+  // un objetivo de estela definido en "largos de avión".
+  const tamOriginal = AVION_LARGO_MUNDO*(HUMO_TAM_MIN_MULT + Math.random()*(HUMO_TAM_MAX_MULT-HUMO_TAM_MIN_MULT));
+  sprite.scale.setScalar(tamOriginal);
+  const j = AVION_LARGO_MUNDO*0.10; // jitter de dispersión inicial
   sprite.position.copy(posMundo).add(new THREE.Vector3((Math.random()-0.5)*j,(Math.random()-0.5)*j,(Math.random()-0.5)*j));
   scene.add(sprite);
-  _humoParticulas.push({sprite, edad:0, origen:sprite.position.clone()}); // "origen" es el
+  _humoParticulas.push({sprite, edad:0, origen:sprite.position.clone(), tamOriginal}); // "origen" es el
     // punto del mundo donde se emitió — contra eso se mide, cada frame, cuánto
     // se alejó ya el avión (ver loop de render) para saber cuándo apagarlo.
   if(_humoParticulas.length>HUMO_MAX){
@@ -1162,8 +1191,17 @@ function loop(now){
       // estuviera prácticamente detenido).
     if(t>=1){ scene.remove(p.sprite); p.sprite.material.dispose(); _humoParticulas.splice(i,1); continue; }
     p.sprite.material.opacity = 0.5*(1-t);
-    p.sprite.scale.multiplyScalar(1+dt*0.4); // se va agrandando (dispersión) — antes 0.6, un poco más angosto
-    p.sprite.position.y += dt*2; // sube despacio, como humo real
+    // v1.14 FIX reportado por Daniel: crecimiento y deriva iban con dt REAL
+    // (multiplyScalar / += cada frame), así que un puff que tarda más tiempo
+    // real en apagarse (que es justo lo que pasa a 1x, con velocidad de
+    // reproducción baja) terminaba mucho más grande que uno a 5x — por eso
+    // solo a alta velocidad se veía "fino" y con trail, y a 1x se inflaban
+    // hasta juntarse en una sola nube. Ahora tamaño y altura se fijan en
+    // función de "t" (el mismo avance por distancia que ya se usa para
+    // apagarlo), no de cuántos segundos reales pasaron — así el resultado es
+    // idéntico sin importar a qué velocidad "x" se reproduzca.
+    p.sprite.scale.setScalar(p.tamOriginal*(1+t*HUMO_CRECIMIENTO));
+    p.sprite.position.y = p.origen.y + AVION_LARGO_MUNDO*HUMO_DERIVA_MAX_MULT*t;
   }
 
   lineaVert.geometry.setFromPoints([pos, new THREE.Vector3(m.x,0,m.z)]);
