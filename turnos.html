@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.57
+  CAMBIOS : Pedido de Daniel: botón "🧊 Ver en 3D" nuevo junto al de "📊 Análisis"
+            en el visor de mapa GPS — abre analisis3d.html (visor 3D nuevo, corre
+            el track por el mismo pipeline que ya probamos en el prototipo del
+            chat: suavizado de heading/GS/VS antes de estimar bank/pitch) en una
+            pestaña nueva, con la key de ESA reserva por query string
+            (?key=...). Se guarda en _mapaVueloKeyActual al abrir el mapa (mismo
+            patrón que _ultimaTraza para el botón de Análisis 2D) — la página
+            nueva lee /vuelo_tracks/{key} por su cuenta, no hace falta pasarle
+            nada más desde acá.
+
   VERSION : 8.56
   CAMBIOS : Fix: las flechas de sentido sobre la traza GPS quedaban desalineadas al rotar
             el mapa (gesto o control de rotación) — el bearing se aplicaba como rotación
@@ -4196,7 +4207,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.56</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.57</div>
   </div>
 
 </div>
@@ -12672,6 +12683,7 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
 // mapa. _ultimaTraza guarda lo último calculado en abrirMapaVuelo() para que
 // abrirAnalisisVuelo() no tenga que volver a pedirle nada a Firebase.
 let _ultimaTraza = null;
+let _mapaVueloKeyActual = null; // v8.57 — key de la reserva cuyo mapa está abierto, para el botón "Ver en 3D"
 
 // v8.55 — pedido de Daniel con captura: seguía detectando un "toque" a
 // ~300ft, muy por encima de un toque real. Causa: TOQUE_ALTURA_MAX_FT
@@ -13109,6 +13121,15 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques, a
   return svg;
 }
 
+// v8.57 — pedido de Daniel: botón "Ver en 3D" junto al de "📊 Análisis" del
+// visor de mapa, abre analisis3d.html (visor 3D nuevo) con la key de ESTE
+// vuelo por query string — esa página lee /vuelo_tracks/{key} por su cuenta,
+// no hace falta pasarle nada más de acá.
+window.abrirAnalisis3D = function(){
+  if(!_mapaVueloKeyActual){ alert('No hay traza cargada para ver en 3D.'); return; }
+  window.open('analisis3d.html?key='+encodeURIComponent(_mapaVueloKeyActual), '_blank');
+};
+
 window.abrirAnalisisVuelo = function(){
   if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
   const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora, metarInicio, metarFin} = _ultimaTraza;
@@ -13211,6 +13232,7 @@ function _calcDistMaxOrigenNm(puntos){
 
 window.abrirMapaVuelo = async function(key, nombre, avion, hora) {
   _ultimaTraza = null; // v8.03: se repuebla recién si carga bien — evita que "📊 Análisis" abra con datos de un vuelo anterior si este falla
+  _mapaVueloKeyActual = key; // v8.57 — para el botón "Ver en 3D"
   const modal = document.getElementById('modal-mapa-vuelo');
   document.getElementById('mapa-vuelo-title').textContent = nombre ? `${nombre} — ${avion}` : avion;
   document.getElementById('mapa-vuelo-sub').textContent = hora ? `Turno ${hora} hs` : '';
@@ -13510,6 +13532,7 @@ window.exportarTrazaTurnosKML = async function(key, nombre, avion, fecha) {
       <div class="map-sub" id="mapa-vuelo-ruta" style="display:none;color:var(--cyan);font-weight:700;letter-spacing:.06em;margin-top:3px;font-size:13px"></div>
     </div>
     <button onclick="abrirAnalisisVuelo()" id="btn-abrir-analisis" style="background:transparent;border:1px solid rgba(240,165,0,.4);border-radius:var(--radius);color:var(--amber);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer;margin-right:8px">📊 Análisis</button>
+    <button onclick="abrirAnalisis3D()" id="btn-abrir-3d" style="background:transparent;border:1px solid rgba(0,200,212,.4);border-radius:var(--radius);color:var(--cyan);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer;margin-right:8px">🧊 Ver en 3D</button>
     <button onclick="cerrarMapaVuelo()" style="background:transparent;border:1px solid var(--border);border-radius:var(--radius);color:var(--text3);font-family:var(--font-mono);font-size:11px;padding:7px 12px;cursor:pointer">✕ Cerrar</button>
   </div>
   <div class="map-leaflet-wrap">
