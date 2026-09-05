@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.2 · Primera prueba real con Daniel, 3 fixes: (1) color del tubo desalineado
+  con el punto real en los virajes — TubeGeometry samplea por LONGITUD DE ARCO,
+  no por índice de punto, y con velocidad variable (a diferencia del track
+  sintético del prototipo) eso desalinea color vs. posición; se corrige con
+  curvaTrack.getUtoTmapping(u) antes de interpolar el valor. (2) Escala del
+  avión: estaba fija en 7, calibrada a ojo contra el extent del track
+  sintético — ahora escala con extent como el radio del tubo. (3) Densidad de
+  postes: estaba fija en ~50 total sin importar el largo del vuelo — ahora
+  escala con extent también.
+
   v1.1 · FIX reportado por Daniel: mostraba el nombre del INSTRUCTOR en vez del
   alumno/piloto — vuelo_tracks/{key}.autor es quien CARGÓ el vuelo (siempre un
   instructor), el nombre real vive en /reservas/{key}. Ahora usa el título que
@@ -117,7 +127,7 @@
 <div id="app">
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.1</span>
+    <span class="badge" id="ver-badge">v1.2</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -439,7 +449,16 @@ const TUBULAR_SEGMENTS = Math.max(200, track.length*2);
 const RADIAL_SEGMENTS = 8;
 
 function valorEnU(u){
-  const idxF = u*(track.length-1);
+  // FIX: TubeGeometry samplea la curva por LONGITUD DE ARCO (u), no por
+  // índice de punto — con velocidad casi constante (el track sintético del
+  // prototipo) esto pasaba desapercibido, pero con datos reales de velocidad
+  // variable (sobre todo en un viraje, donde los puntos quedan mucho más
+  // juntos en el espacio) "u" y "fracción de índice" dejan de coincidir, y el
+  // color del tubo en un punto dado deja de corresponder al valor real de ESE
+  // punto. getUtoTmapping() convierte u (arco) a t (el mismo parámetro que ya
+  // usa getPoint() internamente, que sí es lineal por índice de punto).
+  const t = curvaTrack.getUtoTmapping(u);
+  const idxF = t*(track.length-1);
   const i = Math.min(track.length-2, Math.floor(idxF));
   const f = idxF-i;
   const a=track[i], b=track[i+1];
@@ -480,7 +499,10 @@ const avion = new THREE.Group(); // se puebla cuando termine de cargar el GLB (a
 avion.rotation.order = 'YXZ';
 scene.add(avion);
 
-const MODELO_ESCALA = 7;          // ajustar a ojo si se ve muy chico/grande
+const MODELO_ESCALA = Math.max(3, extent*0.0028); // FIX: antes fijo en 7 —
+  // calibrado a ojo contra el extent (~2-3km) del track sintético del
+  // prototipo. Con un vuelo real más largo/corto, un número fijo queda
+  // desproporcionado — ahora escala junto con RADIO_TUBO (misma lógica).
 const MODELO_ROTACION_Y_EXTRA = 0; // grados: ajustar si el morro no queda mirando hacia +Z
 let _heliceRef = null; // nodo del buje de la hélice, para animarlo girando (ver loop)
 
@@ -639,7 +661,11 @@ scene.add(lineaVert);
 let postesGroup = null;
 function construirPostes(){
   const g = new THREE.Group();
-  const espaciado = Math.max(1, Math.round(track.length/50));
+  const numPostes = Math.max(30, Math.round(extent/80)); // FIX: antes 50 fijo
+    // sin importar el largo del vuelo — con un vuelo real más largo que el
+    // track sintético, quedaban muy espaciados. Ahora la cantidad escala con
+    // extent, la densidad se mantiene pareja sin importar la duración.
+  const espaciado = Math.max(1, Math.round(track.length/numPostes));
   const ancho = Math.max(20, extent*0.01488); // +55% más que el valor anterior (13 / 0.0096)
   const [min,max] = rangoColor();
   for(let i=0;i<track.length;i+=espaciado){
