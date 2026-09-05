@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.16 · Pedido de Daniel: rosa de rumbos en el suelo, como referencia visual
+  de norte. Se armó con geometría en coordenadas de mundo (aro + marcas
+  radiales con LineLoop/LineSegments, letras N/E/S/O como sprites) centrada en
+  el mismo punto que la grilla, en vez de un plano con textura rotado — así se
+  evita tener que resolver la orientación de un UV mapping después de un
+  rotation.x, y se usa directo la misma convención de rumbo que ya define
+  rawHdg más abajo (Norte=+Z, Este=+X). Toggleable con un nuevo checkbox
+  "Rosa de rumbos", arranca activada.
+
   v1.15 · Pedido de Daniel: la altitud seguía viéndose ruidosa ("como
   turbulencia severa") aun con el despicado de mediana de v1.8 — normal,
   porque una mediana solo vota en contra de picos aislados, no promedia el
@@ -265,7 +274,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.15</span>
+    <span class="badge" id="ver-badge">v1.16</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -306,6 +315,7 @@
     <label class="toggle"><input type="checkbox" id="seguir" checked><span class="track"></span>Seguir avión</label>
     <label class="toggle"><input type="checkbox" id="postes" checked><span class="track"></span>Postes verticales</label>
     <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
+    <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
   </footer>
 </div>
 
@@ -644,6 +654,86 @@ grid.position.set(centro.x, 0.05, centro.z);
 grid.material.transparent = true;
 grid.material.opacity = 0.35;
 scene.add(grid);
+
+// --- Rosa de rumbos en el suelo (pedido de Daniel, referencia visual de norte) ---
+// Se arma con geometría en coordenadas de MUNDO (X,Z) directamente, en vez de
+// un plano con textura rotado — así no hay que pelear con la orientación de
+// un UV mapping después de rotation.x. La convención de rumbo de esta app ya
+// está fijada más abajo, en el cálculo de rawHdg: hdg=0 (Norte) es +Z, hdg=90
+// (Este) es +X (atan2(dx,dz), con dx=0,dz>0 → 0°; dx>0,dz=0 → 90°). Acá se usa
+// la misma convención para que la rosa quede alineada con el rumbo real del
+// avión en la traza.
+function _crearTexturaLetra(letra){
+  const size=128;
+  const c=document.createElement('canvas'); c.width=size; c.height=size;
+  const ctx=c.getContext('2d');
+  ctx.font='bold 92px sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle='#e8b84b';
+  ctx.strokeStyle='rgba(10,14,22,0.9)'; ctx.lineWidth=10;
+  ctx.strokeText(letra, size/2, size/2+4);
+  ctx.fillText(letra, size/2, size/2+4);
+  return new THREE.CanvasTexture(c);
+}
+function construirRosaRumbos(){
+  const g = new THREE.Group();
+  const radio = Math.max(20, extent*0.025);
+  const y = 0.09; // apenas por encima de la grilla (0.05), para que no compitan en el mismo plano (z-fighting)
+
+  // Aro exterior
+  const puntosAro = [];
+  for(let i=0; i<=64; i++){
+    const a = (i/64)*Math.PI*2;
+    puntosAro.push(new THREE.Vector3(centro.x+radio*Math.sin(a), y, centro.z+radio*Math.cos(a)));
+      // sin/cos así (no cos/sin) porque acá el ángulo "a" ya se usa como rumbo:
+      // a=0 → (0,·,radio) = +Z = Norte; a=90° → (radio,·,0) = +X = Este.
+  }
+  const aro = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(puntosAro),
+    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.55})
+  );
+  g.add(aro);
+
+  // Marcas radiales cada 30°, más largas en los 4 cardinales
+  const marcas = [];
+  for(let i=0; i<12; i++){
+    const a = (i/12)*Math.PI*2;
+    const esCardinal = i%3===0;
+    const rInt = radio*(esCardinal ? 0.80 : 0.90);
+    marcas.push(new THREE.Vector3(centro.x+rInt*Math.sin(a), y, centro.z+rInt*Math.cos(a)));
+    marcas.push(new THREE.Vector3(centro.x+radio*Math.sin(a), y, centro.z+radio*Math.cos(a)));
+  }
+  const marcasLine = new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(marcas),
+    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.55})
+  );
+  g.add(marcasLine);
+
+  // Letras N/E/S/O como sprites (encaran siempre a cámara, no hace falta
+  // orientarlas) ubicadas un poco afuera del aro, en su rumbo correspondiente.
+  const cardinales = [['N',0],['E',90],['S',180],['O',270]];
+  const tamLetra = radio*0.42;
+  for(const [letra, hdgDeg] of cardinales){
+    const a = hdgDeg*Math.PI/180;
+    const mat = new THREE.SpriteMaterial({map:_crearTexturaLetra(letra), transparent:true, depthWrite:false});
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.setScalar(tamLetra);
+    sprite.position.set(centro.x+radio*1.22*Math.sin(a), y+tamLetra*0.3, centro.z+radio*1.22*Math.cos(a));
+    g.add(sprite);
+  }
+  return g;
+}
+let rosaGroup = null;
+const rosaChk = document.getElementById('rosa');
+rosaChk.onchange = ()=>{
+  if(rosaChk.checked){
+    if(!rosaGroup){ rosaGroup=construirRosaRumbos(); scene.add(rosaGroup); }
+    rosaGroup.visible=true;
+  } else if(rosaGroup){
+    rosaGroup.visible=false;
+  }
+};
+if(rosaChk.checked){ rosaGroup=construirRosaRumbos(); scene.add(rosaGroup); } // arranca activada
 
 // --- Escala de color ---
 function colorPara(valor, min, max){
