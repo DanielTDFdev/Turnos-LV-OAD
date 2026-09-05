@@ -2,6 +2,25 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.13 · Fix reportado por Daniel: a velocidad 1x el humo se veía como una
+  nube pegada al avión en vez de una estela. Causa real: el DISPARADOR de
+  emisión (v1.12 y anteriores) generaba un puff cada HUMO_INTERVALO segundos
+  de tiempo real, sin relación con la distancia que el avión recorría en ese
+  momento — mientras que el APAGADO de cada puff (desde v1.12) sí es por
+  distancia recorrida (3 largos de avión). Con un objetivo tan corto, a 1x los
+  puffs se emitían casi en el mismo punto antes de que el anterior terminara
+  de apagarse: quedaban amontonados en vez de espaciados a lo largo del
+  camino. Ahora el disparador también es por distancia real recorrida por el
+  avión (que ya refleja tanto la velocidad real del vuelo como el selector de
+  velocidad "x" del reproductor, porque currentT avanza con dt*speed), con un
+  espaciado de HUMO_LARGO_OBJETIVO/12 entre puffs — así la estela mantiene
+  ~12 puffs a lo largo de sus 3 largos de avión sin importar a qué velocidad
+  se reproduzca. De paso, se le puso un tope al tamaño de cada puff
+  (HUMO_LARGO_OBJETIVO*0.35) para que ninguno solo pueda tapar más de un
+  tercio de la estela — si no, con un objetivo tan corto, 1-2 puffs grandes ya
+  alcanzaban a cubrirla entera y se veía como una sola bocha en vez de un
+  rastro con varios puffs distinguibles.
+
   v1.12 · Pedido de Daniel: (1) FIX zoom/rotar no funcionaban en celular — el
   rotar usaba pointerdown/move/up (que sí incluye touch), pero el canvas no
   tenía touch-action:none, así que el navegador competía por el gesto (scroll
@@ -217,7 +236,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.12</span>
+    <span class="badge" id="ver-badge">v1.13</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -684,8 +703,8 @@ function _crearTexturaHumo(){
 }
 const _humoTextura = _crearTexturaHumo();
 const _humoParticulas = [];
-let _humoAcumulador = 0;
-const HUMO_INTERVALO = 0.055; // segundos entre puffs
+let _humoDistAcumulada = 0; // acumulador de DISTANCIA (no de tiempo — ver v1.13)
+let _humoPosAnterior = null;
 const HUMO_VIDA_MAX = 20;     // tope de SEGURIDAD en segundos — solo actúa si el
   // avión tuviera velocidad ~0 sostenida (no debería pasar en vuelo real, el
   // track viene recortado a tramo aéreo), para que el humo no se acumule sin
@@ -705,7 +724,11 @@ const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 1.4, 0.9).multiplyScalar(MODELO_E
 function _emitirHumo(posMundo){
   const mat = new THREE.SpriteMaterial({map:_humoTextura, color:0xd8d8d8, transparent:true, opacity:0.5, depthWrite:false});
   const sprite = new THREE.Sprite(mat);
-  const tam = MODELO_ESCALA*(1.1+Math.random()*0.5); // -50% que antes (2.2-3.2 → 1.1-1.6)
+  // Tope: el puff no puede medir más que ~1/3 del largo objetivo de la
+  // estela (3 largos de avión) — si no, con un objetivo tan corto, uno o dos
+  // puffs ya tapan toda la estela y se ve una sola bocha en vez de un
+  // rastro con varios puffs distinguibles (bug reportado por Daniel en v1.12).
+  const tam = Math.min(MODELO_ESCALA*(1.1+Math.random()*0.5), HUMO_LARGO_OBJETIVO*0.35);
   sprite.scale.setScalar(tam);
   const j = MODELO_ESCALA*0.4; // jitter de dispersión inicial — también atado a MODELO_ESCALA, no un 3 fijo
   sprite.position.copy(posMundo).add(new THREE.Vector3((Math.random()-0.5)*j,(Math.random()-0.5)*j,(Math.random()-0.5)*j));
@@ -1096,12 +1119,38 @@ function loop(now){
   avion.updateMatrixWorld(true); // para que la posición de la cola de abajo sea la de ESTE frame
 
   if(playing && humoChk.checked){
-    _humoAcumulador += dt;
-    while(_humoAcumulador > HUMO_INTERVALO){
-      _humoAcumulador -= HUMO_INTERVALO;
+    // v1.13 FIX reportado por Daniel: a 1x se veía "una nube pegada al avión"
+    // en vez de una estela. Causa real: esto emitía un puff cada
+    // HUMO_INTERVALO segundos de TIEMPO REAL, sin importar cuánta distancia
+    // recorría el avión en ese instante — pero el apagado de cada puff (desde
+    // v1.12) SÍ es por distancia recorrida (3 largos de avión). A 1x, con un
+    // objetivo tan corto, el avión no alcanza a alejarse lo suficiente entre
+    // un puff y el siguiente antes de que ambos ya estén expirando: quedan
+    // amontonados en el mismo lugar en vez de espaciados a lo largo del
+    // camino. Ahora el disparador también es por DISTANCIA (recorrida por el
+    // avión de verdad, ya afectada por la velocidad real y por el selector
+    // de velocidad "x" — currentT avanza con dt*speed, así que "pos" ya se
+    // mueve más rápido en el mundo cuando x es mayor), así que el espaciado
+    // entre puffs queda siempre proporcional al avión sin importar x.
+    if(_humoPosAnterior){
+      const movimiento = pos.distanceTo(_humoPosAnterior);
+      // tope por si el usuario arrastra el slider (salto grande de golpe):
+      // no generar una ráfaga de puffs amontonados en ese instante.
+      _humoDistAcumulada += Math.min(movimiento, HUMO_LARGO_OBJETIVO*0.5);
+    }
+    const espaciado = Math.max(HUMO_LARGO_OBJETIVO/12, 0.3); // ~12 puffs a lo
+      // largo de toda la estela — suficientes para que se note como rastro y
+      // no como un único puff gigante, sin ser tantos que se coma el
+      // rendimiento.
+    while(_humoDistAcumulada > espaciado){
+      _humoDistAcumulada -= espaciado;
       _emitirHumo(avion.localToWorld(HUMO_OFFSET_LOCAL.clone()));
     }
+  } else {
+    _humoDistAcumulada = 0; // si se pausa/no hay humo activado, no arrastrar
+      // distancia acumulada — si no, al reanudar saldría una ráfaga de golpe.
   }
+  _humoPosAnterior = pos.clone();
   for(let i=_humoParticulas.length-1;i>=0;i--){
     const p=_humoParticulas[i];
     p.edad += dt;
