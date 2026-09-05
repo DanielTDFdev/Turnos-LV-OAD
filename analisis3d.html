@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.7 · Pedido de Daniel: trazar solo desde que despega. El track se recorta
+  en procesarPuntos() — arranca en el primer punto que alcanza/supera 100ft
+  AGL, termina en el aterrizaje FINAL (el último cruce hacia abajo de 100ft
+  que se sostiene 3+ minutos, para no cortar en un touch-and-go). Bonus: de
+  paso encontré y arreglé un bug real en muestraEn() — usaba el índice del
+  array como si fueran segundos transcurridos directos (válido solo con 1
+  punto por segundo, como el track sintético del prototipo); con el muestreo
+  real (~2-3s entre puntos) eso hacía que la reproducción se "congelara" en el
+  último punto bastante antes de llegar al final del slider. Ahora interpola
+  por tiempo real entre el par de puntos que corresponde a cada instante.
+
   v1.6 · Pedido de Daniel, 3 ajustes: (1) humo — el offset era un número fijo
   en metros absolutos, sin relación con MODELO_ESCALA (que desde v1.2 escala
   con el largo del vuelo, no un 7 fijo) — con un vuelo de otro largo el humo
@@ -159,7 +170,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.6</span>
+    <span class="badge" id="ver-badge">v1.7</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -402,7 +413,35 @@ function procesarPuntos(puntosCrudos){
   // para que la traza arranque siempre pegada al "piso" del visor
   const yMin = Math.min(...track.map(p => p.y));
   for(const p of track) p.y -= yMin;
-  return track;
+
+  // Recorte pedido por Daniel: trazar solo desde que despega. Arranca en el
+  // primer punto que alcanza/supera 100ft (ya AGL, porque p.y ya está relativo
+  // al punto más bajo de ESTE vuelo — ver arriba). Termina en el aterrizaje
+  // FINAL: el último cruce hacia abajo de 100ft que se sostiene al menos 3
+  // minutos — así no corta en un touch-and-go, que baja de 100ft solo un
+  // instante y vuelve a subir.
+  const UMBRAL_M = 100*0.3048; // ~30.48m
+  let idxInicio = track.findIndex(p => p.y >= UMBRAL_M);
+  if(idxInicio === -1) idxInicio = 0; // nunca llegó a 100ft — no recortamos nada, mejor mostrar todo
+
+  let idxFin = track.length-1;
+  for(let i=1; i<track.length; i++){
+    const bajoAhora = track[i].y < UMBRAL_M, arribaAntes = track[i-1].y >= UMBRAL_M;
+    if(bajoAhora && arribaAntes){
+      const tCorte = track[i].t;
+      let vuelveASubir = false;
+      for(let j=i; j<track.length && track[j].t-tCorte<180; j++){
+        if(track[j].y >= UMBRAL_M){ vuelveASubir=true; break; }
+      }
+      if(!vuelveASubir) idxFin = i; // aterrizaje válido — sigue buscando por si hay uno más tardío
+    }
+  }
+
+  let recortado = track.slice(idxInicio, idxFin+1);
+  if(recortado.length < 3) recortado = track; // salvaguarda: recorte demasiado agresivo, mostrar todo
+  const tBase = recortado[0].t;
+  for(const p of recortado) p.t -= tBase; // re-basar el tiempo a 0 en el nuevo primer punto
+  return recortado;
 }
 
 
@@ -859,9 +898,20 @@ function actualizarLeyenda(){
 actualizarLeyenda();
 
 function muestraEn(t){
-  const i = Math.min(track.length-2, Math.floor(t));
-  const f = t-i;
+  // FIX: antes se usaba Math.floor(t) directo como ÍNDICE del array,
+  // asumiendo 1 punto por segundo (cierto en el track sintético del
+  // prototipo). Los puntos reales vienen espaciados ~2-3s (muestreo GPS), así
+  // que índice y segundos transcurridos NO coinciden — con eso, la
+  // reproducción llegaba al índice máximo mucho antes de que "t" llegara a
+  // DUR, y el avión quedaba congelado en el último punto el resto del
+  // recorrido del slider. Ahora se busca el par de puntos reales que
+  // contienen a "t" y se interpola entre esos dos por tiempo real, no por
+  // posición en el array.
+  let i = 0;
+  while(i < track.length-2 && track[i+1].t <= t) i++;
   const a=track[i], b=track[i+1]||a;
+  const span = b.t-a.t;
+  const f = span>0 ? (t-a.t)/span : 0;
   const lerp=(u,v)=>u+(v-u)*f;
   return {
     x:lerp(a.x,b.x), y:lerp(a.y,b.y), z:lerp(a.z,b.z),
