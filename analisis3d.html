@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.9 · FIX reportado por Daniel: humo muy chico/corto y cartelito dibujado
+  encima del avión en vez de arriba — mismo problema de fondo en los dos
+  casos. El tamaño del humo estaba atado a RADIO_TUBO (que se redujo 50% en un
+  pedido aparte y arrastró al humo sin ninguna relación real), y el offset del
+  cartelito era un 42 fijo calibrado de cuando MODELO_ESCALA era una constante
+  (7) — desde que escala con extent (v1.2), esos números fijos quedan
+  desproporcionados según el largo del vuelo. Ambos pasan a escalar con
+  MODELO_ESCALA, que es la referencia correcta porque las dos cosas dependen
+  del tamaño del avión, no del tubo.
+
   v1.8 · Pedido de Daniel: suavizar los saltos de ruido en la altitud que se
   veían como quiebres feos en el tubo. Filtro de MEDIANA (ventana de 5
   muestras) sobre la altitud, antes de derivar VS y antes de que llegue a la
@@ -177,7 +187,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.8</span>
+    <span class="badge" id="ver-badge">v1.9</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -659,7 +669,11 @@ const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 3.4, 1.43).multiplyScalar(MODELO_
 function _emitirHumo(posMundo){
   const mat = new THREE.SpriteMaterial({map:_humoTextura, color:0xd8d8d8, transparent:true, opacity:0.5, depthWrite:false});
   const sprite = new THREE.Sprite(mat);
-  const tam = RADIO_TUBO*(0.9+Math.random()*0.5);
+  const tam = MODELO_ESCALA*(1.3+Math.random()*0.7); // FIX: antes RADIO_TUBO*(0.9-1.4) —
+    // cuando el radio del tubo se redujo 50% (pedido aparte), arrastró el
+    // tamaño del humo con él sin ninguna relación real entre ambos. El humo
+    // sale del avión, así que la referencia correcta es MODELO_ESCALA, no el
+    // grosor del tubo.
   sprite.scale.setScalar(tam);
   sprite.position.copy(posMundo).add(new THREE.Vector3((Math.random()-0.5)*3,(Math.random()-0.5)*3,(Math.random()-0.5)*3));
   scene.add(sprite);
@@ -1030,8 +1044,10 @@ function loop(now){
 
   // Cartelito flotante junto al avión: proyecta su posición 3D a coordenadas
   // de pantalla (NDC -> píxeles) y lo reubica ahí cada frame.
-  const puntoEtiqueta = pos.clone(); puntoEtiqueta.y += 42; // por encima del modelo GLB
-    // (antes 14, calibrado para el avión vectorial mucho más chico)
+  const puntoEtiqueta = pos.clone(); puntoEtiqueta.y += MODELO_ESCALA*6; // FIX: antes
+    // un 42 fijo, calibrado cuando MODELO_ESCALA era una constante (7) — desde
+    // que escala con extent, un número fijo queda desproporcionado según el
+    // largo del vuelo. 42/7=6, esa es la proporción que se mantiene ahora.
   const ndc = puntoEtiqueta.project(camera);
   const etiqueta = document.getElementById('etiqueta-avion');
   if(ndc.z > 1){
