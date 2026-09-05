@@ -1,5 +1,14 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.58
+  CAMBIOS : FIX reportado por Daniel: el botón "Ver en 3D" (v8.57) mostraba el
+            nombre del INSTRUCTOR en la página nueva en vez del alumno/piloto —
+            vuelo_tracks/{key}.autor es quien CARGÓ el vuelo (siempre un
+            instructor), el nombre del alumno/piloto vive en /reservas/{key}, no
+            ahí. Se pasa el título ya armado (que sí tiene el nombre correcto,
+            visible en el modal del mapa) por query string a analisis3d.html en
+            vez de que esa página tenga que re-derivarlo mal desde vuelo_tracks.
+
   VERSION : 8.57
   CAMBIOS : Pedido de Daniel: botón "🧊 Ver en 3D" nuevo junto al de "📊 Análisis"
             en el visor de mapa GPS — abre analisis3d.html (visor 3D nuevo, corre
@@ -4207,7 +4216,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.57</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.58</div>
   </div>
 
 </div>
@@ -13121,13 +13130,19 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques, a
   return svg;
 }
 
-// v8.57 — pedido de Daniel: botón "Ver en 3D" junto al de "📊 Análisis" del
-// visor de mapa, abre analisis3d.html (visor 3D nuevo) con la key de ESTE
-// vuelo por query string — esa página lee /vuelo_tracks/{key} por su cuenta,
-// no hace falta pasarle nada más de acá.
+// v8.58 FIX (reportado por Daniel): mostraba el nombre del INSTRUCTOR en vez
+// del alumno/piloto — vuelo_tracks/{key}.autor es quien cargó el vuelo
+// (siempre un instructor), el nombre del alumno/piloto vive en
+// /reservas/{key}, no en vuelo_tracks. Ya lo tenemos en pantalla (el título
+// del modal del mapa), así que se lo pasamos por query string en vez de que
+// la página nueva tenga que ir a buscarlo de nuevo.
 window.abrirAnalisis3D = function(){
   if(!_mapaVueloKeyActual){ alert('No hay traza cargada para ver en 3D.'); return; }
-  window.open('analisis3d.html?key='+encodeURIComponent(_mapaVueloKeyActual), '_blank');
+  const titulo = document.getElementById('mapa-vuelo-title').textContent || '';
+  const sub = document.getElementById('mapa-vuelo-sub').textContent || '';
+  const url = 'analisis3d.html?key='+encodeURIComponent(_mapaVueloKeyActual)
+    +'&titulo='+encodeURIComponent(titulo)+'&sub='+encodeURIComponent(sub);
+  window.open(url, '_blank');
 };
 
 window.abrirAnalisisVuelo = function(){

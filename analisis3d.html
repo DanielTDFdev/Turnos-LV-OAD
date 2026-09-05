@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.1 · FIX reportado por Daniel: mostraba el nombre del INSTRUCTOR en vez del
+  alumno/piloto — vuelo_tracks/{key}.autor es quien CARGÓ el vuelo (siempre un
+  instructor), el nombre real vive en /reservas/{key}. Ahora usa el título que
+  turnos.html ya pasa por query string (?titulo=&sub=, tomado del modal del
+  mapa); si la página se abre directo sin esos parámetros, busca la reserva
+  como respaldo. También pedido de Daniel: número de versión visible en el
+  header (badge junto al título) para poder confirmar que un cambio se aplicó.
+
   v1.0 · Primera versión — migración del prototipo de chat a datos reales.
   Recibe la key de la reserva por ?key=... y lee /vuelo_tracks/{key} (mismo
   nodo que ya usan turnos.html/vuelo.html/vuelo-piloto.html para el visor 2D).
@@ -109,6 +117,7 @@
 <div id="app">
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
+    <span class="badge" id="ver-badge">v1.1</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -171,7 +180,8 @@
 // Solo lectura (reglas de la base son públicas) — REST directo a la Realtime
 // Database, sin cargar el SDK completo de Firebase, que no hace falta acá.
 const DB_URL = 'https://turnos-lv-oad-default-rtdb.firebaseio.com';
-const trackKey = new URLSearchParams(location.search).get('key');
+const urlParams = new URLSearchParams(location.search);
+const trackKey = urlParams.get('key');
 const elCarga = document.getElementById('carga');
 const elApp = document.getElementById('app');
 const elNota = document.getElementById('nota-vuelo');
@@ -185,15 +195,32 @@ if(!trackKey){
 } else {
   fetch(`${DB_URL}/vuelo_tracks/${trackKey}.json`)
     .then(r => { if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-    .then(data => {
+    .then(async data => {
       if(!data || !data.puntos || data.puntos.length < 3){
         mostrarError('Este vuelo no tiene traza GPS registrada<br>(o tiene muy pocos puntos para reconstruirla).');
         return;
       }
       const track = procesarPuntos(data.puntos);
       if(elNota){
-        const fecha = data.ts_guardado ? new Date(data.ts_guardado).toLocaleDateString('es-AR') : '';
-        elNota.textContent = [data.autor, fecha].filter(Boolean).join(' · ') || 'Traza GPS';
+        // v1.1 FIX (reportado por Daniel): vuelo_tracks/{key}.autor es el
+        // INSTRUCTOR que cargó el vuelo, no el alumno/piloto — ese nombre vive
+        // en /reservas/{key}, no acá. turnos.html ya lo pasa por query string
+        // (?titulo=&sub=, tomado directo del modal del mapa); si la página se
+        // abre sin esos parámetros (ej. link directo con solo ?key=), se
+        // busca la reserva como respaldo en vez de mostrar el autor incorrecto.
+        const titulo = urlParams.get('titulo'), sub = urlParams.get('sub');
+        if(titulo){
+          elNota.textContent = [titulo, sub].filter(Boolean).join(' · ');
+        } else {
+          let nombreRespaldo = '';
+          try{
+            const r = await fetch(`${DB_URL}/reservas/${trackKey}.json`);
+            const reserva = r.ok ? await r.json() : null;
+            if(reserva) nombreRespaldo = [reserva.nombre, reserva.avion].filter(Boolean).join(' — ');
+          }catch(e){ /* sin respaldo posible, seguimos igual */ }
+          const fecha = data.ts_guardado ? new Date(data.ts_guardado).toLocaleDateString('es-AR') : '';
+          elNota.textContent = [nombreRespaldo, fecha].filter(Boolean).join(' · ') || 'Traza GPS';
+        }
       }
       elCarga.style.display = 'none';
       elApp.style.display = 'flex';
