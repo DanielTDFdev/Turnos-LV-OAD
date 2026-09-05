@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.5 · FIX reportado por Daniel: no se veía el avión NI el aviso de error
+  (que se había agregado justo en v1.4 para este tipo de caso) — porque no era
+  un fallo de carga del .glb, sino un bug mío: en el refactor de v1.1-v1.2 se
+  perdió la línea `avion.add(modelo)` al final del callback de carga. El
+  modelo se armaba entero (recentrado, escalado, alas/tren espejados) pero
+  nunca se agregaba a la escena — por eso no tiraba error, simplemente no
+  aparecía.
+
   v1.4 · Pedido de Daniel: chequeo automático de versión (mismo patrón que
   turnos.html) — pestañas que quedan abiertas nunca vuelven a pedir el HTML
   por su cuenta, así que cada 5min (y al volver a la pestaña) se re-pide este
@@ -146,7 +154,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.4</span>
+    <span class="badge" id="ver-badge">v1.5</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -696,6 +704,11 @@ new THREE.GLTFLoader().load('aeroplane.glb', (gltf)=>{
   // Buje de la hélice (3 palas armadas como hijas de un mismo nodo) — si
   // aparece, lo giramos en el loop mientras se reproduce, de yapa.
   modelo.traverse(o=>{ if(o.userData && o.userData.name==='Circle.007') _heliceRef=o; });
+
+  avion.add(modelo); // FIX: esta línea se había perdido en un refactor anterior —
+    // el modelo se armaba entero (centrado, escalado, alas/tren arreglados) pero
+    // nunca se agregaba a la escena, así que no tiraba ningún error y tampoco
+    // se veía nada.
 
 }, undefined, (err)=>{
   console.error('No se pudo cargar el modelo GLB del avión (aeroplane.glb):', err);
