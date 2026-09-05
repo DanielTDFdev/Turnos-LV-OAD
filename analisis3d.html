@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.4 · Pedido de Daniel: chequeo automático de versión (mismo patrón que
+  turnos.html) — pestañas que quedan abiertas nunca vuelven a pedir el HTML
+  por su cuenta, así que cada 5min (y al volver a la pestaña) se re-pide este
+  mismo archivo con cache-buster y se compara la versión del badge; si difiere,
+  banner fijo arriba con botón para recargar (preservando ?key= y demás
+  parámetros). También: si el .glb del avión no carga, ahora hay un aviso
+  visible en pantalla además del error en consola — antes había que pedir la
+  consola para saber si "no se ve el avión" era esto o un problema de escala.
+
   v1.3 · Pedido de Daniel: no dibujar postes en rodaje/recién aterrizado —
   waste de recursos y ruido visual sin aportar nada. El umbral pasa a evaluar
   la altitud REAL (antes de exagerarla 4x) contra un piso de 3m (~10ft), en
@@ -131,9 +140,13 @@
 <body>
 <div id="carga"><div class="caja">Cargando traza GPS…</div></div>
 <div id="app">
+  <div id="banner-version-nueva" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--amber);color:#0a0a0a;font-family:var(--font-mono);font-size:12px;letter-spacing:.05em;padding:.65rem 1rem;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;box-shadow:0 2px 12px rgba(0,0,0,.45)">
+    <span>⚠ Esta pestaña está corriendo una <b>versión vieja</b> de este visor — los arreglos recientes NO van a funcionar hasta que actualices.</span>
+    <button id="btn-recargar-version" style="font-family:var(--font-mono);font-size:12px;font-weight:700;padding:6px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:6px;cursor:pointer">ACTUALIZAR AHORA</button>
+  </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.3</span>
+    <span class="badge" id="ver-badge">v1.4</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -257,6 +270,39 @@ if(!trackKey){
 // hace que ese cálculo tiemble si no se suaviza — por eso el suavizado entra
 // desde acá, no como mejora posterior.
 // ============================================================================
+/* ===================== CHEQUEO DE VERSION (mismo patrón que turnos.html) =====================
+   Si alguien deja esta pestaña abierta (o la tiene guardada como acceso directo), nunca vuelve a
+   pedirle el HTML al servidor por su cuenta — corre para siempre el JS que tenía cargado en
+   memoria, sin importar qué fixes se suban después. Cada VERSION_POLL_MS se vuelve a pedir este
+   mismo archivo con cache-buster y se compara la versión del badge contra la de esta pestaña. */
+function extraerVersionDeHTML(html){
+  const m = html.match(/<span class="badge" id="ver-badge">([^<]*)<\/span>/);
+  return m ? m[1] : null;
+}
+const VERSION_ACTUAL = document.getElementById('ver-badge')?.textContent || null;
+const VERSION_POLL_MS = 5*60*1000; // 5 minutos
+let _versionDesactualizada = false;
+async function chequearVersionNueva(){
+  if(_versionDesactualizada || !VERSION_ACTUAL) return;
+  try{
+    const r = await fetch(location.pathname+'?_v='+Date.now(), {cache:'no-store'});
+    if(!r.ok) return;
+    const html = await r.text();
+    const versionServidor = extraerVersionDeHTML(html);
+    if(versionServidor && versionServidor!==VERSION_ACTUAL){
+      _versionDesactualizada = true;
+      const b = document.getElementById('banner-version-nueva');
+      if(b) b.style.display = 'flex';
+    }
+  }catch(e){ console.warn('No se pudo chequear si hay una versión nueva:', e); }
+}
+document.getElementById('btn-recargar-version')?.addEventListener('click', ()=>{
+  location.href = location.pathname+location.search+(location.search?'&':'?')+'_v='+Date.now();
+});
+setInterval(chequearVersionNueva, VERSION_POLL_MS);
+setTimeout(chequearVersionNueva, 5000);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') chequearVersionNueva(); });
+
 function procesarPuntos(puntosCrudos){
   const G = 9.81;
   const R = 6371000; // radio terrestre, para la proyección local ENU
@@ -653,6 +699,14 @@ new THREE.GLTFLoader().load('aeroplane.glb', (gltf)=>{
 
 }, undefined, (err)=>{
   console.error('No se pudo cargar el modelo GLB del avión (aeroplane.glb):', err);
+  // Aviso visible en pantalla — antes solo quedaba en la consola, y "no se ve
+  // el avión" sin más pista obliga a pedir la consola cada vez para saber si
+  // es esto o un problema de escala/posición.
+  const avisoGlb = document.createElement('div');
+  avisoGlb.className = 'panel';
+  avisoGlb.style.cssText = 'top:12px;left:50%;transform:translateX(-50%);max-width:520px;color:#ffb4ac;border-color:#e0554a;text-align:center';
+  avisoGlb.innerHTML = '⚠ No se pudo cargar el modelo 3D del avión (<code>aeroplane.glb</code>) — el resto del visor sigue funcionando igual. Confirmá que el archivo esté subido junto a esta página.';
+  document.getElementById('stage').appendChild(avisoGlb);
 });
 
 const lineaVertGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
