@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.6 · Pedido de Daniel, 3 ajustes: (1) humo — el offset era un número fijo
+  en metros absolutos, sin relación con MODELO_ESCALA (que desde v1.2 escala
+  con el largo del vuelo, no un 7 fijo) — con un vuelo de otro largo el humo
+  quedaba desproporcionado respecto al fuselaje. Ahora escala junto con el
+  modelo, y se subió la altura relativa. (2) Radio del tubo, -50%. (3) Se sacó
+  el panel de disclaimer sobre bank/pitch estimados/exageración vertical.
+
   v1.5 · FIX reportado por Daniel: no se veía el avión NI el aviso de error
   (que se había agregado justo en v1.4 para este tipo de caso) — porque no era
   un fallo de carga del .glb, sino un bug mío: en el refactor de v1.1-v1.2 se
@@ -103,8 +110,6 @@
   #legend .bar{height:10px;border-radius:3px;margin:6px 0;
     background:linear-gradient(90deg,hsl(240,90%,55%),hsl(120,90%,45%),hsl(0,90%,55%))}
   #legend .scale{display:flex;justify-content:space-between;font-size:10px;color:var(--text3)}
-  #disclaimer{bottom:78px;left:12px;right:12px;font-size:10.5px;color:var(--text3);line-height:1.5}
-  #disclaimer b{color:var(--amber)}
   /* v6: cartelito que sigue al avión en pantalla (rumbo + altitud), aparte del
      panel general de la izquierda — se reposiciona cada frame proyectando la
      posición 3D del avión a coordenadas de pantalla (ver loop()). */
@@ -154,7 +159,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.5</span>
+    <span class="badge" id="ver-badge">v1.6</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -173,16 +178,6 @@
       <div class="scale"><span id="leg-min">0 ft</span><span id="leg-max">1000 ft</span></div>
     </div>
     <div id="etiqueta-avion">070° · 0 ft</div>
-    <div class="panel" id="disclaimer">
-      <b>⚠ Bank y pitch estimados.</b> No vienen de un sensor de actitud — se calculan a partir
-      de la velocidad y la tasa de giro/ascenso de la propia traza GPS, ya suavizada
-      (viraje coordinado: bank = atan(v·ω/g); pitch = atan(Vs/GS)). Útil para repasar el vuelo,
-      no para evaluar técnica de vuelo con precisión. El suelo y el cielo son solo referencia
-      visual — no hay terreno ni relieve real. La altura se dibuja con una
-      <b>exageración vertical 4×</b> respecto de la escala horizontal (si no, el ascenso/descenso
-      casi no se notan contra varios km de recorrido) — el panel numérico de la izquierda
-      siempre muestra la altitud real, sin exagerar.
-    </div>
   </div>
   <footer>
     <button id="play" title="Reproducir / pausar">▶</button>
@@ -496,7 +491,7 @@ function rangoColor(){ return modoColor==='alt' ? [altMin,altMax] : [gsMin,gsMax
 // que sugiere el volumen. ---
 let tuboGroup = new THREE.Group();
 scene.add(tuboGroup);
-let RADIO_TUBO = Math.max(3, extent*0.0032); // v6: un poco más fino que antes (0.0042)
+let RADIO_TUBO = Math.max(1.5, extent*0.0016); // -50% que antes (3 / 0.0032)
 
 // v5: antes se armaba un cilindro CORTO por cada par de puntos consecutivos —
 // cada unión entre uno y el siguiente quedaba como un corte/quiebre visible
@@ -587,12 +582,13 @@ let _humoAcumulador = 0;
 const HUMO_INTERVALO = 0.055; // segundos entre puffs
 const HUMO_VIDA = 3.5;        // segundos que dura cada puff
 const HUMO_MAX = 90;          // tope de puffs simultáneos
-const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 14, 10); // punto de salida
-  // relativo al avión — CORRECCIÓN DE RUMBO: el origen local (0,0,0) del avión
-  // está en la base del tren (la rueda), no en el fuselaje — bajar Y acercaba
-  // el humo al piso/rueda, alejándolo del cuerpo, exactamente al revés de lo
-  // buscado. El fuselaje está por ENCIMA de ese origen, así que hay que subir
-  // Y para pegarlo al cuerpo, no bajarlo.
+const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 3.4, 1.43).multiplyScalar(MODELO_ESCALA); // punto de
+  // salida relativo al avión. FIX: antes era un número fijo en metros absolutos
+  // (0,14,10) sin relación con MODELO_ESCALA — que ahora escala con el largo
+  // del vuelo (extent), no es un 7 fijo como en el prototipo — así que con un
+  // vuelo de otro largo el humo quedaba desproporcionado. Ahora escala junto
+  // con el modelo, y se subió la altura relativa (2 → 3.4) para pegarlo mejor
+  // al fuselaje en vez de quedar flotando por debajo.
 
 function _emitirHumo(posMundo){
   const mat = new THREE.SpriteMaterial({map:_humoTextura, color:0xd8d8d8, transparent:true, opacity:0.5, depthWrite:false});
