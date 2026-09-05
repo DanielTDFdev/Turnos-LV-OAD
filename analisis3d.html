@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.10 · Recalibración del humo (seguía mal aun atado a MODELO_ESCALA — la
+  proporción en sí estaba mal, no la referencia): menos alto (3.4→2.0), menos
+  adelantado hacia la nariz (1.43→0.9), puffs más grandes (1.3-2.0→2.2-3.2).
+  De paso, el jitter de dispersión inicial de cada puff también era un número
+  fijo (3) sin relación con MODELO_ESCALA — ahora escala igual que el resto.
+
   v1.9 · FIX reportado por Daniel: humo muy chico/corto y cartelito dibujado
   encima del avión en vez de arriba — mismo problema de fondo en los dos
   casos. El tamaño del humo estaba atado a RADIO_TUBO (que se redujo 50% en un
@@ -187,7 +193,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.9</span>
+    <span class="badge" id="ver-badge">v1.10</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -658,24 +664,20 @@ let _humoAcumulador = 0;
 const HUMO_INTERVALO = 0.055; // segundos entre puffs
 const HUMO_VIDA = 3.5;        // segundos que dura cada puff
 const HUMO_MAX = 90;          // tope de puffs simultáneos
-const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 3.4, 1.43).multiplyScalar(MODELO_ESCALA); // punto de
-  // salida relativo al avión. FIX: antes era un número fijo en metros absolutos
-  // (0,14,10) sin relación con MODELO_ESCALA — que ahora escala con el largo
-  // del vuelo (extent), no es un 7 fijo como en el prototipo — así que con un
-  // vuelo de otro largo el humo quedaba desproporcionado. Ahora escala junto
-  // con el modelo, y se subió la altura relativa (2 → 3.4) para pegarlo mejor
-  // al fuselaje en vez de quedar flotando por debajo.
+const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 2.0, 0.9).multiplyScalar(MODELO_ESCALA); // punto de
+  // salida relativo al avión. Todo atado a MODELO_ESCALA (no a números fijos
+  // ni a RADIO_TUBO) — recalibrado: menos alto (3.4→2.0) y menos adelantado
+  // hacia la nariz (1.43→0.9), quedaba muy por encima y muy hacia el morro.
 
 function _emitirHumo(posMundo){
   const mat = new THREE.SpriteMaterial({map:_humoTextura, color:0xd8d8d8, transparent:true, opacity:0.5, depthWrite:false});
   const sprite = new THREE.Sprite(mat);
-  const tam = MODELO_ESCALA*(1.3+Math.random()*0.7); // FIX: antes RADIO_TUBO*(0.9-1.4) —
-    // cuando el radio del tubo se redujo 50% (pedido aparte), arrastró el
-    // tamaño del humo con él sin ninguna relación real entre ambos. El humo
-    // sale del avión, así que la referencia correcta es MODELO_ESCALA, no el
-    // grosor del tubo.
+  const tam = MODELO_ESCALA*(2.2+Math.random()*1.0); // recalibrado: se veía muy
+    // chico/corto todavía (antes 1.3-2.0) — sigue atado a MODELO_ESCALA, no a
+    // RADIO_TUBO ni a un número fijo.
   sprite.scale.setScalar(tam);
-  sprite.position.copy(posMundo).add(new THREE.Vector3((Math.random()-0.5)*3,(Math.random()-0.5)*3,(Math.random()-0.5)*3));
+  const j = MODELO_ESCALA*0.4; // jitter de dispersión inicial — también atado a MODELO_ESCALA, no un 3 fijo
+  sprite.position.copy(posMundo).add(new THREE.Vector3((Math.random()-0.5)*j,(Math.random()-0.5)*j,(Math.random()-0.5)*j));
   scene.add(sprite);
   _humoParticulas.push({sprite, edad:0});
   if(_humoParticulas.length>HUMO_MAX){
