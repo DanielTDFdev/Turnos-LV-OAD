@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.12 · Pedido de Daniel: (1) FIX zoom/rotar no funcionaban en celular — el
+  rotar usaba pointerdown/move/up (que sí incluye touch), pero el canvas no
+  tenía touch-action:none, así que el navegador competía por el gesto (scroll
+  de la página) y a veces se lo quedaba él. El zoom SÍ estaba realmente roto:
+  dependía 100% del evento "wheel", que no existe en touch — un pinch de dos
+  dedos nunca lo disparaba. Se agregó manejo de pinch-to-zoom con Pointer
+  Events (Map de punteros activos, distancia entre los dos primeros, delta de
+  distancia entre frames alimenta la misma lógica de zoom que ya usaba la
+  rueda). (2) Unidad de medida para el humo: la estela ahora dura, en
+  distancia real recorrida por el avión, HUMO_LARGO_OBJETIVO_MULT (3) largos
+  de avión — antes era un tiempo fijo (HUMO_VIDA, 7s) sin relación con el
+  tamaño del avión ni con su velocidad real. AVION_LARGO_MUNDO se mide del
+  bounding box del GLB (eje Z, que es el eje nariz-cola del modelo) ya
+  multiplicado por MODELO_ESCALA. Se mantiene un tope de tiempo de seguridad
+  (HUMO_VIDA_MAX, 20s) por si el track tuviera velocidad ~0 sostenida, para
+  que el humo no se acumule sin límite.
+
   v1.11 · Pedido de Daniel: humo -50% de tamaño de origen (2.2-3.2→1.1-1.6),
   estela +100% de longitud (HUMO_VIDA 3.5s→7s — es la persistencia de cada
   puff la que determina cuánto rastro queda detrás del avión). Subido también
@@ -138,7 +155,7 @@
      vez del negro sólido de antes. */
   #stage{position:relative;flex:1;min-height:0;
     background:linear-gradient(to bottom, #dff3fa 0%, #86cbe8 40%, #3f9dc7 100%)}
-  #stage canvas{display:block;width:100%;height:100%;cursor:grab}
+  #stage canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
   #stage canvas:active{cursor:grabbing}
   .panel{position:absolute;background:rgba(15,20,32,.88);border:1px solid var(--border);
     border-radius:8px;padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text2);
@@ -200,7 +217,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.11</span>
+    <span class="badge" id="ver-badge">v1.12</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -669,11 +686,19 @@ const _humoTextura = _crearTexturaHumo();
 const _humoParticulas = [];
 let _humoAcumulador = 0;
 const HUMO_INTERVALO = 0.055; // segundos entre puffs
-const HUMO_VIDA = 7.0;        // segundos que dura cada puff (+100% que antes, para alargar la estela)
-const HUMO_MAX = 140;          // tope de puffs simultáneos — subido junto con HUMO_VIDA
-  // (7s de persistencia / 0.055s entre puffs ≈ 127 en régimen; con el 90
-  // anterior se hubieran empezado a descartar antes de desvanecerse solos,
-  // anulando el alargue de la estela).
+const HUMO_VIDA_MAX = 20;     // tope de SEGURIDAD en segundos — solo actúa si el
+  // avión tuviera velocidad ~0 sostenida (no debería pasar en vuelo real, el
+  // track viene recortado a tramo aéreo), para que el humo no se acumule sin
+  // límite. En vuelo normal, el que corta cada puff es HUMO_LARGO_OBJETIVO.
+let AVION_LARGO_MUNDO = MODELO_ESCALA*4; // fallback hasta que cargue el GLB
+  // real (se recalcula abajo con el bounding box del modelo)
+const HUMO_LARGO_OBJETIVO_MULT = 3; // pedido de Daniel: la estela debe medir,
+  // en distancia real recorrida por el avión, 3 "largos de avión" — no un
+  // tiempo fijo (antes HUMO_VIDA=7s, sin relación con el tamaño real ni la
+  // velocidad del avión: el mismo tiempo daba estelas de largo muy distinto
+  // según qué tan rápido volara).
+let HUMO_LARGO_OBJETIVO = AVION_LARGO_MUNDO*HUMO_LARGO_OBJETIVO_MULT;
+const HUMO_MAX = 140; // tope de puffs simultáneos (protección de memoria/perf)
 const HUMO_OFFSET_LOCAL = new THREE.Vector3(0, 1.4, 0.9).multiplyScalar(MODELO_ESCALA); // punto de
   // salida relativo al avión. Bajado de nuevo (2.0→1.4) — seguía alto.
 
@@ -685,7 +710,9 @@ function _emitirHumo(posMundo){
   const j = MODELO_ESCALA*0.4; // jitter de dispersión inicial — también atado a MODELO_ESCALA, no un 3 fijo
   sprite.position.copy(posMundo).add(new THREE.Vector3((Math.random()-0.5)*j,(Math.random()-0.5)*j,(Math.random()-0.5)*j));
   scene.add(sprite);
-  _humoParticulas.push({sprite, edad:0});
+  _humoParticulas.push({sprite, edad:0, origen:sprite.position.clone()}); // "origen" es el
+    // punto del mundo donde se emitió — contra eso se mide, cada frame, cuánto
+    // se alejó ya el avión (ver loop de render) para saber cuándo apagarlo.
   if(_humoParticulas.length>HUMO_MAX){
     const viejo=_humoParticulas.shift();
     scene.remove(viejo.sprite); viejo.sprite.material.dispose();
@@ -710,6 +737,13 @@ new THREE.GLTFLoader().load('aeroplane.glb', (gltf)=>{
   modelo.position.x -= centro.x;
   modelo.position.z -= centro.z;
   modelo.position.y -= caja.min.y;
+
+  // Largo real nariz-cola del modelo: el eje Z local es hacia donde mira el
+  // morro (ver MODELO_ROTACION_Y_EXTRA más arriba), así que el tamaño en Z del
+  // bounding box —ya escalado por MODELO_ESCALA— es el "largo de avión" que
+  // se usa como unidad de medida para el largo de la estela de humo.
+  AVION_LARGO_MUNDO = caja.getSize(new THREE.Vector3()).z * MODELO_ESCALA;
+  HUMO_LARGO_OBJETIVO = AVION_LARGO_MUNDO * HUMO_LARGO_OBJETIVO_MULT;
 
   modelo.rotation.y = MODELO_ROTACION_Y_EXTRA*Math.PI/180;
   modelo.scale.setScalar(MODELO_ESCALA);
@@ -890,9 +924,56 @@ let camRadioSeguir = Math.max(180, extent*0.03);
 let dragging=false, lastX=0, lastY=0;
 const canvas = renderer.domElement;
 const seguirChk = document.getElementById('seguir');
-canvas.addEventListener('pointerdown', e=>{dragging=true; lastX=e.clientX; lastY=e.clientY;});
-window.addEventListener('pointerup', ()=>dragging=false);
+
+function aplicarZoom(deltaY){
+  if(seguirChk.checked){
+    camRadioSeguir = Math.max(30, Math.min(extent*1.5, camRadioSeguir*(1+deltaY*0.001)));
+  } else {
+    camRadioLibre = Math.max(50, Math.min(extent*6, camRadioLibre*(1+deltaY*0.001)));
+  }
+}
+
+// --- Pointer Events unificados: mouse Y touch pasan por acá (a diferencia de
+// "wheel", que solo existe para mouse/trackpad — un pinch de dos dedos nunca
+// lo dispara, por eso el zoom no funcionaba en celular). Con 1 puntero activo
+// se rota (arrastre); con 2, la distancia entre ambos maneja el zoom (pinch).
+const _punterosActivos = new Map(); // pointerId -> {x,y}
+let _pinchDistanciaPrevia = null;
+
+canvas.addEventListener('pointerdown', e=>{
+  canvas.setPointerCapture(e.pointerId);
+  _punterosActivos.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(_punterosActivos.size===1){
+    dragging=true; lastX=e.clientX; lastY=e.clientY;
+  } else {
+    dragging=false; // 2° dedo apoyado: se corta el drag, pasa a modo pinch
+    _pinchDistanciaPrevia = null;
+  }
+});
+function _soltarPuntero(e){
+  _punterosActivos.delete(e.pointerId);
+  if(_punterosActivos.size<2) _pinchDistanciaPrevia = null;
+  if(_punterosActivos.size===0) dragging=false;
+}
+window.addEventListener('pointerup', _soltarPuntero);
+window.addEventListener('pointercancel', _soltarPuntero);
 window.addEventListener('pointermove', e=>{
+  if(!_punterosActivos.has(e.pointerId)) return;
+  _punterosActivos.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+  if(_punterosActivos.size>=2){
+    const pts = Array.from(_punterosActivos.values());
+    const dx=pts[0].x-pts[1].x, dy=pts[0].y-pts[1].y;
+    const dist = Math.hypot(dx,dy);
+    if(_pinchDistanciaPrevia!=null){
+      // separar dedos (dist crece) = acercar cámara → mismo signo que
+      // deltaY negativo en la rueda de mouse.
+      aplicarZoom((_pinchDistanciaPrevia-dist)*2.2);
+    }
+    _pinchDistanciaPrevia = dist;
+    return;
+  }
+
   if(!dragging) return;
   const dx=e.clientX-lastX, dy=e.clientY-lastY;
   lastX=e.clientX; lastY=e.clientY;
@@ -901,11 +982,7 @@ window.addEventListener('pointermove', e=>{
 });
 canvas.addEventListener('wheel', e=>{
   e.preventDefault();
-  if(seguirChk.checked){
-    camRadioSeguir = Math.max(30, Math.min(extent*1.5, camRadioSeguir*(1+e.deltaY*0.001)));
-  } else {
-    camRadioLibre = Math.max(50, Math.min(extent*6, camRadioLibre*(1+e.deltaY*0.001)));
-  }
+  aplicarZoom(e.deltaY);
 }, {passive:false});
 
 function actualizarCamara(target, radio){
@@ -1028,7 +1105,12 @@ function loop(now){
   for(let i=_humoParticulas.length-1;i>=0;i--){
     const p=_humoParticulas[i];
     p.edad += dt;
-    const t = p.edad/HUMO_VIDA;
+    const distanciaRecorrida = p.origen.distanceTo(pos); // cuánto se alejó ya
+      // el avión del punto donde se emitió este puff
+    const t = Math.max(p.edad/HUMO_VIDA_MAX, distanciaRecorrida/HUMO_LARGO_OBJETIVO);
+      // se apaga por lo que llegue primero: el largo objetivo (3 aviones,
+      // caso normal) o el tope de tiempo de seguridad (solo si el avión
+      // estuviera prácticamente detenido).
     if(t>=1){ scene.remove(p.sprite); p.sprite.material.dispose(); _humoParticulas.splice(i,1); continue; }
     p.sprite.material.opacity = 0.5*(1-t);
     p.sprite.scale.multiplyScalar(1+dt*0.4); // se va agrandando (dispersión) — antes 0.6, un poco más angosto
