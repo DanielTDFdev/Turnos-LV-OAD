@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.3 · Pedido de Daniel: no dibujar postes en rodaje/recién aterrizado —
+  waste de recursos y ruido visual sin aportar nada. El umbral pasa a evaluar
+  la altitud REAL (antes de exagerarla 4x) contra un piso de 3m (~10ft), en
+  vez del umbral chico sobre la altura ya exagerada que dejaba colar postes
+  por el ruido normal del GPS en tierra.
+
   v1.2 · Primera prueba real con Daniel, 3 fixes: (1) color del tubo desalineado
   con el punto real en los virajes — TubeGeometry samplea por LONGITUD DE ARCO,
   no por índice de punto, y con velocidad variable (a diferencia del track
@@ -127,7 +133,7 @@
 <div id="app">
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.2</span>
+    <span class="badge" id="ver-badge">v1.3</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -670,8 +676,13 @@ function construirPostes(){
   const [min,max] = rangoColor();
   for(let i=0;i<track.length;i+=espaciado){
     const p=track[i];
+    // Umbral sobre la altitud REAL (no ry(), que la exagera 4x) — con el
+    // ruido normal del GPS en rodaje (unos pocos metros de variación falsa),
+    // un umbral chico sobre la altura YA exagerada dejaba pasar postes en el
+    // piso. 3m (~10ft) es un piso razonable para considerar "en el aire" y de
+    // paso evita gastar recursos dibujando postes en rodaje/recién aterrizado.
+    if(p.y < 3) continue;
     const alturaRender = ry(p.y);
-    if(alturaRender<1) continue;
     // Trapecio en vez de rectángulo: el borde superior sigue la inclinación
     // real del tubo en ESE punto (mismo criterio que el pitch renderizado del
     // avión — EXAG_VERT exagera la pendiente igual que exagera la altura),
