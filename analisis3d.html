@@ -2,6 +2,15 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.15 · Pedido de Daniel: la altitud seguía viéndose ruidosa ("como
+  turbulencia severa") aun con el despicado de mediana de v1.8 — normal,
+  porque una mediana solo vota en contra de picos aislados, no promedia el
+  resto de la curva. Se agregó, después de la mediana, un promedio móvil
+  (ventana ±3) aplicado DOS veces sobre la altitud ya despicada — dos pasadas
+  angostas en vez de una ancha, para que el resultado se parezca más a un
+  filtro gaussiano (suaviza parejo) y no "achate" de más los ascensos/
+  descensos reales, como pasaría con una sola ventana muy ancha.
+
   v1.14 · Segundo fix reportado por Daniel sobre el humo (el de v1.13 no
   alcanzaba: seguía viéndose nube a 1x, recién a 5x se notaba trail). La causa
   real no era el espaciado entre puffs (eso ya quedó bien en v1.13) sino el
@@ -256,7 +265,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.14</span>
+    <span class="badge" id="ver-badge">v1.15</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -454,7 +463,27 @@ function procesarPuntos(puntosCrudos){
     return out;
   }
   const altitudDespicada = medianaEnVentana(base2.map(p=>p.y));
-  for(let i=0; i<base2.length; i++) base2[i].y = altitudDespicada[i];
+
+  // Segundo paso de suavizado (pedido de Daniel): la mediana solo saca picos
+  // aislados de a uno, pero no "empareja" el resto — el ruido normal del GPS
+  // entre punto y punto seguía notándose como vibración/turbulencia en la
+  // curva. Se le suma acá un promedio móvil (ventana ±3) aplicado DOS veces
+  // sobre la altitud ya despicada. Dos pasadas de una ventana angosta
+  // suavizan más parejo que una sola pasada con una ventana ancha (que
+  // "achata" curvas reales de ascenso/descenso de forma más notoria) —
+  // arriman el resultado a lo que da un filtro gaussiano, sin la complejidad
+  // de implementar uno.
+  function promedioMovil(arr, radio){
+    const out = new Array(arr.length);
+    for(let i=0; i<arr.length; i++){
+      let suma=0, cont=0;
+      for(let k=-radio; k<=radio; k++){ const j=i+k; if(j>=0 && j<arr.length){ suma+=arr[j]; cont++; } }
+      out[i] = suma/cont;
+    }
+    return out;
+  }
+  const altitudSuave = promedioMovil(promedioMovil(altitudDespicada, 3), 3);
+  for(let i=0; i<base2.length; i++) base2[i].y = altitudSuave[i];
 
   // Heading/GS/VS crudos, por diferencia entre puntos consecutivos
   const n = base2.length;
