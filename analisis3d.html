@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.8 · Pedido de Daniel: suavizar los saltos de ruido en la altitud que se
+  veían como quiebres feos en el tubo. Filtro de MEDIANA (ventana de 5
+  muestras) sobre la altitud, antes de derivar VS y antes de que llegue a la
+  geometría — un salto de 1-2 lecturas de GPS queda votado en contra por el
+  resto de la ventana y se descarta solo, sin necesidad de fijar un límite
+  arbitrario de tasa vertical.
+
   v1.7 · Pedido de Daniel: trazar solo desde que despega. El track se recorta
   en procesarPuntos() — arranca en el primer punto que alcanza/supera 100ft
   AGL, termina en el aterrizaje FINAL (el último cruce hacia abajo de 100ft
@@ -170,7 +177,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.7</span>
+    <span class="badge" id="ver-badge">v1.8</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -349,6 +356,26 @@ function procesarPuntos(puntosCrudos){
     if(distXZ > 0.3 || (base[i].t-prev.t) > 30) filtrados.push(base[i]);
   }
   const base2 = filtrados;
+
+  // Despicado de altitud (pedido de Daniel): un salto de GPS de 1-2 lecturas
+  // (ruido típico en altitud, más que en posición horizontal) se veía como un
+  // quiebre feo en el tubo. En vez de fijar un límite arbitrario de "tasa
+  // vertical máxima" (que habría que ir ajustando según el avión), un filtro
+  // de MEDIANA en ventana de 5 muestras vota en contra del outlier con el
+  // resto de la ventana y lo descarta solo — mucho más robusto para esto que
+  // un promedio (que un solo pico grande ya distorsiona).
+  function medianaEnVentana(arr, radio=2){
+    const out = new Array(arr.length);
+    for(let i=0; i<arr.length; i++){
+      const vals=[];
+      for(let k=-radio; k<=radio; k++){ const j=i+k; if(j>=0 && j<arr.length) vals.push(arr[j]); }
+      vals.sort((a,b)=>a-b);
+      out[i] = vals[Math.floor(vals.length/2)];
+    }
+    return out;
+  }
+  const altitudDespicada = medianaEnVentana(base2.map(p=>p.y));
+  for(let i=0; i<base2.length; i++) base2[i].y = altitudDespicada[i];
 
   // Heading/GS/VS crudos, por diferencia entre puntos consecutivos
   const n = base2.length;
