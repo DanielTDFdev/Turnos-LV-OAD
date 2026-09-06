@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.19 · Pedido de Daniel ("probemos"): mapa satelital real como suelo,
+  opcional (toggle nuevo, apagado por default porque pide tiles por red).
+  Reusa el mismo proveedor que ya usan turnos.html/vuelo.html para el mapa GPS
+  2D (ArcGIS World_Imagery, sin API key). A diferencia del suelo de pasto
+  (infinito, se recentra bajo la cámara), esto es una malla FINITA
+  georreferenciada: se calcula el bbox lat/lng del vuelo invirtiendo la misma
+  proyección ENU que ya usa el resto del visor, se eligen los tiles que lo
+  cubren (con tope de 36 para no disparar demasiados pedidos), se pegan en un
+  canvas, y esa esquina real del mosaico (no el bbox pedido, redondeado a
+  tiles enteros) se vuelve a proyectar a x/z de mundo para ubicar la malla
+  exacta. flipY se desactiva en la textura porque, con la misma rotación que
+  ya usa el suelo/grilla/rosa, el default dejaría el norte de la imagen
+  apuntando al sur del mundo. lat0/lng0/R (el origen de la proyección) viajan
+  colgados como propiedad del array que devuelve procesarPuntos(), porque
+  antes solo existían en esa función y iniciarVisor() no tenía forma de
+  reconstruirlos.
+
   v1.18 · Pedido de Daniel: textura de pasto/tierra en el suelo en vez del
   degradado liso — parches grandes de color (baja frecuencia) + speckle fino
   (alta frecuencia), generados por canvas, tileable. Como el suelo se
@@ -297,7 +314,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.18</span>
+    <span class="badge" id="ver-badge">v1.19</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -339,6 +356,7 @@
     <label class="toggle"><input type="checkbox" id="postes" checked><span class="track"></span>Postes verticales</label>
     <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
     <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
+    <label class="toggle"><input type="checkbox" id="mapaSat"><span class="track"></span>Mapa satelital (suelo)</label>
   </footer>
 </div>
 
@@ -618,6 +636,11 @@ function procesarPuntos(puntosCrudos){
   if(recortado.length < 3) recortado = track; // salvaguarda: recorte demasiado agresivo, mostrar todo
   const tBase = recortado[0].t;
   for(const p of recortado) p.t -= tBase; // re-basar el tiempo a 0 en el nuevo primer punto
+  // Pedido de Daniel: mapa satelital real como suelo (opcional). Para eso hace
+  // falta, más adelante, poder invertir la proyección ENU (x,z -> lat,lng) —
+  // se cuelgan lat0/lng0/R del array devuelto (los arrays son objetos, admiten
+  // propiedades extra) en vez de cambiar la firma de la función.
+  recortado.origenGeo = {lat0, lng0, R};
   return recortado;
 }
 
@@ -626,6 +649,8 @@ function iniciarVisor(track){
   const EXAG_VERT = 4; // exageración vertical SOLO para el dibujo — ver disclaimer en pantalla
   const ry = y => y*EXAG_VERT;
   const DUR = track[track.length-1].t;
+  const {lat0, lng0, R} = track.origenGeo; // para el mapa satelital (invierte la proyección ENU)
+  const lat0Rad = lat0*Math.PI/180;
 
 // ============================================================================
 // 2) ESCENA THREE.JS
@@ -809,6 +834,110 @@ rosaChk.onchange = ()=>{
   }
 };
 if(rosaChk.checked){ rosaGroup=construirRosaRumbos(); scene.add(rosaGroup); } // arranca activada
+
+// --- Mapa satelital como suelo (opcional, pedido de Daniel: "probemos") ---
+// Reusa el mismo proveedor de tiles que ya usan turnos.html/vuelo.html para
+// el mapa GPS 2D (ArcGIS World_Imagery, sin API key). A diferencia del suelo
+// de pasto (infinito, se recentra bajo la cámara), esto es una capa FINITA:
+// solo cubre el área real del vuelo, georreferenciada invirtiendo la misma
+// proyección ENU que ya usa el resto del visor (x=E, z=N desde lat0/lng0).
+// Apagado por default: pide varias imágenes por red, no es gratis en tiempo
+// de carga como el resto de los toggles (que son puro cálculo local).
+function _lngLatATileFrac(lng, lat, zoom){
+  const n = Math.pow(2, zoom);
+  const x = (lng+180)/360*n;
+  const latRad = lat*Math.PI/180;
+  const y = (1 - Math.log(Math.tan(latRad)+1/Math.cos(latRad))/Math.PI)/2*n;
+  return {x, y};
+}
+function _tileEsquinaLngLat(tx, ty, zoom){ // esquina noroeste del tile (tx,ty)
+  const n = Math.pow(2, zoom);
+  const lng = tx/n*360-180;
+  const latRad = Math.atan(Math.sinh(Math.PI*(1-2*ty/n)));
+  return {lat: latRad*180/Math.PI, lng};
+}
+function _elegirZoomYTiles(latMin, latMax, lngMin, lngMax){
+  const TOPE_TILES = 36; // 6x6 — cuidar cantidad de pedidos de red
+  let zoom = 17; // maxNativeZoom de World_Imagery en el resto de la app
+  for(; zoom>=10; zoom--){
+    const no = _lngLatATileFrac(lngMin, latMax, zoom);
+    const se = _lngLatATileFrac(lngMax, latMin, zoom);
+    const txMin=Math.floor(no.x), txMax=Math.floor(se.x);
+    const tyMin=Math.floor(no.y), tyMax=Math.floor(se.y);
+    if((txMax-txMin+1)*(tyMax-tyMin+1) <= TOPE_TILES) return {zoom,txMin,txMax,tyMin,tyMax};
+  }
+  const no = _lngLatATileFrac(lngMin, latMax, zoom+1);
+  const se = _lngLatATileFrac(lngMax, latMin, zoom+1);
+  return {zoom:zoom+1, txMin:Math.floor(no.x), txMax:Math.floor(se.x), tyMin:Math.floor(no.y), tyMax:Math.floor(se.y)};
+}
+async function construirMapaSatelital(){
+  // bbox lat/lng del vuelo, con 15% de margen, invirtiendo la proyección ENU
+  const margen = extent*0.15;
+  const xMin=bb.minX-margen, xMax=bb.maxX+margen, zMin=bb.minZ-margen, zMax=bb.maxZ+margen;
+  const lngDe = x => lng0 + x/(R*Math.cos(lat0Rad))*180/Math.PI;
+  const latDe = z => lat0 + z/R*180/Math.PI;
+  const lngMin=lngDe(xMin), lngMax=lngDe(xMax), latMin=latDe(zMin), latMax=latDe(zMax);
+
+  const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax);
+  const nx=txMax-txMin+1, ny=tyMax-tyMin+1;
+  const canvas = document.createElement('canvas');
+  canvas.width = nx*256; canvas.height = ny*256;
+  const ctx = canvas.getContext('2d');
+  const promesas = [];
+  for(let ty=tyMin; ty<=tyMax; ty++){
+    for(let tx=txMin; tx<=txMax; tx++){
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const px=(tx-txMin)*256, py=(ty-tyMin)*256;
+      promesas.push(new Promise(resolve=>{
+        img.onload = ()=>{ ctx.drawImage(img,px,py,256,256); resolve(); };
+        img.onerror = ()=>resolve(); // tile que falló: queda el hueco transparente, no rompe el resto
+      }));
+      img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${ty}/${tx}`;
+    }
+  }
+  await Promise.all(promesas);
+
+  // Esquinas REALES del mosaico (no del bbox pedido, que se redondeó a tiles
+  // enteros) — hay que georreferenciar contra estas, si no el mapa queda
+  // corrido respecto de la traza.
+  const no = _tileEsquinaLngLat(txMin, tyMin, zoom);
+  const se = _tileEsquinaLngLat(txMax+1, tyMax+1, zoom);
+  const xOeste = R*(no.lng-lng0)*Math.PI/180*Math.cos(lat0Rad);
+  const xEste  = R*(se.lng-lng0)*Math.PI/180*Math.cos(lat0Rad);
+  const zNorte = R*(no.lat-lat0)*Math.PI/180;
+  const zSur   = R*(se.lat-lat0)*Math.PI/180;
+
+  const tex = new THREE.CanvasTexture(canvas);
+  // La malla rota -90° en X igual que el suelo/grilla/rosa: con flipY por
+  // defecto (fila 0 de la imagen → V=1 → local +Y → mundo -Z, ver rosa de
+  // rumbos más arriba) el norte de la imagen caería al SUR del mundo. Se
+  // desactiva flipY para que fila 0 (norte real) quede en local -Y → +Z.
+  tex.flipY = false;
+
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(xEste-xOeste, zNorte-zSur),
+    new THREE.MeshBasicMaterial({map:tex})
+  );
+  mesh.rotation.x = -Math.PI/2;
+  mesh.position.set((xOeste+xEste)/2, -0.28, (zNorte+zSur)/2); // apenas por
+    // encima del suelo de pasto (-0.3), que sigue de fondo más allá del área
+    // cubierta por el mapa.
+  return mesh;
+}
+let mapaSatGroup = null;
+const mapaSatChk = document.getElementById('mapaSat');
+mapaSatChk.onchange = async ()=>{
+  if(mapaSatChk.checked){
+    if(!mapaSatGroup){
+      mapaSatGroup = await construirMapaSatelital();
+      scene.add(mapaSatGroup);
+    }
+    mapaSatGroup.visible = true;
+  } else if(mapaSatGroup){
+    mapaSatGroup.visible = false;
+  }
+};
 
 // --- Escala de color ---
 function colorPara(valor, min, max){
