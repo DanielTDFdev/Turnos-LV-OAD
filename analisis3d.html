@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.18 · Pedido de Daniel: textura de pasto/tierra en el suelo en vez del
+  degradado liso — parches grandes de color (baja frecuencia) + speckle fino
+  (alta frecuencia), generados por canvas, tileable. Como el suelo se
+  recentra bajo la cámara cada frame ("suelo infinito"), y ahora la textura
+  SÍ tiene un patrón repetido (antes era un degradado liso, no se notaba), se
+  le agregó una corrección de offset de textura en el loop de render para que
+  el dibujo quede anclado al mundo en vez de parecer pegado a la cámara.
+
   v1.17 · Dos fixes reportados por Daniel sobre v1.16:
   (1) "Se rompió la visualización" — pico altísimo en el tubo durante un
   circuito/patrón de pista. La rosa de rumbos NO toca datos de altitud ni
@@ -289,7 +297,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.17</span>
+    <span class="badge" id="ver-badge">v1.18</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -651,22 +659,56 @@ for(const p of track){
 const centro = new THREE.Vector3((bb.minX+bb.maxX)/2, 0, (bb.minZ+bb.maxZ)/2);
 const extent = Math.max(bb.maxX-bb.minX, bb.maxZ-bb.minZ);
 
-// --- Suelo: plano con degradado marrón (textura de canvas) — reemplaza el
-// fondo negro/grilla sola de la v1. Sigue siendo referencia visual, no terreno. ---
+// --- Suelo: textura de pasto/tierra generada por canvas (parches grandes de
+// color + speckle fino, tileable) — pedido de Daniel para que deje de verse
+// como un degradado liso y parezca más terreno real. Sigue siendo una
+// referencia visual, no datos satelitales reales (ver pregunta del mapa 2D
+// como suelo, respondida aparte). ---
 function texturaSuelo(){
   const size=512;
   const c=document.createElement('canvas'); c.width=size; c.height=size;
   const ctx=c.getContext('2d');
-  const grad=ctx.createRadialGradient(size/2,size/2,size*0.04,size/2,size/2,size*0.52);
-  grad.addColorStop(0,'#9c7a54');
-  grad.addColorStop(0.55,'#77593c');
-  grad.addColorStop(1,'#4a3626');
-  ctx.fillStyle=grad; ctx.fillRect(0,0,size,size);
-  return new THREE.CanvasTexture(c);
+  ctx.fillStyle='#6f5a3a';
+  ctx.fillRect(0,0,size,size);
+  // Parches grandes (baja frecuencia) — zonas de pasto más verde o tierra más
+  // pelada, para que no se vea uniforme visto de lejos.
+  const tonosParche = ['#7c9a52','#5f7a3d','#8a6b42','#5e4a30','#93764a'];
+  for(let i=0;i<40;i++){
+    const x=Math.random()*size, y=Math.random()*size, r=20+Math.random()*70;
+    ctx.globalAlpha = 0.18+Math.random()*0.18;
+    ctx.fillStyle = tonosParche[Math.floor(Math.random()*tonosParche.length)];
+    ctx.beginPath();
+    ctx.ellipse(x, y, r, r*(0.6+Math.random()*0.6), Math.random()*Math.PI, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // Speckle fino (alta frecuencia) — da la sensación de pasto/tierra granulada
+  // cuando la cámara está cerca, sin quedar como ruido puro visto de lejos.
+  for(let i=0;i<3500;i++){
+    const x=Math.random()*size, y=Math.random()*size;
+    const esVerde = Math.random()<0.55;
+    ctx.fillStyle = esVerde
+      ? `rgba(${90+Math.random()*60|0},${120+Math.random()*60|0},${40+Math.random()*40|0},0.5)`
+      : `rgba(${100+Math.random()*70|0},${75+Math.random()*40|0},${40+Math.random()*30|0},0.5)`;
+    ctx.fillRect(x, y, 1.5, 1.5);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
 }
+const texSuelo = texturaSuelo();
+// Repite la textura para que cada "baldosa" mida ~40m en el mundo real, sin
+// importar el largo total del vuelo — si no, en un vuelo largo la textura se
+// vería estirada como una sola mancha (el problema original que reportó
+// Daniel), y en uno corto, demasiado repetida/apretada.
+const repeticionesSuelo = Math.max(6, Math.round((extent*8)/40));
+texSuelo.repeat.set(repeticionesSuelo, repeticionesSuelo);
+const tileSizeSuelo = (extent*8)/repeticionesSuelo; // tamaño real de cada
+  // "baldosa" en metros — usado también en el loop de render para anclar el
+  // offset de la textura al mundo (ver ahí).
 const suelo = new THREE.Mesh(
   new THREE.PlaneGeometry(extent*8, extent*8),
-  new THREE.MeshBasicMaterial({map:texturaSuelo()})
+  new THREE.MeshBasicMaterial({map:texSuelo})
 );
 suelo.rotation.x = -Math.PI/2;
 suelo.position.set(centro.x, -0.3, centro.z);
@@ -1363,13 +1405,20 @@ function loop(now){
   actualizarCamara(siguiendo ? pos : centro, siguiendo ? camRadioSeguir : camRadioLibre);
   actualizarInfo(m);
 
-  // "Suelo infinito": el plano se recentra bajo la cámara en cada frame — como
-  // es un degradado liso sin patrón repetido, el recentrado es imperceptible,
-  // pero el borde del plano nunca queda a la vista por más que te alejes o
-  // gires (mismo efecto que el cielo, que ya es "infinito" al ser un fondo
-  // CSS fijo detrás del canvas transparente).
+  // "Suelo infinito": el plano se recentra bajo la cámara en cada frame para
+  // que el borde nunca quede a la vista. Con el degradado liso de antes eso
+  // alcanzaba (recentrar no se notaba). Con la textura de pasto/tierra (que
+  // SÍ repite un patrón) recentrar la MALLA sin más haría que el dibujo
+  // pareciera "pegado" a la cámara en vez de fijo al terreno — se corrige
+  // corriendo el offset de la textura exactamente lo contrario de lo que se
+  // corrió la malla, para que el patrón quede anclado al mundo. La malla
+  // rotó -90° en X: su eje local +Y (V alto) cae en mundo -Z (mismo cálculo
+  // que se usó para orientar la rosa de rumbos) — de ahí el signo cambiado
+  // en offset.y.
   suelo.position.x = camera.position.x;
   suelo.position.z = camera.position.z;
+  texSuelo.offset.x = camera.position.x / tileSizeSuelo;
+  texSuelo.offset.y = -camera.position.z / tileSizeSuelo;
 
   // Cartelito flotante junto al avión: proyecta su posición 3D a coordenadas
   // de pantalla (NDC -> píxeles) y lo reubica ahí cada frame.
