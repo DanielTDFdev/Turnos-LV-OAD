@@ -2,6 +2,26 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.20 · Dos fixes reportados por Daniel sobre el mapa satelital (v1.19):
+  (1) Competía con el suelo de pasto (rayado/parpadeo tipo z-fighting) — a la
+  escala de esta escena (kilómetros desde el origen) la precisión del depth
+  buffer no alcanza para distinguir dos planos a solo 0.02 de diferencia en
+  Y. Se le puso depthTest:false + renderOrder alto al mapa (dibuja siempre
+  encima del pasto, sin competir por precisión), manteniendo depthWrite para
+  que el tubo/postes/humo lo sigan tapando correctamente por encima. (2)
+  Mala georreferenciación — un test aislado de la matemática de proyección
+  (invertir ENU -> lat/lng -> tile -> lat/lng -> ENU) da resultados
+  consistentes, así que la fórmula en sí no está mal. La sospecha más
+  probable es que la mayoría de los tiles estén fallando silenciosamente
+  (`img.crossOrigin='anonymous'` hace falta para poder dibujarlos en un
+  canvas/textura de WebGL, pero si el servidor de ArcGIS no manda headers
+  CORS para ese modo, el load falla igual aunque el mismo tile se vea bien en
+  un <img> normal o en Leaflet) — con la mayoría de los tiles vacíos, los 2-3
+  que sí cargan quedan como parches sueltos que parecen estar "en cualquier
+  lugar". Se agregó conteo de éxito/fallo por consola y un aviso en pantalla
+  si fallan más tiles de los que cargan, para diagnosticarlo con certeza en
+  vez de asumir.
+
   v1.19 · Pedido de Daniel ("probemos"): mapa satelital real como suelo,
   opcional (toggle nuevo, apagado por default porque pide tiles por red).
   Reusa el mismo proveedor que ya usan turnos.html/vuelo.html para el mapa GPS
@@ -314,7 +334,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.19</span>
+    <span class="badge" id="ver-badge">v1.20</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -883,20 +903,34 @@ async function construirMapaSatelital(){
   const canvas = document.createElement('canvas');
   canvas.width = nx*256; canvas.height = ny*256;
   const ctx = canvas.getContext('2d');
+  let ok=0, fail=0;
   const promesas = [];
   for(let ty=tyMin; ty<=tyMax; ty++){
     for(let tx=txMin; tx<=txMax; tx++){
       const img = new Image();
       img.crossOrigin = 'anonymous';
       const px=(tx-txMin)*256, py=(ty-tyMin)*256;
+      const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${ty}/${tx}`;
       promesas.push(new Promise(resolve=>{
-        img.onload = ()=>{ ctx.drawImage(img,px,py,256,256); resolve(); };
-        img.onerror = ()=>resolve(); // tile que falló: queda el hueco transparente, no rompe el resto
+        img.onload = ()=>{ ctx.drawImage(img,px,py,256,256); ok++; resolve(); };
+        img.onerror = ()=>{ fail++; console.warn('[mapaSat] falló el tile', url); resolve(); };
+          // tile que falló: queda el hueco transparente, no rompe el resto —
+          // pero si fallan MUCHOS, avisamos abajo (posible bloqueo CORS del
+          // servidor de tiles al pedirlos con crossOrigin, necesario para
+          // poder dibujarlos en un canvas/textura de WebGL).
       }));
-      img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${ty}/${tx}`;
+      img.src = url;
     }
   }
   await Promise.all(promesas);
+  console.log(`[mapaSat] zoom=${zoom} tiles=${nx*ny} ok=${ok} fail=${fail} bbox=`, {latMin,latMax,lngMin,lngMax});
+  if(fail > ok){
+    const avisoMapa = document.createElement('div');
+    avisoMapa.className = 'panel';
+    avisoMapa.style.cssText = 'top:12px;left:50%;transform:translateX(-50%);max-width:520px;color:#ffb4ac;border-color:#e0554a;text-align:center';
+    avisoMapa.innerHTML = `⚠ Mapa satelital: fallaron ${fail} de ${nx*ny} tiles (¿bloqueo CORS del servidor de tiles? mirá la consola) — puede verse incompleto o mal ubicado.`;
+    document.getElementById('stage').appendChild(avisoMapa);
+  }
 
   // Esquinas REALES del mosaico (no del bbox pedido, que se redondeó a tiles
   // enteros) — hay que georreferenciar contra estas, si no el mapa queda
@@ -917,12 +951,19 @@ async function construirMapaSatelital(){
 
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(xEste-xOeste, zNorte-zSur),
-    new THREE.MeshBasicMaterial({map:tex})
+    // depthTest:false — a esta escala (kilómetros desde el origen) la
+    // precisión del depth buffer no alcanza para distinguir el mapa (y=-0.2)
+    // del suelo de pasto (y=-0.3): quedaban compitiendo por el mismo pixel
+    // (z-fighting, el rayado/parpadeo que reportó Daniel). Con depthTest
+    // apagado y renderOrder alto, el mapa se dibuja SIEMPRE por encima del
+    // pasto sin importar la precisión — sigue escribiendo profundidad
+    // (depthWrite:true) así el tubo/postes/humo, que si testean contra eso,
+    // se siguen viendo por encima correctamente.
+    new THREE.MeshBasicMaterial({map:tex, depthTest:false})
   );
+  mesh.renderOrder = 1; // el suelo de pasto no tiene renderOrder (=0 default) → se dibuja antes
   mesh.rotation.x = -Math.PI/2;
-  mesh.position.set((xOeste+xEste)/2, -0.28, (zNorte+zSur)/2); // apenas por
-    // encima del suelo de pasto (-0.3), que sigue de fondo más allá del área
-    // cubierta por el mapa.
+  mesh.position.set((xOeste+xEste)/2, -0.2, (zNorte+zSur)/2);
   return mesh;
 }
 let mapaSatGroup = null;
