@@ -2,6 +2,33 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.30 · Pedido de Daniel: nuevo toggle "Dibujar a medida que avanza" — con
+  el toggle apagado (default, comportamiento de siempre) se ve todo el
+  recorrido de una con sus postes de altura; con el toggle prendido, el
+  tubo y los postes se van revelando en sincronía con el avión en vez de
+  mostrarse todos de entrada.
+  Para los postes es directo (cada "cinta" ya es un objeto individual por
+  punto — se le guarda su índice de punto real en userData.idx y se la hace
+  visible cuando el avión llega a ese índice o más adelante).
+  Para el tubo es más flaco: TubeGeometry ubica sus segmentos por "u"
+  (longitud de ARCO, 0..1), no por el parámetro de índice de la curva (cvT,
+  uniforme por punto — el mismo que usa valorEnU/getUtoTmapping para el
+  color). getUtoTmapping solo convierte u→cvT; para la inversa (cvT→u, la
+  que hace falta para saber en qué segmento de arco cortar el tubo dado un
+  índice de punto por TIEMPO real) se armó una tabla de 200+ muestras al
+  cargar (cvTaU(), interpolación lineal + búsqueda binaria) — sin esto, el
+  corte del tubo se adelantaría o atrasaría respecto del avión en los tramos
+  de velocidad variable (virajes, despegue), el mismo tipo de
+  desalineación ya documentado para el color en versiones anteriores. El
+  corte real se aplica con geometry.setDrawRange() sobre la referencia viva
+  de la geometría (tuboGeoActual, nueva — antes reconstruirTubo() no
+  guardaba la geometría en ningún lado fuera de su propio scope), sin
+  reconstruir el tubo entero en cada frame.
+  aplicarRevelado(idxF) se llama una vez por frame en el loop principal
+  (con el toggle apagado, restaura drawRange completo y todos los postes
+  visibles), así que prender/apagar el toggle a mitad de reproducción se ve
+  reflejado al toque sin lógica aparte.
+
   v1.29 · Pedido de Daniel: velocidad de reproducción por defecto pasa de 1x
   a 2x al arrancar. Dos lugares en sincronía: el atributo "selected" del
   <select id="velSel"> (arranca mostrando "2×" en el dropdown) y la variable
@@ -473,7 +500,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.29</span>
+    <span class="badge" id="ver-badge">v1.30</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -514,6 +541,7 @@
     </label>
     <label class="toggle"><input type="checkbox" id="seguir" checked><span class="track"></span>Seguir avión</label>
     <label class="toggle"><input type="checkbox" id="postes" checked><span class="track"></span>Postes verticales</label>
+    <label class="toggle"><input type="checkbox" id="progresivo"><span class="track"></span>Dibujar a medida que avanza</label>
     <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
     <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
     <label class="toggle"><input type="checkbox" id="mapaSat"><span class="track"></span>Mapa satelital (suelo)</label>
@@ -1213,6 +1241,51 @@ const curvaTrack = new THREE.CatmullRomCurve3(track.map(p=>new THREE.Vector3(p.x
 const TUBULAR_SEGMENTS = Math.max(200, track.length*2);
 const RADIAL_SEGMENTS = 8;
 
+// v1.30 — pedido de Daniel: toggle "dibujar a medida que avanza" (tubo y
+// postes se van revelando junto con el avión, en vez de mostrar todo el
+// recorrido de una). Para el tubo esto significa cortar su geometría en el
+// punto exacto de vuelo real (por TIEMPO, igual que muestraEn) — pero
+// TubeGeometry ubica sus segmentos por "u" (longitud de ARCO, 0..1), no por
+// el parámetro de índice de la curva (cvT, uniforme por punto — el mismo que
+// ya usa valorEnU/getUtoTmapping para el color). getUtoTmapping solo
+// convierte u→cvT, no al revés — para cvT→u (lo que necesitamos acá) se arma
+// una tabla muestreada una sola vez al cargar, con interpolación lineal +
+// búsqueda binaria en el loop. Sin esto, el corte del tubo se adelantaría o
+// atrasaría respecto del avión en los tramos de velocidad variable (virajes,
+// despegue) — el mismo tipo de desalineación que ya se documentó para el
+// color en v1.x.
+const N_MUESTRAS_UT = Math.max(200, TUBULAR_SEGMENTS);
+const _tablaU = new Float32Array(N_MUESTRAS_UT+1);
+const _tablaCvT = new Float32Array(N_MUESTRAS_UT+1);
+for(let _i=0; _i<=N_MUESTRAS_UT; _i++){
+  const _u=_i/N_MUESTRAS_UT;
+  _tablaU[_i]=_u;
+  _tablaCvT[_i]=curvaTrack.getUtoTmapping(_u);
+}
+function cvTaU(cvT){
+  if(cvT<=_tablaCvT[0])return 0;
+  if(cvT>=_tablaCvT[N_MUESTRAS_UT])return 1;
+  let lo=0, hi=N_MUESTRAS_UT;
+  while(hi-lo>1){
+    const mid=(lo+hi)>>1;
+    if(_tablaCvT[mid]<=cvT) lo=mid; else hi=mid;
+  }
+  const t0=_tablaCvT[lo], t1=_tablaCvT[hi];
+  const f=(t1>t0)?(cvT-t0)/(t1-t0):0;
+  return _tablaU[lo]+(_tablaU[hi]-_tablaU[lo])*f;
+}
+// índice de punto (fraccional) alcanzado a un tiempo real "t" — misma
+// búsqueda que ya hace muestraEn, extraída para reusar acá sin duplicar el
+// criterio de interpolación por tiempo real (no por índice de array).
+function idxFraccEnTiempo(t){
+  let i = 0;
+  while(i < track.length-2 && track[i+1].t <= t) i++;
+  const a=track[i], b=track[i+1]||a;
+  const span = b.t-a.t;
+  const f = span>0 ? (t-a.t)/span : 0;
+  return {i, f, idxF:i+f};
+}
+
 function valorEnU(u){
   // FIX: TubeGeometry samplea la curva por LONGITUD DE ARCO (u), no por
   // índice de punto — con velocidad casi constante (el track sintético del
@@ -1230,6 +1303,7 @@ function valorEnU(u){
   return valorColor(a)+(valorColor(b)-valorColor(a))*f;
 }
 
+let tuboGeoActual = null; // v1.30: referencia viva para poder tocar drawRange cada frame sin reconstruir todo el tubo
 function reconstruirTubo(){
   tuboGroup.clear();
   const [min,max] = rangoColor();
@@ -1249,6 +1323,7 @@ function reconstruirTubo(){
   geo.setAttribute('color', new THREE.BufferAttribute(colores,3));
   const mat = new THREE.MeshStandardMaterial({vertexColors:true, roughness:0.55, metalness:0.05, transparent:true, opacity:0.8});
   tuboGroup.add(new THREE.Mesh(geo, mat));
+  tuboGeoActual = geo;
 }
 reconstruirTubo();
 
@@ -1513,12 +1588,14 @@ function construirPostes(){
       // se veía de canto, transversal) — lo que hay que alinear es su eje de
       // ANCHO, que en una PlaneGeometry es el eje X local, 90° rotado respecto
       // de la normal (Z local). De ahí el -90 extra.
+    cinta.userData.idx = i; // v1.30: índice de punto real de este poste, para el modo progresivo
     g.add(cinta);
   }
   return g;
 }
 const postesChk = document.getElementById('postes');
 const humoChk = document.getElementById('humo');
+const progresivoChk = document.getElementById('progresivo');
 postesChk.onchange = ()=>{
   if(postesChk.checked){
     if(!postesGroup){ postesGroup=construirPostes(); scene.add(postesGroup); }
@@ -1528,6 +1605,25 @@ postesChk.onchange = ()=>{
   }
 };
 if(postesChk.checked){ postesGroup=construirPostes(); scene.add(postesGroup); } // arranca activado
+
+// v1.30 — aplica el corte de "dibujar a medida que avanza": recibe el índice
+// de punto (fraccional, por TIEMPO real — ver idxFraccEnTiempo) alcanzado en
+// el frame actual. Si el toggle está apagado, restaura todo (tubo completo,
+// todos los postes visibles) — se llama en cada frame del loop, así que
+// prender/apagar el toggle se refleja al toque sin lógica aparte en su
+// onchange.
+function aplicarRevelado(idxF){
+  if(progresivoChk.checked){
+    const cvT = idxF/(track.length-1);
+    const u = cvTaU(cvT);
+    const segmentosAMostrar = Math.min(TUBULAR_SEGMENTS, Math.max(0, Math.round(u*TUBULAR_SEGMENTS)));
+    if(tuboGeoActual) tuboGeoActual.setDrawRange(0, segmentosAMostrar*RADIAL_SEGMENTS*6);
+    if(postesGroup) postesGroup.children.forEach(c=>{ c.visible = c.userData.idx <= idxF; });
+  } else {
+    if(tuboGeoActual) tuboGeoActual.setDrawRange(0, Infinity);
+    if(postesGroup) postesGroup.children.forEach(c=>{ c.visible = true; });
+  }
+}
 
 // ============================================================================
 // 3) CÁMARA ORBITAL — v2: radio de acercamiento SEPARADO para "seguir avión"
@@ -1702,6 +1798,7 @@ function loop(now){
   }
   if(_heliceRef && playing){ _heliceRef.rotation.y += dt*22; } // gira mientras reproduce, de yapa
   const m = muestraEn(currentT);
+  aplicarRevelado(idxFraccEnTiempo(currentT).idxF); // v1.30: modo "dibujar a medida que avanza"
   const pos = new THREE.Vector3(m.x, ry(m.y) + RADIO_TUBO*1.3 + 4, m.z); // offset: se posa
     // ENCIMA del tubo en vez de quedar centrado en su eje (más pegado que antes).
   avion.position.copy(pos);
