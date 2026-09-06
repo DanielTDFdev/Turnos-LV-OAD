@@ -1,5 +1,18 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.59
+  CAMBIOS : Pedido de Daniel: guardarTurnoManual mostraba el mismo mensaje de
+            error ("Ese avión ya tiene un turno activo...") tanto para un
+            conflicto real de horario como para una hora fuera de la grilla
+            del avión (ct-hora/ct-horafin son inputs type="time" libres, no
+            están limitados a horasParaDia — ej: cargar 07:30 en LV-OAD, que
+            solo tiene slots horarios en punto, daba ese mensaje engañoso).
+            Se separa en dos validaciones: si idxIni/idxFin no matchean o el
+            rango es inválido, nuevo mensaje explícito listando los horarios
+            válidos del avión ese día; el mensaje de conflicto real queda
+            aparte, solo para cuando el rango sí es válido pero se solapa con
+            otro turno.
+
   VERSION : 8.58
   CAMBIOS : FIX reportado por Daniel: el botón "Ver en 3D" (v8.57) mostraba el
             nombre del INSTRUCTOR en la página nueva en vez del alumno/piloto —
@@ -4216,7 +4229,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.58</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.59</div>
   </div>
 
 </div>
@@ -11050,7 +11063,10 @@ window.guardarTurnoManual=async function(){
   if(horaFin){
     const horas=horasParaDia(fecha,avion);
     const idxIni=horas.indexOf(hora), idxFin=horas.indexOf(horaFin);
-    if(idxIni<0||idxFin<0||idxIni>=idxFin||horas.slice(idxIni,idxFin).some(h=>taken.includes(h))){
+    if(idxIni<0||idxFin<0||idxIni>=idxFin){
+      showErr('ct-err','Horario fuera de la grilla de '+avion+' para ese día. Horarios válidos: '+(horas.length?horas.join(', '):'ninguno configurado')+'. Elegí hora y hora fin de esa lista.');return;
+    }
+    if(horas.slice(idxIni,idxFin).some(h=>taken.includes(h))){
       showErr('ct-err','Ese avión ya tiene un turno activo en algún horario dentro del rango elegido. Elegí otro horario.');return;
     }
   } else if(taken.includes(hora)){
