@@ -2,6 +2,22 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.22 · Fix reportado por Daniel: el avión se veía transparente. Causa:
+  el depthTest:false del mapa satelital (v1.21) hace que ese material ignore
+  TODO lo ya dibujado, no solo el pasto — y como el mapa tenía renderOrder=1
+  (más alto que el default=0 del avión/tubo/postes/humo), se pintaba encima
+  de esos también sin importar la distancia real a cámara. Se saca
+  depthTest:false y en su lugar se separa mucho más el pasto en Y (-0.3 →
+  -3): a escala de kilómetros desde el origen, 0.1 de diferencia no le
+  alcanzaba al depth buffer, pero unos metros sí — sin saltarse el testeo de
+  profundidad, que es lo que rompía el avión. Sobre el reporte de mapa
+  "flipped" este-oeste: verificado con la geometría real de three.js que
+  rotar sobre el eje X nunca puede cambiar la coordenada X — no hay mecanismo
+  en este código para ese espejo. Sigue pendiente de confirmar con Daniel si
+  lo que percibe como espejo es en realidad la vista en perspectiva 3D (donde
+  pantalla-derecha no es necesariamente geográfico-este, a diferencia de un
+  mapa 2D plano) comparado contra su conocimiento del lugar real.
+
   v1.21 · Dos pedidos de Daniel sobre el mapa satelital (v1.20 confirmó por
   consola que los 16 tiles cargaron OK — no era CORS): (1) Offset de varias
   millas al SE pese a que la orientación es correcta. Repasé la matemática
@@ -355,7 +371,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.21</span>
+    <span class="badge" id="ver-badge">v1.22</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -777,7 +793,8 @@ const suelo = new THREE.Mesh(
   new THREE.MeshBasicMaterial({map:texSuelo})
 );
 suelo.rotation.x = -Math.PI/2;
-suelo.position.set(centro.x, -0.3, centro.z);
+suelo.position.set(centro.x, -3, centro.z); // bajado de -0.3 a -3 (ver v1.22:
+  // separación robusta contra el mapa satelital sin depender de depthTest)
 scene.add(suelo);
 
 // --- Grilla de referencia (más sutil, tonos tierra en vez de gris sobre negro) ---
@@ -992,19 +1009,20 @@ async function construirMapaSatelital(){
 
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(xEste-xOeste, zNorte-zSur),
-    // depthTest:false — a esta escala (kilómetros desde el origen) la
-    // precisión del depth buffer no alcanza para distinguir el mapa (y=-0.2)
-    // del suelo de pasto (y=-0.3): quedaban compitiendo por el mismo pixel
-    // (z-fighting, el rayado/parpadeo que reportó Daniel). Con depthTest
-    // apagado y renderOrder alto, el mapa se dibuja SIEMPRE por encima del
-    // pasto sin importar la precisión — sigue escribiendo profundidad
-    // (depthWrite:true) así el tubo/postes/humo, que si testean contra eso,
-    // se siguen viendo por encima correctamente.
-    new THREE.MeshBasicMaterial({map:tex, depthTest:false})
+    // v1.22 FIX: el depthTest:false de v1.21 arreglaba el rayado contra el
+    // pasto, pero como ese material ignora TODO lo ya dibujado (no solo el
+    // pasto), y este mesh tiene renderOrder=1 (más alto que el default=0 del
+    // avión/tubo/postes/humo), terminaba pintándose ENCIMA de esos también,
+    // sin importar que estuvieran más cerca de cámara — por eso Daniel vio
+    // el avión "transparente". Se saca depthTest:false y en cambio se separa
+    // bastante más en Y del pasto (ver más abajo): a esta escala (kilómetros
+    // desde el origen) 0.1 de diferencia no alcanzaba para que el depth
+    // buffer los distinga, pero unos metros de separación sí, sin necesidad
+    // de saltarse el testeo de profundidad (que es lo que rompía el avión).
+    new THREE.MeshBasicMaterial({map:tex})
   );
-  mesh.renderOrder = 1; // el suelo de pasto no tiene renderOrder (=0 default) → se dibuja antes
   mesh.rotation.x = -Math.PI/2;
-  mesh.position.set((xOeste+xEste)/2, -0.2, (zNorte+zSur)/2);
+  mesh.position.set((xOeste+xEste)/2, -0.15, (zNorte+zSur)/2);
   return mesh;
 }
 let mapaSatGroup = null;
