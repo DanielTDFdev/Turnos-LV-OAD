@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.29 · Pedido de Daniel: velocidad de reproducción por defecto pasa de 1x
+  a 2x al arrancar. Dos lugares en sincronía: el atributo "selected" del
+  <select id="velSel"> (arranca mostrando "2×" en el dropdown) y la variable
+  speed=2 en la declaración inicial (arranca reproduciendo a esa velocidad
+  desde el primer frame, no solo cuando el usuario toca el selector).
+
   v1.28 · FIX reportado por Daniel: al rotar la cámara, el plano del suelo
   tapaba los paneles HTML de datos (#info) y de la leyenda de color (#legend).
   Causa real: no es un problema del mundo 3D — es CSS. #stage canvas tiene
@@ -467,7 +473,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.28</span>
+    <span class="badge" id="ver-badge">v1.29</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -494,8 +500,8 @@
     <label>Velocidad
       <select id="velSel">
         <option value="0.5">0.5×</option>
-        <option value="1" selected>1×</option>
-        <option value="2">2×</option>
+        <option value="1">1×</option>
+        <option value="2" selected>2×</option>
         <option value="5">5×</option>
         <option value="10">10×</option>
       </select>
@@ -1607,7 +1613,7 @@ function actualizarCamara(target, radio){
 // ============================================================================
 // 4) REPRODUCCIÓN / SCRUB
 // ============================================================================
-let currentT = 0, playing = false, speed = 1, lastFrame = performance.now();
+let currentT = 0, playing = false, speed = 2, lastFrame = performance.now();
 const slider = document.getElementById('slider');
 const playBtn = document.getElementById('play');
 const velSel = document.getElementById('velSel');
