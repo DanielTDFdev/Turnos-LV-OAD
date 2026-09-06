@@ -2,6 +2,26 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.37 · Dos pedidos de Daniel tras confirmar que v1.36 "anduvo":
+  (1) Notaba delay al zoomear, como si no cacheara. Causa real: la clave de
+  cache del parche redondeaba la POSICIÓN/RADIO en metros (grillas de 50m),
+  pero lo que en verdad determina si hace falta red es el RANGO DE TILES real
+  que termina pidiendo _elegirZoomYTiles — más "ancho" que 50m (cada tile
+  cubre ~300m a zoom 17). Dos zooms a distancias/posiciones apenas distintas
+  frecuentemente caen en el MISMO rango de tiles, pero con la clave vieja
+  contaban como distintos y disparaban un fetch de nuevo igual. Ahora se
+  calcula el rango de tiles primero (sync, sin red) y se cachea por ESO —
+  mismo criterio que un visor de mapas real. Ojo: un delay en un área
+  GENUINAMENTE nueva (o mientras el avión se mueve en modo seguir con la
+  reproducción corriendo) sigue siendo inevitable — es la red trayendo tiles
+  que nunca se pidieron antes, ningún cacheo evita eso.
+  (2) "Mapa satelital" arranca tildado por default. Como la carga es async y
+  el onchange de mapaSatChk depende de seguirChk/camRadioLibre/camRadioSeguir
+  (declaradas más abajo, en la sección de cámara orbital), el disparo inicial
+  NO puede ir al lado de mapaSatChk (TDZ, mismo bug ya documentado para let/
+  const usadas por una función invocada antes de tiempo) — va al final de
+  iniciarVisor(), después de declarado todo lo que hace falta.
+
   v1.36 · FIX reportado por Daniel tras probar v1.35 ("nop, incluso bajó la
   resolución"): el parche de acercamiento nunca llegaba a activarse en modo
   "seguir avión". Causa: el umbral comparaba camRadioSeguir contra SU PROPIA
@@ -624,7 +644,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.36</span>
+    <span class="badge" id="ver-badge">v1.37</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -643,7 +663,7 @@
         <label class="toggle"><input type="checkbox" id="progresivo" checked><span class="track"></span>Dibujar a medida que avanza</label>
         <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
         <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
-        <label class="toggle"><input type="checkbox" id="mapaSat"><span class="track"></span>Mapa satelital (suelo)</label>
+        <label class="toggle"><input type="checkbox" id="mapaSat" checked><span class="track"></span>Mapa satelital (suelo)</label>
       </div>
     </div>
     <div class="panel" id="legend">
@@ -1384,13 +1404,21 @@ function _radioParcheDeseado(radioCamara){
 }
 
 async function _obtenerParche(cx, cz, radio){
-  const key = Math.round(cx/50)+','+Math.round(cz/50)+','+Math.round(radio/50);
-    // redondeado a grillas de 50m — pequeños movimientos de cámara/avión
-    // reusan el mismo parche cacheado en vez de disparar un fetch nuevo por
-    // cada frame de zoom o cada metro que avanza el avión.
+  // v1.37 — FIX reportado por Daniel: notaba delay al zoomear, como si no
+  // cacheara. Causa real: la clave de cache redondeaba la POSICIÓN/RADIO en
+  // metros (grillas de 50m) — pero lo que en verdad determina si hace falta
+  // red es el RANGO DE TILES real que termina pidiendo _elegirZoomYTiles, y
+  // eso es más "ancho" que una grilla de 50m (cada tile cubre ~300m a zoom
+  // 17): dos zooms a distancias/posiciones apenas distintas frecuentemente
+  // caen en el MISMO rango de tiles, pero con la clave vieja (por metros)
+  // contaban como distintos y disparaban un fetch de nuevo igual. Ahora se
+  // calcula el rango de tiles PRIMERO (sync, sin red) y se cachea por ESO —
+  // mismo criterio que usaría cualquier visor de mapas real (cachear por
+  // tile, no por posición continua de cámara).
+  const {lngMin,lngMax,latMin,latMax} = _bboxLatLngCentroRadio(cx,cz,radio);
+  const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax, UMBRAL_TILES_PARCHE);
+  const key = `${zoom}:${txMin}:${txMax}:${tyMin}:${tyMax}`;
   if(!_mapaParcheCache.has(key)){
-    const {lngMin,lngMax,latMin,latMax} = _bboxLatLngCentroRadio(cx,cz,radio);
-    const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax, UMBRAL_TILES_PARCHE);
     _mapaParcheCache.set(key, _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax,Y_PARCHE,'PARCHE').then(mesh=>{
       scene.add(mesh);
       return mesh;
@@ -2206,6 +2234,16 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+// v1.37 — pedido de Daniel: "Mapa satelital" arranca tildado por default (el
+// checkbox ya tiene "checked" en el HTML). Dispara la misma carga que si el
+// usuario lo tildara a mano, pero recién ACÁ, al final del script — el
+// onchange de mapaSatChk usa seguirChk/camRadioLibre/camRadioSeguir, que se
+// declaran más abajo en el archivo (sección de cámara orbital); llamarlo
+// antes de esa declaración (por ejemplo, justo al lado de mapaSatChk, arriba)
+// revienta con ReferenceError por TDZ — mismo tipo de bug ya documentado para
+// let/const usadas por una función invocada antes de tiempo.
+if(mapaSatChk.checked) mapaSatChk.onchange();
 
 }
 
