@@ -2,6 +2,25 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.41 · FIX reportado por Daniel: "arranca con muy buena resolución, apenas
+  lo muevo la pierde totalmente". El parche de alta resolución se pedía UNA
+  sola vez, centrado donde estaba el avión en ese momento, y solo se
+  recalculaba al hacer zoom (aplicarZoom) o al cambiar de modo
+  (seguirChk.onchange) — NUNCA al avanzar el avión durante la reproducción.
+  Apenas el avión salía del área cubierta por ese parche (que en modo seguir
+  es chico a propósito, justamente para tener buena resolución), quedaba
+  volando sobre el mosaico de fondo: borroso otra vez. Explica exactamente el
+  síntoma reportado (bien al arrancar, mal apenas se mueve).
+  Fix: el loop ahora chequea (throttleado a 700ms, no en cada frame) si el
+  avión se alejó más de la mitad del radio del parche activo, y en ese caso
+  pide uno nuevo centrado donde está ahora. Se guarda _parcheCentro
+  {x,z,radio} al mostrar cada parche para poder medir esa distancia, y se
+  resetea a null cuando el parche se deshabilita por distancia de cámara.
+  El cacheo por rango de tiles (v1.37) hace que muchos de esos recálculos no
+  peguen a la red: si el parche nuevo cae en los mismos tiles, se reusa.
+  Solo aplica en modo "seguir avión" — en cámara libre el parche se centra en
+  el centro del vuelo, que es fijo, no hay nada que seguir.
+
   v1.40 · FIX reportado por Daniel: "perdimos la buena resolución, ahora
   siempre se ve pixelado". El tope fijo de 800m (v1.38, para el flicker) tenía
   un efecto secundario no previsto: en un vuelo GRANDE (extent de varios km,
@@ -720,7 +739,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.40</span>
+    <span class="badge" id="ver-badge">v1.41</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1469,6 +1488,8 @@ async function _fetchMosaicoParaZoom(zoom, txMin, txMax, tyMin, tyMax, yPos, eti
 let mapaSatMeshBase = null;      // mosaico de fondo, fijo, cubre todo el vuelo
 const _mapaParcheCache = new Map(); // clave "cx,cz,radio" (redondeados) -> Promise<THREE.Mesh>
 let mapaSatMeshParche = null;    // parche actualmente visible (o null si no corresponde mostrar ninguno)
+let _parcheCentro = null;      // v1.41: dónde/con qué radio quedó pedido el parche activo (declarado acá, antes de usarse — ver nota de TDZ en v1.37)
+let _ultimoChequeoParche = 0;  // v1.41: throttle del chequeo de seguimiento en el loop
 let _mapaSatCargando = false;
 
 const UMBRAL_TILES_PARCHE = 100; // el parche siempre pide a full tope (100) — como
@@ -1545,6 +1566,7 @@ async function actualizarParcheMapaSatelital(){
     // cámara demasiado lejos (en cualquiera de los dos modos): el mosaico de
     // fondo ya alcanza, no hace falta parche.
     if(mapaSatMeshParche){ mapaSatMeshParche.visible=false; mapaSatMeshParche=null; }
+    _parcheCentro = null; // v1.41: sin parche activo no hay nada que seguir
     return;
   }
   const m = muestraEn(currentT);
@@ -1553,6 +1575,10 @@ async function actualizarParcheMapaSatelital(){
   try{
     const mesh = await _obtenerParche(centro3.x, centro3.z, radioPatch);
     if(!mapaSatChk.checked){ mesh.visible=false; return; } // se destildó mientras esperaba
+    // v1.41: se recuerda dónde y con qué radio quedó pedido el parche activo,
+    // para que el loop pueda detectar cuándo el avión se alejó lo suficiente
+    // como para necesitar uno nuevo (ver _chequearParcheSeguimiento).
+    _parcheCentro = {x:centro3.x, z:centro3.z, radio:radioPatch};
     if(mesh===mapaSatMeshParche) return; // ya se está mostrando este mismo parche
     if(mapaSatMeshParche) mapaSatMeshParche.visible=false;
     mesh.visible = true;
@@ -1560,6 +1586,29 @@ async function actualizarParcheMapaSatelital(){
   } finally {
     _mapaSatCargando = false;
   }
+}
+
+// v1.41 — FIX reportado por Daniel: "arranca con muy buena resolución, apenas
+// lo muevo la pierde totalmente". El parche se pedía UNA vez, centrado donde
+// estaba el avión en ese momento, y solo se recalculaba al hacer zoom
+// (aplicarZoom) o al cambiar de modo (seguirChk.onchange) — nunca al AVANZAR
+// el avión durante la reproducción. Apenas el avión salía del área cubierta
+// por ese parche (que en modo seguir es chico a propósito, para tener buena
+// resolución), quedaba volando sobre el mosaico de fondo: borroso otra vez.
+// Ahora el loop chequea, con throttle, si el avión se alejó más de la mitad
+// del radio del parche activo y en ese caso pide uno nuevo centrado donde
+// está ahora. Va throttleado (no en cada frame) porque _obtenerParche hace
+// trabajo real —,aunque el cacheo por rango de tiles (v1.37) evita la red
+// cuando el parche nuevo cae en los mismos tiles, igual conviene no llamarlo
+// 60 veces por segundo.
+function _chequearParcheSeguimiento(ahoraMs, m){
+  if(!mapaSatChk.checked || !seguirChk.checked) return; // en cámara libre el
+    // parche se centra en el centro del vuelo (fijo), no hay nada que seguir.
+  if(ahoraMs - _ultimoChequeoParche < 700) return;
+  _ultimoChequeoParche = ahoraMs;
+  if(!_parcheCentro) return; // todavía no se pidió ninguno (o está deshabilitado por distancia)
+  const dx = m.x - _parcheCentro.x, dz = m.z - _parcheCentro.z;
+  if(Math.hypot(dx,dz) > _parcheCentro.radio*0.5) actualizarParcheMapaSatelital();
 }
 
 const mapaSatChk = document.getElementById('mapaSat');
@@ -2219,6 +2268,7 @@ function loop(now){
   }
   if(_heliceRef && playing){ _heliceRef.rotation.y += dt*22; } // gira mientras reproduce, de yapa
   const m = muestraEn(currentT);
+  _chequearParcheSeguimiento(now, m); // v1.41: repide el parche satelital si el avión salió del área cubierta
   aplicarRevelado(idxFraccEnTiempo(currentT).idxF); // v1.30: modo "dibujar a medida que avanza"
   const pos = new THREE.Vector3(m.x, ry(m.y) + RADIO_TUBO*1.3 + 4, m.z); // offset: se posa
     // ENCIMA del tubo en vez de quedar centrado en su eje (más pegado que antes).
