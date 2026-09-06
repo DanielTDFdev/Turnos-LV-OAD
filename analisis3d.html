@@ -2,6 +2,20 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.40 · FIX reportado por Daniel: "perdimos la buena resolución, ahora
+  siempre se ve pixelado". El tope fijo de 800m (v1.38, para el flicker) tenía
+  un efecto secundario no previsto: en un vuelo GRANDE (extent de varios km,
+  como el de este reporte, sobre zona urbana), 800m es chico comparado con el
+  mosaico de fondo (extent + 75% margen) — el parche se deshabilitaba de más
+  y la vista por defecto en "seguir avión" quedaba pegada al mosaico de fondo
+  (borroso) en vez de poder usar un parche bastante más grande que 800m sin
+  ningún riesgo real de volver a acercarse al tamaño del fondo. El tope ahora
+  escala con el extent de ESTE vuelo (0.6×extent, con piso/techo absolutos de
+  300m/3000m solo para vuelos extremadamente chicos o largos) en vez de ser
+  un número fijo — eso es lo que realmente evita el flicker (que el parche no
+  rivalice en tamaño con el fondo), no un valor mágico en metros que no tiene
+  en cuenta cuánto mide el vuelo.
+
   v1.39 · "Declutter" en celular pedido por Daniel (con screenshot): el panel
   de datos + los 6 toggles + la leyenda de color, todo apilado permanentemente
   arriba a la izquierda desde v1.31, ocupaba media pantalla en un celular
@@ -706,7 +720,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.39</span>
+    <span class="badge" id="ver-badge">v1.40</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1475,19 +1489,20 @@ function _radioParcheDeseado(radioCamara){
   return Math.max(150, radioCamara*2.2);
 }
 
-// v1.38 FIX reportado por Daniel: flickering (bandas horizontales, como
-// z-fighting) al máximo zoom out y en vista top-down. Causa real: esta
-// fórmula tenía PISO pero no TECHO. En modo "seguir avión" (que desde v1.36
-// muestra parche SIEMPRE, sin el umbral que sí tenía cámara libre) bien
-// zoomeado hacia afuera, radioActual podía llegar a extent*1.5 — el parche
-// resultante (radioActual*2.2 ≈ extent*3.3) terminaba casi tan grande como
-// el mosaico de fondo entero. Dos planos casi del mismo tamaño, superpuestos,
-// separados solo 3m en Y (Y_PARCHE), compitiendo pixel a pixel por la misma
-// profundidad — y encima a la distancia de cámara más grande posible, donde
-// el depth buffer tiene la PEOR precisión (no es lineal: pierde resolución
-// lejos de la cámara). De ahí que empeorara justo al alejar/mirar de arriba.
-const RADIO_PARCHE_MAX = 800; // más grande que esto, el parche ya no aporta
-  // nada frente al mosaico de fondo (cubre casi lo mismo) — mejor ni pedirlo.
+// v1.40 FIX reportado por Daniel: el tope fijo de 800m (v1.38) resolvía el
+// flicker pero traía un efecto secundario no previsto — para un vuelo GRANDE
+// (extent de varios km), 800m es chico en comparación con el mosaico de
+// fondo (que cubre extent + 75% de margen), así que el parche se
+// deshabilitaba de más y la vista por defecto en "seguir avión" quedaba
+// pegada al mosaico de fondo (borrosa) en vez de usar el parche que sí
+// tendría margen de sobra para no competir con el fondo. El tope tiene que
+// ESCALAR con extent (relativo al tamaño real de ESTE vuelo), no ser un
+// número fijo — 0.6 deja bastante margen frente al medio-ancho del mosaico
+// de fondo (~1.25×extent), así en vuelos grandes el parche puede ser
+// bastante más grande sin arriesgar volver a acercarse al tamaño del fondo.
+// Los pisos/techos absolutos (300m/3000m) son solo para no degenerar en
+// vuelos extremadamente chicos o extremadamente largos.
+const RADIO_PARCHE_MAX = Math.max(300, Math.min(3000, extent*0.6));
 
 async function _obtenerParche(cx, cz, radio){
   // v1.37 — FIX reportado por Daniel: notaba delay al zoomear, como si no
