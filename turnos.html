@@ -1,5 +1,26 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.62
+  CAMBIOS : FIX reportado por Daniel: en "Mis Turnos" los botones de filtro
+            (TODOS/PENDIENTE/APROBADO/CANCELADO/VENCIDO/VOLADO) y el de orden
+            no hacían nada al clickear. Causa: setHistFiltro y toggleHistOrden
+            eran function normales (scope de módulo, <script type="module">)
+            llamadas desde onclick inline en el HTML — mismo bug de fondo que
+            ya está documentado para let/const en un IIFE síncrono, pero acá
+            aplica a function declarations: en un módulo no cuelgan de
+            window, así que el onclick tiraba ReferenceError en silencio. El
+            botón TODOS parecía funcionar porque ya viene con la clase active
+            hardcodeada en el HTML, sin depender de JS. Fix: ambas pasan a
+            window.setHistFiltro=function(){...} / window.toggleHistOrden=
+            function(){...}; la llamada interna a setHistFiltro(estado) en
+            _guardarTurnoConfirmado() (redirección post-confirmación) ahora
+            usa window.setHistFiltro(estado) explícito.
+            Audité el resto del archivo buscando el mismo patrón (función
+            usada en onclick sin estar expuesta en window) y encontré un
+            segundo caso: cargarAuditoriaFpl (botón "↻ ACTUALIZAR" de
+            Auditoría FPL) — mismo fix aplicado, más la llamada interna en
+            showConfigTab() actualizada a window.cargarAuditoriaFpl().
+
   VERSION : 8.61
   CAMBIOS : Pedido de Daniel tras revisar v8.60: en "Mi Perfil/Vuelos" (Log de
             Vuelos del alumno/piloto) aparecían turnos que NO eran vuelos
@@ -4274,7 +4295,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.61</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.62</div>
   </div>
 
 </div>
@@ -7744,7 +7765,7 @@ window._guardarTurnoConfirmado=async function(){
   // window._misTurnosData ya se mantiene al día por el listener realtime de /reservas
   // (no hace falta un fetch aparte acá).
   showAlumnoTab('mis-turnos');
-  setHistFiltro(estado);
+  window.setHistFiltro(estado);
 };
 
 // v7.74: modal de confirmación previo a guardar (pedido de Daniel — antes CONFIRMAR
@@ -7784,18 +7805,27 @@ function fmtFechaLinda(fechaStr){
 let _histFiltro='todos';
 let _histOrdenDesc=true;
 
-function setHistFiltro(estado){
+// v8.62 — FIX reportado por Daniel: los botones de filtro (TODOS/PENDIENTE/
+// APROBADO/CANCELADO/VENCIDO/VOLADO) y el de orden en "Mis Turnos" no hacían
+// nada al clickear. Causa: setHistFiltro/toggleHistOrden eran function
+// normales (scope de módulo, script type="module"), pero se llaman desde
+// onclick inline en el HTML — igual que el bug ya documentado con let/const,
+// esto también aplica a function declarations en un módulo: no cuelgan de
+// window, así que el onclick tiraba ReferenceError en silencio. El botón
+// TODOS parecía "funcionar" porque ya viene con la clase active hardcodeada
+// en el HTML, sin necesidad de JS.
+window.setHistFiltro=function(estado){
   _histFiltro=estado;
   document.querySelectorAll('.hist-filter-btn').forEach(b=>b.classList.toggle('active',b.dataset.f===estado));
   if(window._misTurnosData) renderMisTurnos(window._misTurnosData);
-}
+};
 
-function toggleHistOrden(){
+window.toggleHistOrden=function(){
   _histOrdenDesc=!_histOrdenDesc;
   const btn=document.getElementById('hist-sort-btn');
   if(btn) btn.textContent=_histOrdenDesc?'↓ MÁS RECIENTE':'↑ MÁS ANTIGUO';
   if(window._misTurnosData) renderMisTurnos(window._misTurnosData);
-}
+};
 
 function renderMisTurnos(data){
   const el=document.getElementById('mis-turnos-list');
@@ -10241,7 +10271,7 @@ window.showCfgTab=function(tab){
     buildCfgAvionTabs();renderHorariosConfig();
   }
   if(tab==='auditoria')cargarAuditoria();
-  if(tab==='auditoria-fpl')cargarAuditoriaFpl();
+  if(tab==='auditoria-fpl')window.cargarAuditoriaFpl();
   if(tab==='parametros')pintarFormParametros();
   if(tab==='sistema'){
     const zona=document.getElementById('card-zona-peligrosa');
@@ -11273,7 +11303,10 @@ async function cargarAuditoria(){
 let _auditFplLista=[];
 let _auditFplPage=0;
 
-async function cargarAuditoriaFpl(){
+// v8.62 — mismo bug de scope que setHistFiltro/toggleHistOrden, encontrado al
+// auditar el resto del archivo: cargarAuditoriaFpl es otra function normal
+// (scope de módulo) llamada desde onclick inline (botón "↻ ACTUALIZAR").
+window.cargarAuditoriaFpl=async function(){
   if(session?.user!=='admin') return;   // doble candado: solo admin
   const el=document.getElementById('audit-fpl-tabla');
   if(!el) return;
