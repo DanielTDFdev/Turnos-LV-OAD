@@ -2,6 +2,28 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.48 · FIX reportado por Daniel: "ocasionalmente el avión hace un giro loco
+  sobre su eje vertical de 360°, bien rapidito, y continúa normalmente".
+  No era la data del GPS ni el trazado: era la INTERPOLACIÓN. En muestraEn,
+  hdgDeg se interpolaba con el mismo lerp lineal que x/y/z, pero el rumbo es
+  un ángulo CIRCULAR. Al cruzar el norte, entre dos muestras de 359° y 1° el
+  lerp lineal recorre los 358° del camino largo (pasando por el sur) en vez
+  de los 2° reales — y como entre muestras GPS pasan 2-3 segundos, ese giro
+  se ejecuta en un instante. Explica también por qué era "ocasional": solo
+  ocurre cuando el rumbo cruza el 0/360, no en el resto del vuelo.
+  Nuevo lerpAngulo: normaliza la diferencia al rango -180..180 antes de
+  interpolar, o sea toma siempre el camino corto. Verificado con Node:
+  359°→1° ahora recorre 2° y su punto medio da 0° (antes daba 180°: el avión
+  apuntando al SUR en el medio de un tramo que va del norte al norte); y en
+  la simulación de un cruce real (358°→5° muestreado cada 0.5s) el salto
+  máximo entre frames queda en 1.2°.
+  bank y pitch siguen con lerp lineal a propósito: son ángulos acotados, no
+  dan la vuelta. Audité el resto de los usos de hdgDeg y no hay más casos —
+  suavizarHeading ya promediaba vectorialmente (seno/coseno, que es lo
+  correcto para ángulos circulares) y difHeading ya normalizaba; los usos en
+  pantalla normalizan con %360 y la rotación del modelo es equivalente
+  módulo 360.
+
   v1.47 · Pedido de Daniel: rosa de rumbos tipo "estrella de 8 puntas" con
   efecto 3D, siguiendo una imagen de referencia (4 puntas cardinales rojas +
   4 intercardinales azules más cortas, cada punta partida al medio en dos
@@ -934,7 +956,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.47</span>
+    <span class="badge" id="ver-badge">v1.48</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -2512,9 +2534,27 @@ function muestraEn(t){
   const span = b.t-a.t;
   const f = span>0 ? (t-a.t)/span : 0;
   const lerp=(u,v)=>u+(v-u)*f;
+  // v1.48 — FIX reportado por Daniel: "ocasionalmente el avión hace un giro
+  // loco sobre su eje vertical de 360°, bien rapidito, y continúa
+  // normalmente". No era la data del GPS: hdgDeg es un ángulo CIRCULAR y se
+  // estaba interpolando con el mismo lerp lineal que x/y/z. Al cruzar el
+  // norte, entre dos muestras de 359° y 1° el lerp lineal recorre los 358°
+  // del camino largo (pasando por el sur) en vez de los 2° reales — de ahí
+  // el giro casi completo, y de ahí también que fuera "ocasional": solo
+  // pasa cuando el rumbo cruza el 0/360, no en el resto del vuelo.
+  // lerpAngulo toma siempre el camino corto: normaliza la diferencia al
+  // rango -180..180 antes de interpolar. Verificado con Node: 359°→1° ahora
+  // recorre 2° y su punto medio da 0° (antes daba 180°, o sea el avión
+  // apuntando al sur en el medio de un tramo que va del norte al norte).
+  // bank y pitch NO necesitan esto: son ángulos acotados (no dan la vuelta),
+  // se siguen interpolando lineal.
+  const lerpAngulo=(u,v)=>{
+    const d = ((v-u+540)%360)-180; // diferencia mínima con signo, -180..180
+    return u + d*f;
+  };
   return {
     x:lerp(a.x,b.x), y:lerp(a.y,b.y), z:lerp(a.z,b.z),
-    hdgDeg:lerp(a.hdgDeg,b.hdgDeg), bank:lerp(a.bank,b.bank), pitch:lerp(a.pitch,b.pitch),
+    hdgDeg:lerpAngulo(a.hdgDeg,b.hdgDeg), bank:lerp(a.bank,b.bank), pitch:lerp(a.pitch,b.pitch),
     gs:lerp(a.gs,b.gs), vs:lerp(a.vs,b.vs), t,
   };
 }
