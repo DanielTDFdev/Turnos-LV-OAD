@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.31 · Dos pedidos de Daniel:
+  (1) los 6 toggles (Seguir avión, Postes verticales, Dibujar a medida que
+  avanza, Humo, Rosa de rumbos, Mapa satelital) se mudan del footer al panel
+  de información (#info, arriba a la izquierda) — quedan apilados en columna
+  debajo de HORA/ALT/GS/etc, con su propio separador. El footer conserva
+  play/slider/Velocidad/Color. Solo cambió el HTML (ubicación de los
+  <label class="toggle">) y el CSS asociado (#info pasa a max-width:230px,
+  nueva clase #info .toggles para el stack en columna con el texto pudiendo
+  wrappear a dos líneas — en el footer original tenían todo el ancho
+  disponible y no hacía falta) — ningún id cambió, así que todos los
+  getElementById/onchange existentes (seguirChk, postesChk, progresivoChk,
+  humoChk, rosaChk, mapaSatChk) siguen funcionando sin tocar el JS.
+  (2) "Dibujar a medida que avanza" (v1.30) ahora arranca activado por
+  defecto (antes arrancaba apagado, mostrando todo el recorrido de una).
+
   v1.30 · Pedido de Daniel: nuevo toggle "Dibujar a medida que avanza" — con
   el toggle apagado (default, comportamiento de siempre) se ve todo el
   recorrido de una con sus postes de altura; con el toggle prendido, el
@@ -443,10 +458,19 @@
   .panel{position:absolute;z-index:10;background:rgba(15,20,32,.88);border:1px solid var(--border);
     border-radius:8px;padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text2);
     backdrop-filter:blur(4px)}
-  #info{top:12px;left:12px;min-width:190px;line-height:1.75}
+  #info{top:12px;left:12px;min-width:190px;max-width:230px;line-height:1.75}
   #info b{color:var(--text);font-size:15px}
   #info .row{display:flex;justify-content:space-between;gap:14px}
   #info .lbl{color:var(--text3)}
+  /* v1.31 — pedido de Daniel: todos los toggles se mudan del footer a este panel
+     (antes vivían en una fila horizontal abajo, con espacio de sobra para
+     white-space:nowrap). Acá el panel es angosto — mismo .toggle de siempre pero
+     en columna y con el texto pudiendo hacer wrap en dos líneas si hace falta
+     (ver override de white-space más abajo), si no las etiquetas largas como
+     "Dibujar a medida que avanza" se salen del panel. */
+  #info .toggles{display:flex;flex-direction:column;gap:9px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+  #info .toggles .toggle{white-space:normal;line-height:1.3;font-size:11px}
+  #info .toggles .toggle .track{flex-shrink:0}
   #legend{top:12px;right:12px;width:170px}
   #legend .bar{height:10px;border-radius:3px;margin:6px 0;
     background:linear-gradient(90deg,hsl(240,90%,55%),hsl(120,90%,45%),hsl(0,90%,55%))}
@@ -500,7 +524,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.30</span>
+    <span class="badge" id="ver-badge">v1.31</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -513,6 +537,14 @@
       <div class="row"><span class="lbl">BANK</span><span id="v-bank">—</span></div>
       <div class="row"><span class="lbl">PITCH</span><span id="v-pitch">—</span></div>
       <div class="row"><span class="lbl">VS</span><span id="v-vs">—</span></div>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" id="seguir" checked><span class="track"></span>Seguir avión</label>
+        <label class="toggle"><input type="checkbox" id="postes" checked><span class="track"></span>Postes verticales</label>
+        <label class="toggle"><input type="checkbox" id="progresivo" checked><span class="track"></span>Dibujar a medida que avanza</label>
+        <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
+        <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
+        <label class="toggle"><input type="checkbox" id="mapaSat"><span class="track"></span>Mapa satelital (suelo)</label>
+      </div>
     </div>
     <div class="panel" id="legend">
       <div id="legend-titulo">COLOR = ALTITUD</div>
@@ -539,12 +571,6 @@
         <option value="gs">Velocidad</option>
       </select>
     </label>
-    <label class="toggle"><input type="checkbox" id="seguir" checked><span class="track"></span>Seguir avión</label>
-    <label class="toggle"><input type="checkbox" id="postes" checked><span class="track"></span>Postes verticales</label>
-    <label class="toggle"><input type="checkbox" id="progresivo"><span class="track"></span>Dibujar a medida que avanza</label>
-    <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
-    <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
-    <label class="toggle"><input type="checkbox" id="mapaSat"><span class="track"></span>Mapa satelital (suelo)</label>
   </footer>
 </div>
 
