@@ -1,5 +1,23 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.61
+  CAMBIOS : Pedido de Daniel tras revisar v8.60: en "Mi Perfil/Vuelos" (Log de
+            Vuelos del alumno/piloto) aparecían turnos que NO eran vuelos
+            realizados — ej. un turno "aprobado" con una nota del instructor
+            pero sin horas ni aterrizajes cargados, mostrando "—" en la fila.
+            El filtro viejo (obs_privada||obs_privada_tiempo_vuelo!=null||...)
+            dejaba pasar cualquier turno con ALGO cargado, texto incluido.
+            Ahora se usa r.estado==='volado' — el estado real (v8.39), que
+            solo se escribe cuando el vuelo efectivamente se cerró con datos
+            — en las tres listas de autoservicio: renderMiLogVuelosInline (el
+            resumen de la pestaña, screenshot que mandó Daniel),
+            renderObsPublicasAlumno y renderNotasPrivadasAlumno (las dos
+            pestañas del modal de detalle). El filtro por estado SOLO se
+            aplica cuando _logAlumnoModoAlumno es true — cuando un instructor
+            entra a ver el historial de un alumno (abrirLogAlumno /
+            abrirLogAlumnoDesdeUsuario) sigue viendo todo (pendientes,
+            cancelados, notas sin datos), sin cambios de comportamiento ahí.
+
   VERSION : 8.60
   CAMBIOS : Dos pedidos de Daniel sobre "Mi Log de Vuelos" (autoservicio del
             alumno/piloto, Mi Perfil → tab Log de Vuelos):
@@ -4256,7 +4274,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.60</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.61</div>
   </div>
 
 </div>
@@ -7046,8 +7064,14 @@ async function renderMiLogVuelosInline(){
   // vuelo-piloto.html (piloto_tiempo_vuelo/piloto_aterrizajes/piloto_obs) —
   // ese modelo no tiene dueño-instructor, es autoservicio, distinto de
   // obs_privada_* (nota privada del instructor sobre un alumno).
+  // v8.61 — pedido de Daniel: acá solo van vuelos REALMENTE volados (mismo
+  // criterio que renderObsPublicasAlumno/renderNotasPrivadasAlumno en modo
+  // alumno) — antes el filtro dejaba pasar turnos con solo una obs de texto
+  // cargada por el instructor (ej: "aprobado" con una nota, sin horas ni
+  // aterrizajes), que aparecían en la lista con "—" en vez de horas, cosa
+  // que no es un vuelo realizado.
   const turnos=Object.values(_reservasCache)
-    .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null))
+    .filter(r=>r.email===email&&r.estado==='volado')
     .sort((a,b)=>(b.fecha+' '+b.hora).localeCompare(a.fecha+' '+a.hora));
 
   if(!turnos.length){
@@ -8678,6 +8702,16 @@ function renderObsPublicasAlumno(){
     .map(r=>({r,obsTexto:[r.obs?r.obs:'',r.obs_cancelacion?'Cancelación: '+r.obs_cancelacion:'',r.obs_post?'Post-vuelo: '+r.obs_post:''].filter(Boolean).join(' — ')}))
     .filter(x=>x.obsTexto||x.r.obs_privada_tiempo_vuelo!=null||x.r.obs_privada_aterrizajes!=null||x.r.piloto_tiempo_vuelo!=null||x.r.piloto_aterrizajes!=null)
     .sort((a,b)=>(b.r.fecha+' '+b.r.hora).localeCompare(a.r.fecha+' '+a.r.hora));
+  // v8.61 — pedido de Daniel: en Mi Perfil/Vuelos (autoservicio del alumno/
+  // piloto) solo tienen que aparecer vuelos REALMENTE volados, no cualquier
+  // turno con una observación cargada (ej: un turno aprobado con una nota del
+  // instructor pero sin horas/aterrizajes cargados no es un vuelo). Se usa
+  // r.estado==='volado', el estado real (v8.39) que se escribe directo al
+  // cerrar el vuelo con datos — mismo criterio que usa reporte.html. Esto
+  // NO aplica cuando un instructor entra a ver el historial de un alumno
+  // (abrirLogAlumno/abrirLogAlumnoDesdeUsuario, _logAlumnoModoAlumno=false):
+  // ahí necesita ver todo (pendientes, cancelados, etc.), no solo lo volado.
+  if(_logAlumnoModoAlumno) turnos=turnos.filter(x=>x.r.estado==='volado');
   // v8.60 — pedido de Daniel: si se entró desde una fila puntual de Mi Perfil
   // (_logAlumnoCtx.filtroKey), mostrar SOLO ese vuelo acá — esta es la lista
   // que realmente se ve al abrir el modal (tab "Observaciones al Alumno",
@@ -8918,9 +8952,13 @@ function renderNotasPrivadasAlumno(){
   const email=_logAlumnoCtx.email;
   // v7.09: suma también los vuelos autorregistrados por el piloto desde
   // vuelo-piloto.html (piloto_*) — ver nota en renderMiLogVuelosInline.
-  const turnos=Object.values(_reservasCache)
+  let turnos=Object.values(_reservasCache)
     .filter(r=>r.email===email&&(r.obs_privada||r.obs_privada_tiempo_vuelo!=null||r.obs_privada_aterrizajes!=null||r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null))
     .sort((a,b)=>(b.fecha+' '+b.hora).localeCompare(a.fecha+' '+a.hora));
+  // v8.61: mismo criterio que renderObsPublicasAlumno — en modo alumno (Mi
+  // Perfil/Vuelos) solo se listan vuelos realmente volados, no cualquier
+  // turno con una nota cargada. En modo instructor se sigue viendo todo.
+  if(_logAlumnoModoAlumno) turnos=turnos.filter(r=>r.estado==='volado');
   cont.innerHTML='';
   // Totales acumulados (v6.72, ahora sin riesgo de duplicado desde v6.73: como es UN
   // registro por vuelo, cada turno aporta a lo sumo una vez a la suma). v6.75: se suma
