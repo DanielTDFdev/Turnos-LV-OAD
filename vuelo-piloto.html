@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.62 · 2026-09-05
+  Pedido de Daniel: botón "🧊 Ver en 3D" en el modal de mapa GPS, mismo patrón
+  que turnos.html (v8.57) y vuelo.html (v5.77) — abre analisis3d.html?key=...
+  en pestaña nueva, con título/subtítulo por query string. Botón flotante
+  circular cyan (.btn-3d-float) al lado del de "📊 Análisis".
+
   v4.61 · 2026-09-04
   Fix: las flechas de sentido sobre la traza GPS quedaban desalineadas al rotar el mapa
   (gesto o control de rotación) — el bearing se aplicaba como rotación CSS fija en el
@@ -1247,6 +1253,18 @@ select:disabled{opacity:.55}
   box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
 }
 .btn-analisis-float:active{transform:scale(.93)}
+/* Pedido de Daniel: botón "Ver en 3D", mismo patrón que .btn-analisis-float
+   pero en cyan (como el equivalente de turnos.html) y al lado, no debajo. */
+.btn-3d-float{
+  position:absolute;z-index:20;
+  left:80px;bottom:14px;
+  width:56px;height:56px;border-radius:50%;
+  background:#00c8d4;border:none;color:#000;
+  font-size:22px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
+}
+.btn-3d-float:active{transform:scale(.93)}
 .spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
 .spinner-btn{width:56px;height:56px;border:none;border-radius:12px;font-size:28px;font-weight:700;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);-webkit-tap-highlight-color:transparent}
 .spinner-btn.minus{background:var(--gray2);border-radius:12px 0 0 12px}
@@ -1697,7 +1715,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.61';
+const APP_VERSION = '4.62';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3895,6 +3913,7 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
 
 window.abrirMapa = async function(key, alumno, avion, hora, metarInicio, metarFin) {
   _ultimaTraza = null; // v4.45: se repuebla recién si carga bien
+  _mapaVueloKeyActual = key; // pedido de Daniel: para el botón "Ver en 3D" (mismo patrón que turnos.html v8.57)
   const fmtTs = iso => {
     if(!iso) return '—';
     const d = new Date(iso);
@@ -4128,6 +4147,7 @@ function calcDistMaxOrigenNm(puntos){
 // maniobra, toques y despegues) en un modal aparte. Misma lógica que
 // turnos.html v8.03-v8.10/vuelo.html v5.61 (portada tal cual).
 let _ultimaTraza = null;
+let _mapaVueloKeyActual = null; // pedido de Daniel: mismo patrón que turnos.html v8.57, para el botón "Ver en 3D"
 
 const TOQUE_PROMINENCIA_FT = 100;
 const TOQUE_VENTANA_MIN = 4;
@@ -4319,6 +4339,17 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques, a
   return svg;
 }
 
+// Pedido de Daniel: mismo botón "Ver en 3D" que turnos.html (v8.57) y
+// vuelo.html (v5.77) — abre analisis3d.html con la traza de este vuelo.
+window.abrirAnalisis3D = function(){
+  if(!_mapaVueloKeyActual){ alert('No hay traza cargada para ver en 3D.'); return; }
+  const titulo = $('map-modal-title').textContent || '';
+  const sub = $('map-modal-sub').textContent || '';
+  const url = 'analisis3d.html?key='+encodeURIComponent(_mapaVueloKeyActual)
+    +'&titulo='+encodeURIComponent(titulo)+'&sub='+encodeURIComponent(sub);
+  window.open(url, '_blank');
+};
+
 window.abrirAnalisisVuelo = function(){
   if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
   const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora, metarInicio, metarFin} = _ultimaTraza;
@@ -4415,6 +4446,7 @@ if('serviceWorker' in navigator){
     </div>
     <div id="map-leaflet"></div>
     <button class="btn-analisis-float" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" title="Análisis">📊</button>
+    <button class="btn-3d-float" id="btn-abrir-3d" onclick="abrirAnalisis3D()" title="Ver en 3D">🧊</button>
     <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
     <!-- v4.48 FIX (reportado por Daniel con captura de celular), mismo cambio
          en paralelo que vuelo.html v5.64: top:10px se medía desde el mismo

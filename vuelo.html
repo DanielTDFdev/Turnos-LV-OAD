@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.77 · 2026-09-05
+  Pedido de Daniel: botón "🧊 Ver en 3D" en el modal de mapa GPS, mismo patrón
+  que turnos.html (v8.57) — abre analisis3d.html?key=... en una pestaña
+  nueva, pasándole título/subtítulo por query string. Botón flotante circular
+  cyan (.btn-3d-float) al lado del de "📊 Análisis" (mismo estilo/tamaño,
+  ubicado a la derecha en vez de debajo, para no crecer verticalmente en
+  pantallas angostas). Mismo cambio en vuelo-piloto.html v4.62.
+
   v5.76 · 2026-09-04
   Fix: las flechas de sentido sobre la traza GPS quedaban desalineadas al rotar el mapa
   (gesto o control de rotación) — el bearing se aplicaba como rotación CSS fija en el
@@ -1470,6 +1478,21 @@ select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,
 }
 .btn-analisis-float:active{transform:scale(.93)}
 
+/* Pedido de Daniel: botón "Ver en 3D", mismo patrón que .btn-analisis-float
+   pero en cyan (como el botón equivalente de turnos.html) y al lado, no
+   debajo — así ninguno de los dos flotantes crece verticalmente en pantallas
+   angostas. */
+.btn-3d-float{
+  position:absolute;z-index:20;
+  left:80px;bottom:14px;
+  width:56px;height:56px;border-radius:50%;
+  background:#00c8d4;border:none;color:#000;
+  font-size:22px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 16px rgba(0,0,0,.55);cursor:pointer;
+}
+.btn-3d-float:active{transform:scale(.93)}
+
 /* Spinner de aterrizajes */
 .spinner-wrap{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0}
 .spinner-btn{width:56px;height:56px;border:none;border-radius:12px;font-size:28px;font-weight:700;cursor:pointer;transition:all .12s;display:flex;align-items:center;justify-content:center;flex:none;color:var(--bg);-webkit-tap-highlight-color:transparent}
@@ -1870,7 +1893,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.76'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.77'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3681,6 +3704,7 @@ function _colocarFlechasDireccion(seg, altMinTraza, altMaxTraza, mapa){
 
 window.abrirMapa = async function(key, alumno, avion, hora, metarInicio, metarFin) {
   _ultimaTraza = null; // v5.61: se repuebla recién si carga bien — evita que "📊 Análisis" abra con datos de un vuelo anterior si este falla
+  _mapaVueloKeyActual = key; // pedido de Daniel: para el botón "Ver en 3D"
   // Formateador local para los tooltips — definido acá para no depender del scope del módulo
   const fmtTs = iso => {
     if(!iso) return '—';
@@ -3944,6 +3968,7 @@ function calcDistMaxOrigenNm(puntos){
 // turnos.html v8.03-v8.10 (portada tal cual, ver ese archivo para el historial
 // completo de ajustes/fixes que llevó a estos parámetros finales).
 let _ultimaTraza = null;
+let _mapaVueloKeyActual = null; // pedido de Daniel: mismo patrón que turnos.html v8.57, para el botón "Ver en 3D"
 
 const TOQUE_PROMINENCIA_FT = 100;
 const TOQUE_VENTANA_MIN = 4;
@@ -4133,6 +4158,21 @@ function _renderChartAltitud(puntos, altMinTraza, altMaxTraza, bandas, toques, a
   return svg;
 }
 
+// Pedido de Daniel: mismo botón "Ver en 3D" que ya tiene turnos.html (v8.57),
+// para abrir analisis3d.html con la traza de este vuelo. Le pasamos
+// título/subtítulo por query string igual que turnos.html, para que la
+// página nueva no tenga que resolver de nuevo el nombre del alumno/piloto
+// (vuelo_tracks/{key}.autor es el INSTRUCTOR que cargó el vuelo, no quien lo
+// voló — ver v8.58 de turnos.html).
+window.abrirAnalisis3D = function(){
+  if(!_mapaVueloKeyActual){ alert('No hay traza cargada para ver en 3D.'); return; }
+  const titulo = $('map-modal-title').textContent || '';
+  const sub = $('map-modal-sub').textContent || '';
+  const url = 'analisis3d.html?key='+encodeURIComponent(_mapaVueloKeyActual)
+    +'&titulo='+encodeURIComponent(titulo)+'&sub='+encodeURIComponent(sub);
+  window.open(url, '_blank');
+};
+
 window.abrirAnalisisVuelo = function(){
   if(!_ultimaTraza){ alert('No hay traza cargada para analizar.'); return; }
   const {puntos, segmentos, altMinTraza, altMaxTraza, nombre, avion, hora, metarInicio, metarFin} = _ultimaTraza;
@@ -4283,6 +4323,7 @@ if('serviceWorker' in navigator){
     </div>
     <div id="map-leaflet"></div>
     <button class="btn-analisis-float" id="btn-abrir-analisis" onclick="abrirAnalisisVuelo()" title="Análisis">📊</button>
+    <button class="btn-3d-float" id="btn-abrir-3d" onclick="abrirAnalisis3D()" title="Ver en 3D">🧊</button>
     <button class="btn-map-close-float" id="btn-map-close-float" title="Cerrar">✕</button>
     <!-- v5.51: leyenda de colores por altitud — pedido de Daniel, estilo Pilotfy.
          Se puebla en JS (alt mín/máx REALES del vuelo) porque la escala es relativa
