@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.32 · FIX reportado por Daniel: después de mover/rotar la cámara, la
+  imagen del recorrido (el tubo) terminaba recortada contra el piso y/o el
+  fondo. Causa: el material del tubo tiene transparent:true pero no tenía
+  depthWrite:false — a diferencia de los postes (cintas de altura), que ya lo
+  tenían bien seteado desde siempre por el mismo motivo. Un material
+  transparente que SÍ escribe en el depth buffer hace que el ORDEN DE
+  DIBUJADO (no la profundidad real) decida qué tapa a qué contra geometría
+  opaca (piso de pasto o mapa satelital) — y ese orden depende del ángulo de
+  cámara, por eso el bug solo aparecía después de rotar/mover, nunca apenas
+  cargaba la página. Se agrega depthWrite:false al material del tubo,
+  mismo criterio que ya usan los postes.
+
   v1.31 · Dos pedidos de Daniel:
   (1) los 6 toggles (Seguir avión, Postes verticales, Dibujar a medida que
   avanza, Humo, Rosa de rumbos, Mapa satelital) se mudan del footer al panel
@@ -524,7 +536,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.31</span>
+    <span class="badge" id="ver-badge">v1.32</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1347,7 +1359,19 @@ function reconstruirTubo(){
     }
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colores,3));
-  const mat = new THREE.MeshStandardMaterial({vertexColors:true, roughness:0.55, metalness:0.05, transparent:true, opacity:0.8});
+  // v1.32 FIX reportado por Daniel: después de mover/rotar la cámara, el tubo
+  // terminaba recortado contra el piso/fondo. Causa: este material tiene
+  // transparent:true pero NO tenía depthWrite:false — a diferencia de los
+  // postes (más abajo), que ya lo tienen bien seteado por el mismo motivo.
+  // Un material transparente que SÍ escribe en el depth buffer es la fuente
+  // clásica de este tipo de artefacto: el orden de dibujado (no la
+  // profundidad real) termina decidiendo qué tapa a qué, y ese orden cambia
+  // con el ángulo de cámara — de ahí que el bug solo apareciera después de
+  // rotar/mover, no apenas cargaba la página. Mismo criterio que ya se usó
+  // para el mapa satelital (evitar depthTest:false ahí) y para los postes
+  // (depthWrite:false desde el principio): a los materiales transparentes de
+  // esta escena no les conviene escribir profundidad.
+  const mat = new THREE.MeshStandardMaterial({vertexColors:true, roughness:0.55, metalness:0.05, transparent:true, opacity:0.8, depthWrite:false});
   tuboGroup.add(new THREE.Mesh(geo, mat));
   tuboGeoActual = geo;
 }
