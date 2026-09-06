@@ -2,6 +2,54 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.24 · FIX de fondo del "todo al revés" que reportó Daniel (traza gira al
+  revés Y rosa de rumbos lee al revés). Encontrado y confirmado con el motor
+  real: no era un error de una fórmula puntual — repasé rumbo, rotación del
+  avión y posición del compás, y las tres son matemáticamente consistentes
+  entre sí (esto ya se había verificado). La causa real es más de fondo:
+  three.js arma la cámara con Y como "arriba" (convención right-handed
+  estándar), y con ese sistema, mirando derecho para abajo con "arriba de
+  pantalla"=Norte, el Este proyecta invertido — es una propiedad matemática
+  de cómo se arma la cámara para ESTE tipo de mundo (Norte=+Z), no un typo en
+  ningún lado. Confirmado con un test aislado: un punto en Este real (mundo
+  +X) proyecta a pantalla NEGATIVA (izquierda) con cámara ortográfica derecho
+  para abajo y arriba=Norte. Esto afecta a TODO lo que se ve en el canvas por
+  igual (compás Y forma de la traza), lo cual explica que ambos reportes de
+  Daniel fueran síntomas del mismo problema.
+
+  Fix: en vez de perseguir el signo por cada fórmula que depende de
+  Este/Oeste (rumbo, rotación del avión, compás, Y las del mapa satelital
+  — que se habría roto en el proceso, dado que su alineación ya está
+  confirmada), se espeja horizontalmente el CANVAS entero a nivel de
+  píxeles finales (transform:scaleX(-1) en CSS) — ningún vértice/normal de
+  malla se toca, cero riesgo de romper el modelo GLB o el tubo por una
+  escala negativa en la geometría. Validado con un test que simula el
+  espejo: con el fix, la rosa lee N-E-S-O horario (antes N-O-S-E) y un
+  viraje real a la derecha ahora se ve a la derecha (antes se veía a la
+  izquierda). Como esto no toca ninguna posición/tamaño calculado (todo
+  seguía siendo internamente consistente, solo se mostraba espejado), el
+  mapa satelital no debería romperse — de hecho debería quedar MEJOR
+  alineado con la realidad, no peor. El cartelito HTML flotante del avión
+  (fuera del canvas, no le llega la transformación CSS) se espeja a mano por
+  separado.
+
+  v1.23 · Pedido de Daniel: en vez de afinar la separación en Y entre pasto y
+  mapa satelital (frágil — depende de la escala/distancia a cámara, como se
+  vio en v1.20-v1.22), directamente se apaga el pasto por completo mientras
+  el mapa está activo. No hay forma de que compitan por el mismo píxel si uno
+  de los dos no se dibuja.
+
+  Sobre el reporte de compás/traza "al revés": test top-down confirmó que la
+  rosa de rumbos muestra N-O-S-E en sentido horario en vez de N-E-S-O. Repasé
+  con el three.js real (no de memoria) las tres piezas que definen la
+  convención Este=+X — la fórmula de rumbo (atan2), la rotación visual del
+  avión (rotation.y) y la posición de las letras del compás — y las tres dan
+  matemáticamente consistentes entre sí. No encontré la causa del reporte de
+  Daniel en el código. Pendiente: pedirle un chequeo más directo (¿el avión
+  apunta hacia la letra O cuando el rumbo numérico marca ~260-270°, el rumbo
+  real de la pista 26?) en vez de leer sentido horario en una elipse en
+  perspectiva, que es más fácil de confundir a simple vista.
+
   v1.22 · Fix reportado por Daniel: el avión se veía transparente. Causa:
   el depthTest:false del mapa satelital (v1.21) hace que ese material ignore
   TODO lo ya dibujado, no solo el pasto — y como el mapa tenía renderOrder=1
@@ -309,7 +357,19 @@
      vez del negro sólido de antes. */
   #stage{position:relative;flex:1;min-height:0;
     background:linear-gradient(to bottom, #dff3fa 0%, #86cbe8 40%, #3f9dc7 100%)}
-  #stage canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+  #stage canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:none;
+    /* v1.24 FIX: three.js, con un mundo Y-arriba (est.=+X, norte=+Z) visto
+    desde arriba, dibuja el Este espejado — es una propiedad matemática de
+    cómo arma la cámara (confirmado con el motor real: un punto en mundo +X,
+    con cámara mirando derecho para abajo y "arriba"=Norte, proyecta a
+    pantalla NEGATIVO). No es un bug de una fórmula puntual (rumbo, rotación
+    del avión, y posición del compás dan TODOS consistentes entre sí — el
+    problema es la relación entre esa convención y cómo three.js arma la
+    cámara). Se corrige con un espejo horizontal a nivel de PIXELES finales
+    (transform en el canvas, no en la geometría 3D) — así no se tocan
+    vértices/normales de mallas complejas (el modelo GLB, el tubo), que se
+    romperían con una escala negativa aplicada a la escena.*/
+    transform:scaleX(-1)}
   #stage canvas:active{cursor:grabbing}
   .panel{position:absolute;background:rgba(15,20,32,.88);border:1px solid var(--border);
     border-radius:8px;padding:10px 12px;font-family:var(--font-mono);font-size:11px;color:var(--text2);
@@ -371,7 +431,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.22</span>
+    <span class="badge" id="ver-badge">v1.24</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1037,6 +1097,11 @@ mapaSatChk.onchange = async ()=>{
   } else if(mapaSatGroup){
     mapaSatGroup.visible = false;
   }
+  // Pedido de Daniel: en vez de afinar separaciones en Y para que no compitan
+  // por el mismo pixel (frágil: depende de la escala/distancia a cámara),
+  // directamente se apaga el pasto entero mientras el mapa está activo — no
+  // hay forma de que compitan si uno de los dos ni siquiera se dibuja.
+  suelo.visible = !mapaSatChk.checked;
 };
 
 // --- Escala de color ---
@@ -1661,7 +1726,11 @@ function loop(now){
     etiqueta.style.display = 'none'; // el avión quedó detrás de la cámara
   } else {
     etiqueta.style.display = 'block';
-    etiqueta.style.left = ((ndc.x*0.5+0.5)*stage.clientWidth) + 'px';
+    // v1.24: el canvas ahora tiene transform:scaleX(-1) (ver CSS) para
+    // corregir el espejo este-oeste, pero este cartelito es un elemento HTML
+    // aparte, fuera del canvas — no lo alcanza esa transformación. Hay que
+    // espejarlo a mano para que siga cayendo sobre el avión.
+    etiqueta.style.left = ((1-(ndc.x*0.5+0.5))*stage.clientWidth) + 'px';
     etiqueta.style.top = ((-ndc.y*0.5+0.5)*stage.clientHeight) + 'px';
     etiqueta.textContent = Math.round((m.hdgDeg%360+360)%360)+'° · '+Math.round(m.y*3.28084)+' ft';
   }
