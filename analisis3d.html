@@ -2,6 +2,34 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.35 · REHECHO tras confirmar con Daniel que v1.34 no mejoraba nada (dos
+  screenshots comparando el 2D nítido vs el 3D borroso de cerca). Diagnóstico
+  real, v1.34 estaba mal pensado en dos niveles:
+  (1) BUG: la fórmula de "tope de tiles según cámara" comparaba camRadioSeguir
+  (modo "seguir avión", que ya arranca cerca — decenas/cientos de metros)
+  contra una referencia pensada para cámara libre (extent*1.15, del orden de
+  KILÓMETROS). El cociente ya daba saturado en el tope máximo desde el
+  arranque del modo seguir avión — acercar más la cámara (como en el
+  screenshot de Daniel, que es justo ese modo) no cambiaba nada.
+  (2) ERROR DE FONDO, más importante: aunque se arregle (1), pedir más tiles
+  para la MISMA área (todo el vuelo + 75% margen, kilómetros) casi no sube la
+  resolución real — el zoom nativo (17) da la misma resolución en metros por
+  pixel sin importar cuántos tiles pidas; más tiles a esa área gigante solo
+  permite subir ~1 nivel de zoom antes de chocar con un tope de tiles
+  razonable.
+  Fix real: se agrega un SEGUNDO mesh, un "parche" de área CHICA (radio
+  dinámico, piso 150m) centrado en donde está mirando la cámara (posición del
+  avión en modo seguir, centro del vuelo en cámara libre) — mismo zoom nativo
+  17, pero al cubrir mucho menos terreno esos mismos tiles de 256px
+  representan muchos menos metros cada uno: eso es lo que realmente sube la
+  resolución percibida, no la cantidad de tiles. El mosaico de fondo vuelve a
+  ser fijo (una sola vez, como antes de v1.34) — ya no tiene sentido que
+  reaccione al zoom. Umbral de "cerca" ahora es MODE-AWARE (radioActual vs la
+  distancia default de CADA modo, no una sola referencia para los dos).
+  Cacheado por (centro, radio) redondeado a grillas de 50m — moverse un poco
+  reusa el parche ya pedido; alejarse y volver a acercar cerca del mismo
+  lugar, también.
+
   v1.34 · Pedido de Daniel: la resolución del mapa satelital reaccionaba al
   zoom de cámara solo con un plan pensado a fondo con él (charla previa)
   antes de tocar código: (1) hacer zoom con la cámara 3D ahora sí pide tiles
@@ -572,7 +600,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.34</span>
+    <span class="badge" id="ver-badge">v1.35</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1163,15 +1191,12 @@ function _tileEsquinaLngLat(tx, ty, zoom){ // esquina noroeste del tile (tx,ty)
   const latRad = Math.atan(Math.sinh(Math.PI*(1-2*ty/n)));
   return {lat: latRad*180/Math.PI, lng};
 }
-// v1.34: topeTiles ahora es PARÁMETRO en vez de constante fija — lo que
-// permite pedir más tiles (y por lo tanto más zoom, ver más abajo) cuando la
-// cámara 3D está cerca, sin duplicar esta función. Con el mismo tope de
-// siempre (100) sigue eligiendo exactamente lo mismo que antes.
+// v1.34: topeTiles ahora es PARÁMETRO en vez de constante fija — algunos
+// llamados (el parche de acercamiento, ver más abajo) piden bboxes chicos que
+// entran sobradamente en un tope bajo; queda un solo lugar con la lógica de
+// "elegir el mayor zoom nativo que entre en el tope".
 function _elegirZoomYTiles(latMin, latMax, lngMin, lngMax, topeTiles){
-  const TOPE_TILES = topeTiles || 100; // subido de 36 — con más cobertura (ver margen en
-    // _bboxLatLngVuelo) hacen falta más tiles para mantener buen zoom; el
-    // costo es más pedidos de red al activar el toggle (o al acercar la
-    // cámara, desde v1.34).
+  const TOPE_TILES = topeTiles || 100;
   let zoom = 17; // maxNativeZoom de World_Imagery en el resto de la app
   for(; zoom>=10; zoom--){
     const no = _lngLatATileFrac(lngMin, latMax, zoom);
@@ -1184,11 +1209,11 @@ function _elegirZoomYTiles(latMin, latMax, lngMin, lngMax, topeTiles){
   const se = _lngLatATileFrac(lngMax, latMin, zoom+1);
   return {zoom:zoom+1, txMin:Math.floor(no.x), txMax:Math.floor(se.x), tyMin:Math.floor(no.y), tyMax:Math.floor(se.y)};
 }
-// v1.34: bbox lat/lng del vuelo, extraído de construirMapaSatelital (ahora
-// dividida en dos) porque NO depende del zoom — se calcula una sola vez y se
-// reusa cada vez que se pide un mosaico a distinto nivel de zoom, en vez de
-// recalcular lo mismo en cada llamada.
-function _bboxLatLngVuelo(){
+// bbox lat/lng de TODO el vuelo (más margen) — la cobertura de siempre, fija,
+// para el mosaico de fondo (no depende de dónde mire la cámara). Renombrada
+// desde _bboxLatLngVuelo (v1.34) para diferenciarla de la nueva versión
+// "centrada en un punto" que usa el parche de acercamiento.
+function _bboxLatLngVueloCompleto(){
   // Margen subido de 15% a 75% (pedido de Daniel: que no se vea como un
   // cuadrado chico y limitado) — cubre un área bastante más allá de la traza
   // en sí, para que no se note el borde salvo que la cámara libre se aleje
@@ -1200,12 +1225,18 @@ function _bboxLatLngVuelo(){
   const latDe = z => lat0 + z/R*180/Math.PI;
   return { lngMin:lngDe(xMin), lngMax:lngDe(xMax), latMin:latDe(zMin), latMax:latDe(zMax) };
 }
-// v1.34: cuerpo de descarga+canvas+mesh de construirMapaSatelital original,
-// ahora parametrizado por zoom/rango de tiles YA elegidos (en vez de elegirlos
-// acá adentro) — así se puede cachear por zoom sin volver a pedir tiles ya
-// descargados antes en la misma sesión (pedido de Daniel: "una vez que se
-// cargan los tiles para un nivel de zoom, ¿quedan cacheados?").
-async function _fetchMosaicoParaZoom(zoom, txMin, txMax, tyMin, tyMax){
+// v1.35: bbox lat/lng CENTRADO en un punto de mundo (x,z) con un radio en
+// metros — para el parche de acercamiento (área chica, no todo el vuelo).
+function _bboxLatLngCentroRadio(xCentro, zCentro, radioMetros){
+  const xMin=xCentro-radioMetros, xMax=xCentro+radioMetros, zMin=zCentro-radioMetros, zMax=zCentro+radioMetros;
+  const lngDe = x => lng0 + x/(R*Math.cos(lat0Rad))*180/Math.PI;
+  const latDe = z => lat0 + z/R*180/Math.PI;
+  return { lngMin:lngDe(xMin), lngMax:lngDe(xMax), latMin:latDe(zMin), latMax:latDe(zMax) };
+}
+// cuerpo de descarga+canvas+mesh — parametrizado por zoom/rango de tiles YA
+// elegidos, y por la altura Y donde va a quedar el plano (para poder separar
+// el parche del mosaico de fondo y que no compitan por el mismo pixel).
+async function _fetchMosaicoParaZoom(zoom, txMin, txMax, tyMin, tyMax, yPos){
   const nx=txMax-txMin+1, ny=tyMax-tyMin+1;
   const canvas = document.createElement('canvas');
   canvas.width = nx*256; canvas.height = ny*256;
@@ -1274,78 +1305,112 @@ async function _fetchMosaicoParaZoom(zoom, txMin, txMax, tyMin, tyMax){
     new THREE.MeshBasicMaterial({map:tex})
   );
   mesh.rotation.x = -Math.PI/2;
-  mesh.position.set((xOeste+xEste)/2, -0.15, (zNorte+zSur)/2);
-  mesh.visible = false; // arranca oculto — actualizarMapaSatelital() lo prende si corresponde
+  mesh.position.set((xOeste+xEste)/2, yPos, (zNorte+zSur)/2);
+  mesh.visible = false; // arranca oculto — quien llama decide cuándo mostrarlo
   return mesh;
 }
 
-// v1.34 — pedido de Daniel: la resolución del mapa satelital quedaba fija
-// pase lo que pase con el zoom de la cámara 3D (la textura se hornea UNA vez
-// al tildar el toggle, con un zoom de tiles elegido solo en función del
-// tamaño del vuelo). Ahora el zoom de tiles también reacciona al zoom de
-// CÁMARA: cuanto más cerca esté mirando, más tope de tiles se permite pedir
-// para la MISMA área (el mismo bbox de siempre, ver _bboxLatLngVuelo) —
-// _elegirZoomYTiles ya elegía el mayor zoom nativo que entrara en el tope, así
-// que subir el tope alcanza para que elija más zoom, sin tocar esa lógica.
-// Se cachea por NIVEL DE ZOOM RESULTANTE (_mapaCachePorZoom), no por tope
-// tiles pedido — dos topes distintos que casualmente resuelvan el mismo zoom
-// reusan el mismo mosaico. Volver a un zoom ya visitado en esta sesión (por
-// ej. alejar la cámara después de haber acercado) es instantáneo, sin red.
-const TOPE_TILES_BASE = 100; // el de siempre, para la distancia "de referencia" (cámara recién posicionada)
-const TOPE_TILES_MAX = 400;  // tope al que se permite llegar bien cerca — ~4x tiles de más
-                               // (roughly 1 nivel extra de zoom para la misma área) — más que
-                               // eso empieza a ser demasiados pedidos/demasiado canvas para lo
-                               // que se nota a esta escala.
-const _mapaCachePorZoom = new Map(); // zoom (número) -> Promise<THREE.Mesh>
-let mapaSatMeshActual = null;
-let _mapaSatZoomActual = null;
+// ============================================================================
+// v1.35 — REHECHO tras confirmar con Daniel que v1.34 no mejoraba nada.
+// Diagnóstico real (v1.34 estaba mal pensado en dos niveles):
+//   1) BUG: la fórmula de "tope según cámara" comparaba camRadioSeguir (modo
+//      "seguir avión", que YA arranca cerca — decenas/centenas de metros)
+//      contra una referencia pensada para cámara libre (extent*1.15, del
+//      orden de KILÓMETROS). El cociente ya daba saturado en el tope máximo
+//      desde el arranque del modo seguir avión — acercar más la cámara
+//      (como en el screenshot de Daniel) no cambiaba nada, de ahí el reporte
+//      "sigue sin mejorar".
+//   2) ERROR DE FONDO, más importante: aunque se arregle (1), pedir más
+//      tiles para la MISMA área (todo el vuelo + 75% de margen, kilómetros)
+//      casi no sube la resolución real. El zoom nativo (17) da la MISMA
+//      resolución en metros/pixel sin importar cuántos tiles pidas — más
+//      tiles a esa área gigante solo permite subir 1 nivel de zoom como
+//      mucho antes de chocar contra el tope máximo razonable de tiles.
+// Fix real: en vez de un solo mosaico gigante cuya resolución no puede subir
+// más allá de lo que ya tenía, se agrega un SEGUNDO mesh — un "parche" de
+// área CHICA (unos cientos de metros, no todo el vuelo) centrado en donde
+// está mirando la cámara, pedido a zoom 17 igual que el mosaico de fondo,
+// pero como cubre mucho menos terreno, esos mismos tiles de 256px quedan
+// representando muchos menos metros cada uno: ESO es lo que realmente sube
+// la resolución percibida al acercarse, no la cantidad de tiles en sí.
+// El mosaico de fondo (mapaSatMeshBase) se arma UNA sola vez, como antes de
+// v1.34 — deja de reaccionar al zoom, ya no tiene sentido que lo haga.
+// ============================================================================
+let mapaSatMeshBase = null;      // mosaico de fondo, fijo, cubre todo el vuelo
+const _mapaParcheCache = new Map(); // clave "cx,cz,radio" (redondeados) -> Promise<THREE.Mesh>
+let mapaSatMeshParche = null;    // parche actualmente visible (o null si no corresponde mostrar ninguno)
 let _mapaSatCargando = false;
 
-function _topeTilesSegunCamara(){
-  // radioReferencia: la distancia "por defecto" con la que arranca la cámara
-  // libre (ver camRadioLibre más abajo) — a esa distancia o más lejos, tope
-  // normal (comportamiento de siempre). Acercándose más que eso, el tope
-  // sube gradualmente hasta TOPE_TILES_MAX.
-  const radioReferencia = Math.max(extent*1.15, 400);
-  const radioActual = seguirChk.checked ? camRadioSeguir : camRadioLibre;
-  const factor = Math.min(4, Math.max(1, radioReferencia/Math.max(radioActual,1)));
-  return Math.round(TOPE_TILES_BASE*factor);
+const UMBRAL_TILES_PARCHE = 100; // el parche siempre pide a full tope (100) — como
+  // cubre poco terreno, esto ya alcanza sobrado para tocar zoom 17.
+const Y_MOSAICO_BASE = -0.15;    // altura de siempre del mosaico de fondo
+const Y_PARCHE = Y_MOSAICO_BASE + 3; // 3m por encima del mosaico de fondo — mismo
+  // criterio que ya se usó para separar pasto (-3) de mosaico de fondo
+  // (-0.15): a esta escala (kilómetros desde el origen) el depth buffer
+  // necesita unos metros de separación real, no centímetros, para no competir
+  // por el mismo pixel. El parche queda arriba a propósito: cuando está
+  // activo tiene que ganarle al mosaico de fondo en la zona donde se solapan.
+
+// Radio (metros) del parche según qué tan cerca está mirando la cámara: más
+// cerca → parche más chico → más resolución percibida en esa área. Piso de
+// 150m para no pedir un parche microscópico (innecesario: a esa distancia ya
+// se estaría viendo un solo tile bien de cerca).
+function _radioParcheDeseado(radioCamara){
+  return Math.max(150, radioCamara*2.2);
 }
 
-async function _obtenerMeshParaZoom(topeTiles){
-  const {lngMin,lngMax,latMin,latMax} = _bboxLatLngVuelo();
-  const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax, Math.min(topeTiles, TOPE_TILES_MAX));
-  if(!_mapaCachePorZoom.has(zoom)){
-    _mapaCachePorZoom.set(zoom, _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax).then(mesh=>{
+// Umbral de "cerca" MODE-AWARE — v1.34 comparaba mal esto (bug (1) de
+// arriba). "seguir avión" y "cámara libre" tienen escalas de distancia
+// completamente distintas, cada modo se compara contra SU PROPIA distancia
+// default, no la del otro.
+function _distanciaReferenciaModo(siguiendo){
+  return siguiendo ? Math.max(180, extent*0.03) : Math.max(extent*1.15, 400);
+}
+
+async function _obtenerParche(cx, cz, radio){
+  const key = Math.round(cx/50)+','+Math.round(cz/50)+','+Math.round(radio/50);
+    // redondeado a grillas de 50m — pequeños movimientos de cámara/avión
+    // reusan el mismo parche cacheado en vez de disparar un fetch nuevo por
+    // cada frame de zoom o cada metro que avanza el avión.
+  if(!_mapaParcheCache.has(key)){
+    const {lngMin,lngMax,latMin,latMax} = _bboxLatLngCentroRadio(cx,cz,radio);
+    const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax, UMBRAL_TILES_PARCHE);
+    _mapaParcheCache.set(key, _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax,Y_PARCHE).then(mesh=>{
       scene.add(mesh);
       return mesh;
     }));
   }
-  return {zoom, mesh: await _mapaCachePorZoom.get(zoom)};
+  return _mapaParcheCache.get(key);
 }
 
-// Muestra el mosaico que corresponda al zoom de cámara actual (pide/reusa
-// según haga falta) y oculta el que estaba mostrándose antes, si es otro. No
-// hace nada si el toggle está apagado. _mapaSatCargando evita solapar dos
-// fetches del mismo zoom si el usuario sigue haciendo zoom mientras el
-// anterior todavía está en vuelo.
-async function actualizarMapaSatelital(){
+// Se llama con el debounce de zoom (aplicarZoom) y también podría llamarse
+// tras un salto grande del slider — decide si corresponde mostrar un parche
+// (cámara más cerca que la distancia de referencia de SU modo) y, si
+// corresponde, lo pide/reusa y lo muestra; si la cámara está lejos, oculta
+// el parche activo (el mosaico de fondo, siempre visible de por sí, queda
+// cubriendo esa zona sin corte visible porque están a la misma resolución
+// de siempre ahí).
+async function actualizarParcheMapaSatelital(){
   if(!mapaSatChk.checked || _mapaSatCargando) return;
-  const topeTiles = _topeTilesSegunCamara();
-  // atajo: si ya se puede saber que el zoom resultante es el mismo que el
-  // actual sin tener que recalcular tile range (mismo tope redondeado a
-  // zoom), no hace falta ni llamar a _elegirZoomYTiles — pero es barato
-  // (puro cálculo, sin red) así que se llama igual, la que evita red es el
-  // cache de _mapaCachePorZoom.
+  const siguiendo = seguirChk.checked;
+  const radioActual = siguiendo ? camRadioSeguir : camRadioLibre;
+  const referencia = _distanciaReferenciaModo(siguiendo);
+  if(radioActual >= referencia*0.6){
+    // lejos: no hace falta parche — se oculta el que hubiera quedado activo
+    if(mapaSatMeshParche){ mapaSatMeshParche.visible=false; mapaSatMeshParche=null; }
+    return;
+  }
+  const m = muestraEn(currentT);
+  const centro3 = siguiendo ? {x:m.x, z:m.z} : {x:centro.x, z:centro.z};
+  const radioPatch = _radioParcheDeseado(radioActual);
   _mapaSatCargando = true;
   try{
-    const {zoom, mesh} = await _obtenerMeshParaZoom(topeTiles);
-    if(!mapaSatChk.checked) { mesh.visible=false; return; } // se destildó mientras esperaba
-    if(zoom === _mapaSatZoomActual) return; // ya se está mostrando este nivel
-    if(mapaSatMeshActual) mapaSatMeshActual.visible = false;
+    const mesh = await _obtenerParche(centro3.x, centro3.z, radioPatch);
+    if(!mapaSatChk.checked){ mesh.visible=false; return; } // se destildó mientras esperaba
+    if(mesh===mapaSatMeshParche) return; // ya se está mostrando este mismo parche
+    if(mapaSatMeshParche) mapaSatMeshParche.visible=false;
     mesh.visible = true;
-    mapaSatMeshActual = mesh;
-    _mapaSatZoomActual = zoom;
+    mapaSatMeshParche = mesh;
   } finally {
     _mapaSatCargando = false;
   }
@@ -1354,9 +1419,17 @@ async function actualizarMapaSatelital(){
 const mapaSatChk = document.getElementById('mapaSat');
 mapaSatChk.onchange = async ()=>{
   if(mapaSatChk.checked){
-    await actualizarMapaSatelital();
-  } else if(mapaSatMeshActual){
-    mapaSatMeshActual.visible = false;
+    if(!mapaSatMeshBase){
+      const {lngMin,lngMax,latMin,latMax} = _bboxLatLngVueloCompleto();
+      const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax, 100);
+      mapaSatMeshBase = await _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax,Y_MOSAICO_BASE);
+      scene.add(mapaSatMeshBase);
+    }
+    mapaSatMeshBase.visible = true;
+    await actualizarParcheMapaSatelital(); // por si ya arranca con la cámara cerca
+  } else {
+    mapaSatMeshBase.visible = false;
+    if(mapaSatMeshParche) mapaSatMeshParche.visible = false;
   }
   // Pedido de Daniel: en vez de afinar separaciones en Y para que no compitan
   // por el mismo pixel (frágil: depende de la escala/distancia a cámara),
@@ -1815,14 +1888,15 @@ function aplicarZoom(deltaY){
   } else {
     camRadioLibre = Math.max(50, Math.min(extent*6, camRadioLibre*(1+deltaY*0.001)));
   }
-  // v1.34 — pedido de Daniel: la resolución del mapa satelital reacciona al
-  // zoom de cámara (ver actualizarMapaSatelital). Debounce de 600ms: si el
-  // usuario sigue scrolleando/pellizcando, no se dispara un fetch por cada
-  // tick de la rueda — recién cuando el zoom se queda quieto un rato se
-  // recalcula, así un scroll rápido no dispara una ráfaga de pedidos.
+  // v1.35 — la resolución del mapa satelital reacciona al zoom de cámara vía
+  // un parche de acercamiento (ver actualizarParcheMapaSatelital). Debounce
+  // de 600ms: si el usuario sigue scrolleando/pellizcando, no se dispara un
+  // fetch por cada tick de la rueda — recién cuando el zoom se queda quieto
+  // un rato se recalcula, así un scroll rápido no dispara una ráfaga de
+  // pedidos.
   if(mapaSatChk.checked){
     clearTimeout(_debounceMapaSatTimer);
-    _debounceMapaSatTimer = setTimeout(actualizarMapaSatelital, 600);
+    _debounceMapaSatTimer = setTimeout(actualizarParcheMapaSatelital, 600);
   }
 }
 
