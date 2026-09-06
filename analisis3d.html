@@ -2,6 +2,30 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.36 · FIX reportado por Daniel tras probar v1.35 ("nop, incluso bajó la
+  resolución"): el parche de acercamiento nunca llegaba a activarse en modo
+  "seguir avión". Causa: el umbral comparaba camRadioSeguir contra SU PROPIA
+  distancia default (misma fórmula de los dos lados) — el cociente daba
+  exactamente 1 en el arranque normal del modo, nunca cruzaba el 0.6 que
+  hacía falta para mostrar el parche. Hacía falta zoomear MÁS TODAVÍA que el
+  arranque de "seguir avión" para que algo pasara, cuando ese modo YA es una
+  vista de cerca por diseño (y el ícono del avión, además, se dibuja
+  artificialmente grande — ver MODELO_ESCALA —, lo que hace parecer la
+  cámara más cerca en metros de lo que realmente está). Ahora "seguir avión"
+  lleva parche SIEMPRE, sin umbral; la distinción lejos/cerca (mosaico de
+  fondo vs. parche) solo aplica a cámara libre, donde sí tiene sentido
+  (¿se ve el vuelo completo o se hizo zoom sobre una parte?).
+  Segundo fix: cambiar de modo (tildar/destildar "Seguir avión") no
+  disparaba ningún recálculo — solo reaccionaba a eventos de zoom (rueda/
+  pellizco). Nuevo seguirChk.onchange llama a actualizarParcheMapaSatelital()
+  de una.
+  De yapa, log de consola ahora etiquetado ([mapaSat:BASE] / [mapaSat:PARCHE])
+  para poder confirmar desde DevTools si el parche se está pidiendo y a qué
+  zoom — si ya sale zoom=17 y sigue viéndose borroso, ahí sí sería un techo
+  real de la imagen satelital disponible para esta zona (no algo que se
+  pueda arreglar pidiendo distinto), y conviene confirmarlo antes de seguir
+  iterando a ciegas.
+
   v1.35 · REHECHO tras confirmar con Daniel que v1.34 no mejoraba nada (dos
   screenshots comparando el 2D nítido vs el 3D borroso de cerca). Diagnóstico
   real, v1.34 estaba mal pensado en dos niveles:
@@ -600,7 +624,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.35</span>
+    <span class="badge" id="ver-badge">v1.36</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1236,7 +1260,7 @@ function _bboxLatLngCentroRadio(xCentro, zCentro, radioMetros){
 // cuerpo de descarga+canvas+mesh — parametrizado por zoom/rango de tiles YA
 // elegidos, y por la altura Y donde va a quedar el plano (para poder separar
 // el parche del mosaico de fondo y que no compitan por el mismo pixel).
-async function _fetchMosaicoParaZoom(zoom, txMin, txMax, tyMin, tyMax, yPos){
+async function _fetchMosaicoParaZoom(zoom, txMin, txMax, tyMin, tyMax, yPos, etiqueta){
   const nx=txMax-txMin+1, ny=tyMax-tyMin+1;
   const canvas = document.createElement('canvas');
   canvas.width = nx*256; canvas.height = ny*256;
@@ -1261,7 +1285,7 @@ async function _fetchMosaicoParaZoom(zoom, txMin, txMax, tyMin, tyMax, yPos){
     }
   }
   await Promise.all(promesas);
-  console.log(`[mapaSat] zoom=${zoom} tiles=${nx*ny} ok=${ok} fail=${fail}`);
+  console.log(`[mapaSat:${etiqueta||'?'}] zoom=${zoom} tiles=${nx*ny} ok=${ok} fail=${fail}`);
   if(fail > ok){
     const avisoMapa = document.createElement('div');
     avisoMapa.className = 'panel';
@@ -1359,14 +1383,6 @@ function _radioParcheDeseado(radioCamara){
   return Math.max(150, radioCamara*2.2);
 }
 
-// Umbral de "cerca" MODE-AWARE — v1.34 comparaba mal esto (bug (1) de
-// arriba). "seguir avión" y "cámara libre" tienen escalas de distancia
-// completamente distintas, cada modo se compara contra SU PROPIA distancia
-// default, no la del otro.
-function _distanciaReferenciaModo(siguiendo){
-  return siguiendo ? Math.max(180, extent*0.03) : Math.max(extent*1.15, 400);
-}
-
 async function _obtenerParche(cx, cz, radio){
   const key = Math.round(cx/50)+','+Math.round(cz/50)+','+Math.round(radio/50);
     // redondeado a grillas de 50m — pequeños movimientos de cámara/avión
@@ -1375,7 +1391,7 @@ async function _obtenerParche(cx, cz, radio){
   if(!_mapaParcheCache.has(key)){
     const {lngMin,lngMax,latMin,latMax} = _bboxLatLngCentroRadio(cx,cz,radio);
     const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax, UMBRAL_TILES_PARCHE);
-    _mapaParcheCache.set(key, _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax,Y_PARCHE).then(mesh=>{
+    _mapaParcheCache.set(key, _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax,Y_PARCHE,'PARCHE').then(mesh=>{
       scene.add(mesh);
       return mesh;
     }));
@@ -1383,22 +1399,29 @@ async function _obtenerParche(cx, cz, radio){
   return _mapaParcheCache.get(key);
 }
 
-// Se llama con el debounce de zoom (aplicarZoom) y también podría llamarse
-// tras un salto grande del slider — decide si corresponde mostrar un parche
-// (cámara más cerca que la distancia de referencia de SU modo) y, si
-// corresponde, lo pide/reusa y lo muestra; si la cámara está lejos, oculta
-// el parche activo (el mosaico de fondo, siempre visible de por sí, queda
-// cubriendo esa zona sin corte visible porque están a la misma resolución
-// de siempre ahí).
+// Umbral de "cerca" — v1.35 lo tenía mal pensado: comparaba "seguir avión"
+// contra SU PROPIA distancia default (extent*0.03), así que a esa distancia
+// default (sin zoomear más todavía) el cociente daba exactamente 1 y nunca
+// cruzaba el umbral de 0.6 — el parche no se activaba nunca en el arranque
+// normal del modo seguir avión, solo si se zoomeaba todavía MÁS cerca que
+// eso. Pero "seguir avión" ya ES una vista de cerca por diseño (el ícono del
+// avión, además, se dibuja artificialmente grande — ver MODELO_ESCALA más
+// abajo —, lo que hace parecer la cámara más cerca en términos de metros de
+// lo que realmente está), tiene que llevar parche SIEMPRE, no recién después
+// de zoomear más. La distinción lejos/cerca solo tiene sentido en cámara
+// libre (¿se está viendo el vuelo completo, o se hizo zoom sobre una parte?).
 async function actualizarParcheMapaSatelital(){
   if(!mapaSatChk.checked || _mapaSatCargando) return;
   const siguiendo = seguirChk.checked;
   const radioActual = siguiendo ? camRadioSeguir : camRadioLibre;
-  const referencia = _distanciaReferenciaModo(siguiendo);
-  if(radioActual >= referencia*0.6){
-    // lejos: no hace falta parche — se oculta el que hubiera quedado activo
-    if(mapaSatMeshParche){ mapaSatMeshParche.visible=false; mapaSatMeshParche=null; }
-    return;
+  if(!siguiendo){
+    const referenciaLibre = Math.max(extent*1.15, 400); // distancia inicial de cámara libre
+    if(radioActual >= referenciaLibre){
+      // cámara libre viendo el vuelo completo (o más lejos): el mosaico de
+      // fondo ya alcanza, no hace falta parche.
+      if(mapaSatMeshParche){ mapaSatMeshParche.visible=false; mapaSatMeshParche=null; }
+      return;
+    }
   }
   const m = muestraEn(currentT);
   const centro3 = siguiendo ? {x:m.x, z:m.z} : {x:centro.x, z:centro.z};
@@ -1422,7 +1445,7 @@ mapaSatChk.onchange = async ()=>{
     if(!mapaSatMeshBase){
       const {lngMin,lngMax,latMin,latMax} = _bboxLatLngVueloCompleto();
       const {zoom,txMin,txMax,tyMin,tyMax} = _elegirZoomYTiles(latMin,latMax,lngMin,lngMax, 100);
-      mapaSatMeshBase = await _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax,Y_MOSAICO_BASE);
+      mapaSatMeshBase = await _fetchMosaicoParaZoom(zoom,txMin,txMax,tyMin,tyMax,Y_MOSAICO_BASE,'BASE');
       scene.add(mapaSatMeshBase);
     }
     mapaSatMeshBase.visible = true;
@@ -1880,6 +1903,13 @@ let camRadioSeguir = Math.max(180, extent*0.03);
 let dragging=false, lastX=0, lastY=0;
 const canvas = renderer.domElement;
 const seguirChk = document.getElementById('seguir');
+// v1.36 — FIX: cambiar de modo (seguir avión ↔ cámara libre) no disparaba
+// ningún recálculo del parche satelital, que solo reaccionaba a eventos de
+// zoom (rueda/pellizco). Si el mapa ya estaba activo y el usuario tildaba
+// "Seguir avión" sin tocar el zoom después, se quedaba mostrando lo que
+// hubiera antes (mosaico de fondo o un parche de cámara libre desactualizado)
+// en vez de mostrar de una el parche que corresponde al nuevo modo.
+seguirChk.onchange = ()=>{ if(mapaSatChk.checked) actualizarParcheMapaSatelital(); };
 
 let _debounceMapaSatTimer = null;
 function aplicarZoom(deltaY){
