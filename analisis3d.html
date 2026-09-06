@@ -2,6 +2,24 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.38 · FIX reportado por Daniel: flickering tipo z-fighting (bandas
+  horizontales) después de un rato de uso normal, particularmente al máximo
+  zoom out y en vista top-down. Causa real: _radioParcheDeseado tenía PISO
+  (150m) pero no TECHO. Desde v1.36, "seguir avión" muestra parche SIEMPRE
+  (sin el umbral que sí tenía cámara libre) — bien zoomeado hacia afuera
+  DENTRO de ese modo (camRadioSeguir puede llegar a extent*1.5), el parche
+  resultante (radioActual*2.2 ≈ extent*3.3) terminaba casi tan grande como el
+  mosaico de fondo entero: dos planos casi del mismo tamaño, superpuestos,
+  separados solo 3m en Y, compitiendo pixel a pixel por la misma
+  profundidad — justo a la distancia de cámara más grande posible, donde el
+  depth buffer tiene la PEOR precisión (no es lineal, pierde resolución lejos
+  de cámara). De ahí que empeorara justo al alejar/mirar de arriba.
+  Fix: RADIO_PARCHE_MAX (800m) — si el radio que haría falta ya es tan grande
+  que no aporta nada frente al mosaico de fondo, directamente no se pide
+  parche. Reemplaza la rama separada "solo cámara libre" de v1.36/v1.37 por
+  un único chequeo que aplica parejo a los dos modos — más simple y arregla
+  el bug de raíz en vez de parchear el síntoma.
+
   v1.37 · Dos pedidos de Daniel tras confirmar que v1.36 "anduvo":
   (1) Notaba delay al zoomear, como si no cacheara. Causa real: la clave de
   cache del parche redondeaba la POSICIÓN/RADIO en metros (grillas de 50m),
@@ -644,7 +662,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.37</span>
+    <span class="badge" id="ver-badge">v1.38</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1403,6 +1421,20 @@ function _radioParcheDeseado(radioCamara){
   return Math.max(150, radioCamara*2.2);
 }
 
+// v1.38 FIX reportado por Daniel: flickering (bandas horizontales, como
+// z-fighting) al máximo zoom out y en vista top-down. Causa real: esta
+// fórmula tenía PISO pero no TECHO. En modo "seguir avión" (que desde v1.36
+// muestra parche SIEMPRE, sin el umbral que sí tenía cámara libre) bien
+// zoomeado hacia afuera, radioActual podía llegar a extent*1.5 — el parche
+// resultante (radioActual*2.2 ≈ extent*3.3) terminaba casi tan grande como
+// el mosaico de fondo entero. Dos planos casi del mismo tamaño, superpuestos,
+// separados solo 3m en Y (Y_PARCHE), compitiendo pixel a pixel por la misma
+// profundidad — y encima a la distancia de cámara más grande posible, donde
+// el depth buffer tiene la PEOR precisión (no es lineal: pierde resolución
+// lejos de la cámara). De ahí que empeorara justo al alejar/mirar de arriba.
+const RADIO_PARCHE_MAX = 800; // más grande que esto, el parche ya no aporta
+  // nada frente al mosaico de fondo (cubre casi lo mismo) — mejor ni pedirlo.
+
 async function _obtenerParche(cx, cz, radio){
   // v1.37 — FIX reportado por Daniel: notaba delay al zoomear, como si no
   // cacheara. Causa real: la clave de cache redondeaba la POSICIÓN/RADIO en
@@ -1428,32 +1460,26 @@ async function _obtenerParche(cx, cz, radio){
 }
 
 // Umbral de "cerca" — v1.35 lo tenía mal pensado: comparaba "seguir avión"
-// contra SU PROPIA distancia default (extent*0.03), así que a esa distancia
-// default (sin zoomear más todavía) el cociente daba exactamente 1 y nunca
-// cruzaba el umbral de 0.6 — el parche no se activaba nunca en el arranque
-// normal del modo seguir avión, solo si se zoomeaba todavía MÁS cerca que
-// eso. Pero "seguir avión" ya ES una vista de cerca por diseño (el ícono del
-// avión, además, se dibuja artificialmente grande — ver MODELO_ESCALA más
-// abajo —, lo que hace parecer la cámara más cerca en términos de metros de
-// lo que realmente está), tiene que llevar parche SIEMPRE, no recién después
-// de zoomear más. La distinción lejos/cerca solo tiene sentido en cámara
-// libre (¿se está viendo el vuelo completo, o se hizo zoom sobre una parte?).
+// contra SU PROPIA distancia default, así que nunca cruzaba el umbral en el
+// arranque normal de ese modo (ver v1.36). v1.38: en vez de dos ramas
+// separadas por modo, un solo chequeo universal (RADIO_PARCHE_MAX, arriba)
+// que aplica pareja a los dos: si el radio de parche que haría falta ya es
+// tan grande que no aporta nada frente al mosaico de fondo, no se pide —
+// esto también arregla de raíz el flicker (ver v1.38 arriba), no solo el
+// caso de cámara libre lejos.
 async function actualizarParcheMapaSatelital(){
   if(!mapaSatChk.checked || _mapaSatCargando) return;
   const siguiendo = seguirChk.checked;
   const radioActual = siguiendo ? camRadioSeguir : camRadioLibre;
-  if(!siguiendo){
-    const referenciaLibre = Math.max(extent*1.15, 400); // distancia inicial de cámara libre
-    if(radioActual >= referenciaLibre){
-      // cámara libre viendo el vuelo completo (o más lejos): el mosaico de
-      // fondo ya alcanza, no hace falta parche.
-      if(mapaSatMeshParche){ mapaSatMeshParche.visible=false; mapaSatMeshParche=null; }
-      return;
-    }
+  const radioPatch = _radioParcheDeseado(radioActual);
+  if(radioPatch > RADIO_PARCHE_MAX){
+    // cámara demasiado lejos (en cualquiera de los dos modos): el mosaico de
+    // fondo ya alcanza, no hace falta parche.
+    if(mapaSatMeshParche){ mapaSatMeshParche.visible=false; mapaSatMeshParche=null; }
+    return;
   }
   const m = muestraEn(currentT);
   const centro3 = siguiendo ? {x:m.x, z:m.z} : {x:centro.x, z:centro.z};
-  const radioPatch = _radioParcheDeseado(radioActual);
   _mapaSatCargando = true;
   try{
     const mesh = await _obtenerParche(centro3.x, centro3.z, radioPatch);
