@@ -2,6 +2,16 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.25 · Dos pedidos de Daniel tras confirmar que v1.24 dejó todo bien
+  orientado: (1) las LETRAS de la rosa quedaron espejadas (el
+  transform:scaleX(-1) del canvas en v1.24 corrige las posiciones, pero
+  también espeja el DIBUJO del texto de cada sprite — una "N" se dibuja como
+  una "N" al revés). Se pre-espeja el texto adentro de _crearTexturaLetra
+  (scale(-1,1) antes de escribir en su propio canvas) para que, después del
+  espejo global, se lea normal — no toca ninguna posición, es puro dibujo
+  2D. (2) Triángulos indicadores en la rosa, rojo en el Norte y blanco en el
+  Sur (como una rosa de rumbos/VOR real), apuntando hacia afuera.
+
   v1.24 · FIX de fondo del "todo al revés" que reportó Daniel (traza gira al
   revés Y rosa de rumbos lee al revés). Encontrado y confirmado con el motor
   real: no era un error de una fórmula puntual — repasé rumbo, rotación del
@@ -431,7 +441,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.24</span>
+    <span class="badge" id="ver-badge">v1.25</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -876,6 +886,15 @@ function _crearTexturaLetra(letra){
   const size=128;
   const c=document.createElement('canvas'); c.width=size; c.height=size;
   const ctx=c.getContext('2d');
+  // v1.25 FIX: el canvas entero se espeja con transform:scaleX(-1) (v1.24)
+  // para corregir el este-oeste general — pero eso también espeja el TEXTO
+  // de estos sprites (una "N" se dibuja como una "N" al revés, ilegible).
+  // Se pre-espeja acá mismo el dibujo de la letra (scale(-1,1) antes de
+  // escribir) para que, después del espejo global del canvas, se lea
+  // normal. La posición en el mundo NO se toca — esto es puro dibujo 2D
+  // dentro de la textura.
+  ctx.translate(size, 0);
+  ctx.scale(-1, 1);
   ctx.font='bold 92px sans-serif';
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillStyle='#e8b84b';
@@ -925,6 +944,26 @@ function construirRosaRumbos(){
   );
   marcasLine.renderOrder = 5;
   g.add(marcasLine);
+
+  // Triángulos indicadores en N (rojo) y S (blanco), como en una rosa de
+  // rumbos/VOR real — apuntan HACIA AFUERA (la punta más lejos del centro
+  // que la base), pedido de Daniel.
+  function construirTriangulo(hdgDeg, color){
+    const a = hdgDeg*Math.PI/180;
+    const dirX=Math.sin(a), dirZ=Math.cos(a);       // radial, hacia afuera
+    const perpX=Math.cos(a), perpZ=-Math.sin(a);    // perpendicular, para la base
+    const rPunta = radio*1.05, rBase = radio*0.75, semiAncho = radio*0.11;
+    const punta     = new THREE.Vector3(centro.x+dirX*rPunta, y, centro.z+dirZ*rPunta);
+    const baseIzq   = new THREE.Vector3(centro.x+dirX*rBase+perpX*semiAncho, y, centro.z+dirZ*rBase+perpZ*semiAncho);
+    const baseDer   = new THREE.Vector3(centro.x+dirX*rBase-perpX*semiAncho, y, centro.z+dirZ*rBase-perpZ*semiAncho);
+    const geo = new THREE.BufferGeometry().setFromPoints([punta, baseIzq, baseDer]);
+    const mat = new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide, depthTest:false});
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = 5;
+    return mesh;
+  }
+  g.add(construirTriangulo(0, 0xd0342c));   // Norte, rojo
+  g.add(construirTriangulo(180, 0xf2f2f2)); // Sur, blanco
 
   // Letras N/E/S/O como sprites (encaran siempre a cámara, no hace falta
   // orientarlas) ubicadas un poco afuera del aro, en su rumbo correspondiente.
