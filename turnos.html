@@ -1,5 +1,32 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.60
+  CAMBIOS : Dos pedidos de Daniel sobre "Mi Log de Vuelos" (autoservicio del
+            alumno/piloto, Mi Perfil → tab Log de Vuelos):
+            (1) ícono 🛰 después de las horas en cada fila del listado resumido
+            (renderMiLogVuelosInline) cuando esa reserva tiene r.tiene_traza_gps
+            — mismo flag que ya usa el modal de detalle para el botón "Ver
+            recorrido GPS", sin fetch extra.
+            (2) al hacer click en una fila puntual del listado resumido, el
+            modal "Mi Log de Vuelos" abría siempre mostrando TODO el
+            historial empezando por el vuelo más nuevo — confuso, porque
+            clickear un vuelo viejo no parecía hacer nada (la pantalla no se
+            movía, mostraba otro vuelo arriba de todo). Ahora abrirMiLogVuelos
+            acepta un focusKey opcional (la key de la reserva clickeada);
+            renderObsPublicasAlumno (la lista que realmente se ve, tab
+            "Observaciones al Alumno") y renderNotasPrivadasAlumno (tab
+            "Horas y Aterrizajes") filtran a ese único vuelo cuando
+            _logAlumnoCtx.filtroKey está seteado. El total acumulado de
+            arriba (mla-totales) sigue calculándose sobre el historial
+            COMPLETO sin filtrar — solo la lista de abajo se filtra. Nuevo
+            link "← ver historial completo" (mla-ver-todo-obs / mla-ver-todo)
+            para volver a la vista sin filtrar sin cerrar el modal. El botón
+            "VER DETALLE COMPLETO" sigue llamando abrirMiLogVuelos() sin
+            argumento, sin cambios de comportamiento. abrirLogAlumno (entrada
+            de instructor) resetea filtroKey a null explícitamente para no
+            heredar un filtro de una sesión de alumno previa en la misma
+            pestaña del navegador.
+
   VERSION : 8.59
   CAMBIOS : Pedido de Daniel: guardarTurnoManual mostraba el mismo mensaje de
             error ("Ese avión ya tiene un turno activo...") tanto para un
@@ -4229,7 +4256,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.59</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.60</div>
   </div>
 
 </div>
@@ -4654,6 +4681,9 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
       </div>
 
       <div id="mla-panel-obs">
+        <div id="mla-obspub-header" style="display:none;justify-content:flex-end;margin-bottom:.4rem">
+          <span id="mla-ver-todo-obs" style="font-family:var(--font-mono);font-size:10px;color:var(--cyan);cursor:pointer;text-decoration:underline" onclick="verTodoLogAlumno()">← ver historial completo</span>
+        </div>
         <div id="mla-obs-pub-lista" style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:.5rem;margin-bottom:.4rem"></div>
         <div id="mla-obs-pub-vacio" style="display:none;font-family:var(--font-mono);font-size:11px;color:var(--text3);text-align:center;padding:.85rem 0">// Sin observaciones públicas cargadas</div>
       </div>
@@ -4682,7 +4712,10 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
         </div>
 
         <div class="obspriv-box" id="mla-hist-box">
-          <div class="section-title" style="margin-bottom:.5rem" id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)</div>
+          <div class="section-title" style="margin-bottom:.5rem;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <span id="mla-lista-titulo">🔒 Historial para instructores (más nuevo primero)</span>
+            <span id="mla-ver-todo" style="display:none;font-size:10px;color:var(--cyan);cursor:pointer;text-decoration:underline;letter-spacing:0" onclick="verTodoLogAlumno()">← ver historial completo</span>
+          </div>
           <div id="mla-lista" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:.6rem"></div>
           <div id="mla-vacio" style="display:none;font-family:var(--font-mono);font-size:12px;color:var(--text3);text-align:center;padding:1.5rem 0">// Sin observaciones privadas cargadas todavía</div>
         </div>
@@ -7045,9 +7078,14 @@ async function renderMiLogVuelosInline(){
     const fecha=fmtFechaLinda(r.fecha);
     const horasVal=r.obs_privada_tiempo_vuelo!=null?r.obs_privada_tiempo_vuelo:r.piloto_tiempo_vuelo;
     const horas=horasVal!=null?Number(horasVal).toFixed(1)+' hs':'—';
-    return `<div class="ap-log-row" onclick="abrirMiLogVuelos()" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:.6rem .75rem;background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono)">
+    // v8.60 — pedido de Daniel: ícono 🛰 después de las horas si el vuelo tiene traza
+    // GPS asociada (mismo flag r.tiene_traza_gps que ya usa el modal de detalle
+    // completo para mostrar "Ver recorrido GPS" — no hace falta ir a buscar a
+    // /vuelo_tracks, el flag ya vive en la reserva).
+    const iconoGps=r.tiene_traza_gps?' <span title="Tiene recorrido GPS" style="color:var(--cyan)">🛰</span>':'';
+    return `<div class="ap-log-row" onclick="abrirMiLogVuelos('${r.key}')" style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:.6rem .75rem;background:var(--bg3);border:1px solid var(--border);border-left:3px solid var(--cyan);border-radius:var(--radius);cursor:pointer;font-family:var(--font-mono)">
       <span style="font-size:12px;color:var(--text2)">${fecha}</span>
-      <span style="font-size:13px;color:var(--cyan)">${horas}</span>
+      <span style="font-size:13px;color:var(--cyan)">${horas}${iconoGps}</span>
     </div>`;
   }).join('');
 }
@@ -8635,11 +8673,20 @@ function renderObsPublicasAlumno(){
   // (piloto_tiempo_vuelo/piloto_aterrizajes) — si no, esta sección se los
   // comía en silencio y el botón "Ver recorrido GPS" nunca aparecía para
   // esos vuelos, aunque tuvieran traza guardada.
-  const turnos=Object.values(_reservasCache)
+  let turnos=Object.values(_reservasCache)
     .filter(r=>r.email===email)
     .map(r=>({r,obsTexto:[r.obs?r.obs:'',r.obs_cancelacion?'Cancelación: '+r.obs_cancelacion:'',r.obs_post?'Post-vuelo: '+r.obs_post:''].filter(Boolean).join(' — ')}))
     .filter(x=>x.obsTexto||x.r.obs_privada_tiempo_vuelo!=null||x.r.obs_privada_aterrizajes!=null||x.r.piloto_tiempo_vuelo!=null||x.r.piloto_aterrizajes!=null)
     .sort((a,b)=>(b.r.fecha+' '+b.r.hora).localeCompare(a.r.fecha+' '+a.r.hora));
+  // v8.60 — pedido de Daniel: si se entró desde una fila puntual de Mi Perfil
+  // (_logAlumnoCtx.filtroKey), mostrar SOLO ese vuelo acá — esta es la lista
+  // que realmente se ve al abrir el modal (tab "Observaciones al Alumno",
+  // default en modo alumno). Antes siempre mostraba todo el historial
+  // empezando por el más nuevo, aunque se hubiera clickeado un vuelo viejo.
+  const filtroKey=_logAlumnoCtx?.filtroKey;
+  const header=document.getElementById('mla-obspub-header');
+  if(header)header.style.display=filtroKey?'flex':'none';
+  if(filtroKey)turnos=turnos.filter(x=>x.r.key===filtroKey);
   if(!turnos.length){ vacio.style.display='block'; return; }
   vacio.style.display='none';
   turnos.forEach(({r,obsTexto})=>{
@@ -8719,6 +8766,9 @@ window.showLogAlumnoTab=function(tab){
 window.abrirLogAlumno=async function(tabInicial='obs'){
   if(!_logAlumnoCtx)return;
   _logAlumnoModoAlumno=false;
+  _logAlumnoCtx.filtroKey=null; // v8.60: entrada de instructor siempre ve todo, sin filtro heredado
+  document.getElementById('mla-obspub-header').style.display='none';
+  document.getElementById('mla-ver-todo').style.display='none';
   document.getElementById('mla-modal-title').textContent='◈ Log del Alumno';
   document.getElementById('mla-obspriv-panel').style.display='block';
   document.getElementById('mla-hist-box').classList.add('obspriv-box');
@@ -8746,14 +8796,22 @@ window.abrirLogAlumno=async function(tabInicial='obs'){
 // acá) y sin el texto libre de obs_privada en el historial (renderNotasPrivadasAlumno
 // lo omite cuando _logAlumnoModoAlumno=true) — pero SÍ ve fecha/avión, autor, y los
 // datos numéricos (tiempo de vuelo/aterrizajes) por vuelo, más el total acumulado.
-window.abrirMiLogVuelos=async function(){
+// v8.60 — pedido de Daniel: si viene focusKey (click en una fila puntual del
+// listado resumido de Mi Perfil, renderMiLogVuelosInline), el modal abre
+// mostrando SOLO ese vuelo en vez de todo el historial — antes siempre
+// mostraba la lista completa empezando por el vuelo más nuevo, lo que
+// confundía si se hacía click en un vuelo viejo (parecía que el click no
+// había hecho nada). "VER DETALLE COMPLETO" sigue llamando sin argumento y
+// muestra todo, como siempre.
+window.abrirMiLogVuelos=async function(focusKey){
   if(session?.tipo!=='alumno')return;
   _logAlumnoModoAlumno=true;
-  _logAlumnoCtx={emailKey:session.emailKey||ek(session.email),nombre:session.nombre,email:session.email,reservaKey:null,reservaRef:null};
+  _logAlumnoCtx={emailKey:session.emailKey||ek(session.email),nombre:session.nombre,email:session.email,reservaKey:null,reservaRef:null,filtroKey:focusKey||null};
   document.getElementById('mla-modal-title').textContent='◈ Mi Log de Vuelos';
   document.getElementById('mla-obspriv-panel').style.display='none';
   document.getElementById('mla-hist-box').classList.remove('obspriv-box');
-  document.getElementById('mla-lista-titulo').textContent='▸ Horas y aterrizajes registrados (más nuevo primero)';
+  document.getElementById('mla-lista-titulo').textContent=focusKey?'▸ Detalle del vuelo':'▸ Horas y aterrizajes registrados (más nuevo primero)';
+  document.getElementById('mla-ver-todo').style.display=focusKey?'inline':'none';
   document.getElementById('mla-tabbtn-log').textContent='▸ Horas y Aterrizajes';
   showLogAlumnoTab('obs');
   document.getElementById('mla-nombre').textContent=_logAlumnoCtx.nombre;
@@ -8762,6 +8820,17 @@ window.abrirMiLogVuelos=async function(){
   const al=await fbGet('alumnos/'+_logAlumnoCtx.emailKey);
   _logAlumnoCtx.horasIniciales=al?.horas_iniciales||0;
   _logAlumnoCtx.aterrizajesIniciales=al?.aterrizajes_iniciales||0;
+  renderObsPublicasAlumno();
+  renderNotasPrivadasAlumno();
+};
+
+// v8.60: vuelve de la vista filtrada (un solo vuelo) a la lista completa, sin
+// cerrar el modal. Solo tiene sentido en modo alumno (único caso que filtra).
+window.verTodoLogAlumno=function(){
+  _logAlumnoCtx.filtroKey=null;
+  document.getElementById('mla-lista-titulo').textContent='▸ Horas y aterrizajes registrados (más nuevo primero)';
+  document.getElementById('mla-ver-todo').style.display='none';
+  document.getElementById('mla-obspub-header').style.display='none';
   renderObsPublicasAlumno();
   renderNotasPrivadasAlumno();
 };
@@ -8872,9 +8941,14 @@ function renderNotasPrivadasAlumno(){
   } else {
     totalesBox.style.display='none';
   }
-  if(!turnos.length){ vacio.style.display='block'; return; }
+  // v8.60: si hay filtroKey (click en una fila puntual desde Mi Perfil), el
+  // total de arriba sigue siendo el acumulado de TODO el historial (ya
+  // calculado con "turnos" sin filtrar), pero la lista de abajo muestra
+  // solo ese vuelo — el botón "← ver historial completo" limpia el filtro.
+  const listaAMostrar=_logAlumnoCtx.filtroKey?turnos.filter(r=>r.key===_logAlumnoCtx.filtroKey):turnos;
+  if(!listaAMostrar.length){ vacio.style.display='block'; return; }
   vacio.style.display='none';
-  turnos.forEach(r=>{
+  listaAMostrar.forEach(r=>{
     const esPiloto=r.obs_privada_tiempo_vuelo==null&&r.obs_privada_aterrizajes==null&&r.obs_privada==null&&(r.piloto_tiempo_vuelo!=null||r.piloto_aterrizajes!=null||r.piloto_obs);
     const horasVal=esPiloto?r.piloto_tiempo_vuelo:r.obs_privada_tiempo_vuelo;
     const aterrVal=esPiloto?r.piloto_aterrizajes:r.obs_privada_aterrizajes;
