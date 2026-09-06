@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.44 · Pedido de Daniel: logo del Aeroclub y leyenda de copyright en la
+  cabecera. Se usa el mismo logo_aeroclub.png de la raíz del repo que ya
+  usan index.html y el resto del sitio (misma ruta relativa que turnos.html —
+  analisis3d.html también vive en la raíz, verificado que el archivo responde
+  200), y el mismo formato de leyenda que el resto de las páginas:
+  "© 2026 — by DAC", idéntico al de la pantalla de login de turnos.html.
+  El copyright se oculta por CSS en pantallas de menos de 640px: en el
+  celular el header ya venía justo de espacio (el título llegaba a partirse
+  en varias líneas, como se vio en el screenshot del declutter de v1.39), así
+  que ahí se prioriza lo funcional (logo, título, badge, nota, volver) y se
+  saca lo decorativo.
+
   v1.43 · REHECHO DE RAÍZ, con Daniel señalando exactamente el punto: "no
   entiendo para qué ponés un mosaico de fondo (que encima es de resolución
   malísima) si podés poblar todo el piso con los tiles con la resolución
@@ -700,6 +712,17 @@
   header{padding:10px 16px;background:var(--bg3);border-bottom:1px solid var(--border);
     display:flex;align-items:center;gap:10px;flex-shrink:0}
   header h1{font-size:14px;margin:0;font-weight:700;letter-spacing:.02em}
+  /* v1.44 — pedido de Daniel: logo del Aeroclub (mismo logo_aeroclub.png que
+     usan index.html y el resto del sitio, en la raíz del repo) y leyenda de
+     copyright, con el mismo formato que el resto de las páginas
+     ("© 2026 — by DAC", igual que la pantalla de login de turnos.html).
+     flex-shrink:0 en el logo para que no se aplaste cuando el header queda
+     apretado; el copyright se oculta en pantallas angostas (ver @media más
+     abajo) porque ahí el header ya venía justo de espacio — se prioriza
+     título/badge/nota/volver, que son funcionales. */
+  header .hdr-logo{width:26px;height:26px;object-fit:contain;flex-shrink:0}
+  header .hdr-copy{font-family:var(--font-mono);font-size:10px;color:var(--text3);
+    letter-spacing:.06em;white-space:nowrap}
   .badge{font-family:var(--font-mono);font-size:10px;color:var(--amber);border:1px solid var(--amber);
     border-radius:4px;padding:2px 7px;letter-spacing:.08em}
   header .nota{font-family:var(--font-mono);font-size:11px;color:var(--text3);margin-left:auto}
@@ -796,6 +819,13 @@
   header .volver{font-family:var(--font-mono);font-size:11px;color:var(--text3);text-decoration:none;
     border:1px solid var(--border);border-radius:4px;padding:3px 9px;margin-left:auto}
   header .volver:hover{color:var(--cyan);border-color:var(--cyan)}
+  /* v1.44: en pantallas angostas (celular) el header ya venía justo de
+     espacio — el título llegaba a partirse en varias líneas. Se oculta el
+     copyright, que es lo único decorativo de la fila; logo, título, badge,
+     nota y volver son funcionales y se mantienen. */
+  @media (max-width:640px){
+    header .hdr-copy{display:none}
+  }
   #carga{height:100%;display:flex;align-items:center;justify-content:center;
     background:linear-gradient(to bottom,#dff3fa 0%,#86cbe8 40%,#3f9dc7 100%)}
   #carga .caja{font-family:var(--font-mono);font-size:13px;color:var(--text);text-align:center;
@@ -812,9 +842,11 @@
     <button id="btn-recargar-version" style="font-family:var(--font-mono);font-size:12px;font-weight:700;padding:6px 16px;background:#0a0a0a;color:var(--amber);border:1px solid #0a0a0a;border-radius:6px;cursor:pointer">ACTUALIZAR AHORA</button>
   </div>
   <header>
+    <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.43</span>
+    <span class="badge" id="ver-badge">v1.44</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
+    <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
   <div id="stage">
