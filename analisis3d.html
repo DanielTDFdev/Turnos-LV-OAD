@@ -2,6 +2,41 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.45 · Pedido de Daniel: "el color del avión es muy flat, ¿se puede generar
+  un shader que contenga más luces y sombras?". No hizo falta un shader
+  custom (frágil de mantener y difícil de integrar con el sistema de luces de
+  three.js) — la causa era otra, y estaba documentada en el propio código:
+  el modelo forzaba metalness=0 en todos sus materiales, justamente PORQUE no
+  había mapa de entorno (un material metálico sin envMap se ve casi negro).
+  Pero metalness=0 sin envMap deja el material PURAMENTE DIFUSO: color plano
+  por cara, sin gradientes dentro de cada superficie. Eso es exactamente lo
+  que se percibe como "flat".
+  Tres cambios, todos sobre el pipeline estándar de three.js:
+  (1) ENV MAP procedural (ENV_AVION): canvas equirectangular con un degradado
+  cielo→horizonte→tierra (coherente con el cielo y el suelo de este visor)
+  pasado por PMREMGenerator. Cada cara refleja distinto según su orientación
+  y aparecen los gradientes suaves que leemos como volumen. Se asigna
+  material por material SOLO al avión, no vía scene.environment, para no
+  cambiar el look del mapa satelital ni del tubo.
+  (2) Materiales del avión: metalness 0→0.25 y roughness ≤0.38 (antes ≤0.55).
+  Conservador a propósito: más metalness haría que el color propio pierda
+  peso frente al reflejo y un avión rojo dejaría de verse rojo.
+  (3) SOMBRAS PROPIAS (self-shadowing): el ala proyecta sobre el fuselaje,
+  etc. Solo el avión tiene castShadow/receiveShadow, así que el costo queda
+  acotado al modelo. La shadow camera del sol se dimensiona al tamaño real
+  del avión (AVION_LARGO_MUNDO, conocido recién al cargar el GLB) y el sol
+  ACOMPAÑA al avión manteniendo dirección y distancia constantes — sin eso
+  haría falta una ortográfica que cubriera todo el vuelo, con resolución de
+  sombra pésima. Al ser constante el vector luz→target, la dirección de
+  iluminación no cambia y el resto de la escena se ve igual que antes.
+  Se suma además una luz de relleno tenue y fría desde el lado opuesto al
+  sol: las caras que no miran al sol quedaban resueltas solo por
+  ambient+hemisferio (luz pareja, sin dirección) y se leían chatas.
+  Verificado contra el fuente de three r128 (el que carga esta página) que
+  PMREMGenerator, EquirectangularReflectionMapping y PCFSoftShadowMap existen
+  y están exportados en el namespace global THREE, y que fromEquirectangular
+  devuelve un render target (de ahí el .texture).
+
   v1.44 · Pedido de Daniel: logo del Aeroclub y leyenda de copyright en la
   cabecera. Se usa el mismo logo_aeroclub.png de la raíz del repo que ya
   usan index.html y el resto del sitio (misma ruta relativa que turnos.html —
@@ -844,7 +879,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.44</span>
+    <span class="badge" id="ver-badge">v1.45</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -1210,12 +1245,76 @@ const scene = new THREE.Scene(); // sin scene.background: el canvas queda transp
 const camera = new THREE.PerspectiveCamera(55, 1, 1, 20000);
 const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+// v1.45 — pedido de Daniel: el avión se veía "muy flat". Sombras propias
+// (self-shadowing): el ala proyecta sobre el fuselaje, el fuselaje sobre el
+// tren, etc. Es lo que más volumen aporta después del env map. Solo el avión
+// tiene castShadow/receiveShadow — el mapa/tubo/postes no, así que el costo
+// queda acotado al modelo y no hay que dimensionar una shadow camera para
+// toda la escena.
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 stage.appendChild(renderer.domElement);
+
+// v1.45 — Environment map procedural para el avión. ESTA es la causa de fondo
+// del "muy flat": el código viejo forzaba metalness=0 en todo el modelo
+// justamente PORQUE no había entorno que reflejar (un material metálico sin
+// envMap se ve casi negro). Sin nada de reflexión especular ambiental, el
+// material queda puramente difuso = color plano por cara, sin gradientes
+// dentro de cada superficie. Con un envMap, aunque sea un degradado simple
+// cielo/tierra, cada cara refleja distinto según su orientación y aparecen
+// esos gradientes suaves que leemos como volumen.
+// Se genera de un canvas chico (equirectangular: celeste arriba, horizonte,
+// marrón abajo — coherente con el cielo y el suelo de este visor) pasado por
+// PMREMGenerator, que es lo que three.js espera para reflexión difusa
+// correcta. No se usa scene.environment a propósito: eso lo aplicaría a TODA
+// la escena y cambiaría el look del mapa satelital y del tubo. Acá el envMap
+// se asigna material por material, solo a los del avión.
+function _crearEnvMapAvion(){
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0,0,0,64);
+  grad.addColorStop(0.00,'#eaf6fc'); // cenit, claro
+  grad.addColorStop(0.42,'#9fd0e8'); // cielo medio
+  grad.addColorStop(0.50,'#cbd3cf'); // banda de horizonte
+  grad.addColorStop(0.58,'#8a7c62'); // tierra iluminada
+  grad.addColorStop(1.00,'#4a4034'); // nadir, oscuro
+  g.fillStyle = grad; g.fillRect(0,0,c.width,c.height);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const env = pmrem.fromEquirectangular(tex).texture;
+  pmrem.dispose(); tex.dispose();
+  return env;
+}
+const ENV_AVION = _crearEnvMapAvion();
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 const sol = new THREE.DirectionalLight(0xffffff, 1.15);
 sol.position.set(500,800,300);
 scene.add(sol);
+scene.add(sol.target); // v1.45: el target se mueve con el avión (ver loop) para
+  // que la shadow camera —chica, ajustada al modelo— siempre lo encuadre. Como
+  // el offset luz→target se mantiene constante, la DIRECCIÓN de la luz no
+  // cambia, así que la iluminación del resto de la escena queda igual que antes.
+sol.castShadow = true;
+sol.shadow.mapSize.set(1024,1024);
+sol.shadow.bias = -0.0015; // evita el "shadow acne" (rayado) en superficies casi paralelas a la luz
+// v1.45: luz de relleno desde el lado opuesto al sol, tenue y fría. Sin esto,
+// las caras que no miran al sol quedan resueltas solo por el ambient/hemisferio
+// (luz pareja, sin dirección) y se leen chatas. Una segunda direccional suave
+// les devuelve gradiente y despega la silueta del fondo.
+const relleno = new THREE.DirectionalLight(0xbfd8ea, 0.35);
+relleno.position.set(-600,300,-450);
+scene.add(relleno);
+
+// v1.45: dirección del sol (unitaria) y distancia a la que se lo mantiene del
+// avión. La DIRECCIÓN es la misma que tenía el sol fijo en (500,800,300), así
+// que la iluminación de toda la escena queda idéntica a antes — lo único que
+// cambia es que ahora la luz se traslada con el avión, para que su shadow
+// camera (chica, ajustada al modelo) lo tenga siempre encuadrado.
+const SOL_DIR = new THREE.Vector3(500,800,300).normalize();
+let SOL_DISTANCIA_AVION = 300; // se recalcula al cargar el GLB, con el tamaño real
 // v10 FIX: con ambient 0.65 + hemisferio 0.9 sumados, la luz "pareja" (que no
 // varía según la orientación de cada cara) terminaba pesando más que la
 // direccional — el modelo se veía chato, como una mancha de color sin
@@ -1973,17 +2072,52 @@ new THREE.GLTFLoader().load('aeroplane.glb', (gltf)=>{
   // materiales de color no traen "metallicFactor" en el archivo, y el default
   // del estándar glTF cuando falta ese campo es 1.0 (METAL PURO). Sin un mapa
   // de entorno para reflejar, un metal puro se ve casi negro salvo un brillo
-  // puntual — por eso se veía tan oscuro pese a las luces. Forzamos
-  // metalness=0 (acabado mate tipo "juguete", no metálico).
+  // puntual — por eso se veía tan oscuro pese a las luces. En su momento se
+  // resolvió forzando metalness=0 (mate total).
+  // v1.45 — pedido de Daniel ("el color del avión es muy flat"): ese
+  // metalness=0 SIN envMap es justamente lo que dejaba el material puramente
+  // difuso, o sea color plano por cara, sin gradientes internos. Ahora que hay
+  // un envMap (ENV_AVION), se puede permitir algo de metalness y bajar la
+  // rugosidad: cada cara refleja el entorno de forma distinta según su
+  // orientación y aparecen los gradientes suaves que leemos como volumen.
+  // Los valores son conservadores a propósito (0.25 / 0.38): más metalness
+  // volvería al problema original de que el color propio del material pierde
+  // peso frente al reflejo (un avión rojo dejaría de verse rojo).
   modelo.traverse(o=>{
     if(o.isMesh && o.material){
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for(const mat of mats){
-        if(mat.metalness!==undefined) mat.metalness = 0;
-        if(mat.roughness!==undefined) mat.roughness = Math.min(mat.roughness, 0.55);
+        if(mat.metalness!==undefined) mat.metalness = 0.25;
+        if(mat.roughness!==undefined) mat.roughness = Math.min(mat.roughness, 0.38);
+        if('envMap' in mat){
+          mat.envMap = ENV_AVION;
+          mat.envMapIntensity = 1.0;
+        }
+        mat.needsUpdate = true; // el envMap cambia el shader compilado, hay que recompilar
       }
+      // Sombras propias: cada parte del avión proyecta y recibe (ala sobre
+      // fuselaje, etc). Va acá, en el traverse general, para que alcance
+      // también a los clones espejados de ala/tren/estabilizador creados más
+      // arriba — por eso este bloque queda DESPUÉS de esos clonados.
+      o.castShadow = true;
+      o.receiveShadow = true;
     }
   });
+
+  // v1.45: la shadow camera del sol se dimensiona recién acá, cuando ya se
+  // conoce el tamaño real del avión en unidades de mundo (AVION_LARGO_MUNDO
+  // sale del bounding box del GLB, arriba). Se la hace apenas más grande que
+  // el modelo: es una ortográfica, y cuanto más chica sea el área que cubre,
+  // más resolución efectiva tiene el shadow map sobre el avión.
+  const sombraLado = AVION_LARGO_MUNDO*0.9;
+  SOL_DISTANCIA_AVION = AVION_LARGO_MUNDO*6; // lejos como para que la luz llegue "paralela" al modelo
+  sol.shadow.camera.left   = -sombraLado;
+  sol.shadow.camera.right  =  sombraLado;
+  sol.shadow.camera.top    =  sombraLado;
+  sol.shadow.camera.bottom = -sombraLado;
+  sol.shadow.camera.near   = AVION_LARGO_MUNDO*0.5;
+  sol.shadow.camera.far    = SOL_DISTANCIA_AVION + AVION_LARGO_MUNDO*4;
+  sol.shadow.camera.updateProjectionMatrix();
 
   // Buje de la hélice (3 palas armadas como hijas de un mismo nodo) — si
   // aparece, lo giramos en el loop mientras se reproduce, de yapa.
@@ -2309,6 +2443,15 @@ function loop(now){
   const pos = new THREE.Vector3(m.x, ry(m.y) + RADIO_TUBO*1.3 + 4, m.z); // offset: se posa
     // ENCIMA del tubo en vez de quedar centrado en su eje (más pegado que antes).
   avion.position.copy(pos);
+  // v1.45: el sol acompaña al avión manteniendo dirección y distancia fijas —
+  // así su shadow camera (dimensionada al tamaño del modelo) lo encuadra
+  // siempre, sin necesidad de una ortográfica gigante que cubra todo el vuelo
+  // (que daría una resolución de sombra pésima). Al ser constante el vector
+  // luz→target, la dirección de iluminación no cambia: el resto de la escena
+  // se ve exactamente igual que antes.
+  sol.target.position.copy(pos);
+  sol.target.updateMatrixWorld();
+  sol.position.copy(pos).addScaledVector(SOL_DIR, SOL_DISTANCIA_AVION);
   // v4 FIX: el tubo se dibuja con la pendiente EXAGERADA (EXAG_VERT), pero acá se
   // usaba m.pitch real (mucho más suave) para orientar el avión — por eso no
   // acompañaba el ángulo dibujado del tubo. atan(EXAG·tan(pitch)) da el ángulo
