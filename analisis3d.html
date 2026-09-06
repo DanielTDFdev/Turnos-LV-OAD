@@ -2,6 +2,21 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.17 · Dos fixes reportados por Daniel sobre v1.16:
+  (1) "Se rompió la visualización" — pico altísimo en el tubo durante un
+  circuito/patrón de pista. La rosa de rumbos NO toca datos de altitud ni
+  geometría del tubo (es geometría aparte, agregada al final), así que no
+  puede ser la causa. La causa real es que la mediana de altitud (radio=2,
+  ventana de 5) solo vota en contra de UN outlier aislado por ventana — un
+  glitch de GPS de 2-3 lecturas seguidas (típico cerca de pista, multipath)
+  la pasa de largo. Se aplica la mediana DOS VECES: primero ancha (radio=4)
+  para poder votar en contra de clusters de varios puntos, después angosta
+  (radio=2) para limpiar bordes. (2) La rosa de rumbos no se veía: el radio
+  (extent*0.025) quedaba microscópico contra vuelos de varios km. Subido a
+  extent*0.12 con piso de 60m, más depthTest:false y renderOrder alto en
+  todas sus piezas para que nunca quede tapada por el suelo/grilla/tubo por
+  z-fighting.
+
   v1.16 · Pedido de Daniel: rosa de rumbos en el suelo, como referencia visual
   de norte. Se armó con geometría en coordenadas de mundo (aro + marcas
   radiales con LineLoop/LineSegments, letras N/E/S/O como sprites) centrada en
@@ -274,7 +289,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.16</span>
+    <span class="badge" id="ver-badge">v1.17</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -472,7 +487,16 @@ function procesarPuntos(puntosCrudos){
     }
     return out;
   }
-  const altitudDespicada = medianaEnVentana(base2.map(p=>p.y));
+  // v1.17: la mediana en una sola pasada con ventana de 5 (radio=2) solo vota
+  // en contra de UN outlier aislado por ventana — un glitch de GPS que dura
+  // 2-3 lecturas seguidas (típico cerca de pista, multipath) la puede pasar
+  // de largo, y eso es justo lo que reportó Daniel: un pico altísimo en el
+  // tubo en pleno circuito de pista. Se aplica la mediana DOS VECES: primero
+  // con ventana ancha (radio=4, 9 muestras) para tener margen de votar en
+  // contra de clusters de varios puntos corridos, después con la ventana
+  // angosta original (radio=2) para terminar de limpiar bordes que la
+  // primera pasada haya dejado escalonados.
+  const altitudDespicada = medianaEnVentana(medianaEnVentana(base2.map(p=>p.y), 4), 2);
 
   // Segundo paso de suavizado (pedido de Daniel): la mediana solo saca picos
   // aislados de a uno, pero no "empareja" el resto — el ruido normal del GPS
@@ -677,8 +701,14 @@ function _crearTexturaLetra(letra){
 }
 function construirRosaRumbos(){
   const g = new THREE.Group();
-  const radio = Math.max(20, extent*0.025);
-  const y = 0.09; // apenas por encima de la grilla (0.05), para que no compitan en el mismo plano (z-fighting)
+  // v1.17 FIX: Daniel reportó que no se veía — con radio=extent*0.025 quedaba
+  // microscópica contra vuelos de varios km (el resto de las referencias en
+  // el suelo, como camRadioLibre, usan multiplicadores 10-100x mayores). Subo
+  // el multiplicador y agrego un piso absoluto para vuelos cortos (patrones/
+  // circuitos), y fuerzo depthTest:false + renderOrder alto para que nunca
+  // quede tapada por el suelo/grilla/tubo por z-fighting.
+  const radio = Math.max(60, extent*0.12);
+  const y = 0.12; // apenas por encima de la grilla (0.05)
 
   // Aro exterior
   const puntosAro = [];
@@ -690,8 +720,9 @@ function construirRosaRumbos(){
   }
   const aro = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(puntosAro),
-    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.55})
+    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.75, depthTest:false})
   );
+  aro.renderOrder = 5;
   g.add(aro);
 
   // Marcas radiales cada 30°, más largas en los 4 cardinales
@@ -705,20 +736,22 @@ function construirRosaRumbos(){
   }
   const marcasLine = new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints(marcas),
-    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.55})
+    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.75, depthTest:false})
   );
+  marcasLine.renderOrder = 5;
   g.add(marcasLine);
 
   // Letras N/E/S/O como sprites (encaran siempre a cámara, no hace falta
   // orientarlas) ubicadas un poco afuera del aro, en su rumbo correspondiente.
   const cardinales = [['N',0],['E',90],['S',180],['O',270]];
-  const tamLetra = radio*0.42;
+  const tamLetra = radio*0.32;
   for(const [letra, hdgDeg] of cardinales){
     const a = hdgDeg*Math.PI/180;
-    const mat = new THREE.SpriteMaterial({map:_crearTexturaLetra(letra), transparent:true, depthWrite:false});
+    const mat = new THREE.SpriteMaterial({map:_crearTexturaLetra(letra), transparent:true, depthWrite:false, depthTest:false});
     const sprite = new THREE.Sprite(mat);
+    sprite.renderOrder = 6;
     sprite.scale.setScalar(tamLetra);
-    sprite.position.set(centro.x+radio*1.22*Math.sin(a), y+tamLetra*0.3, centro.z+radio*1.22*Math.cos(a));
+    sprite.position.set(centro.x+radio*1.18*Math.sin(a), y+tamLetra*0.3, centro.z+radio*1.18*Math.cos(a));
     g.add(sprite);
   }
   return g;
