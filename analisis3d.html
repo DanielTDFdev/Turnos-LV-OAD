@@ -2,6 +2,18 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.33 · FIX reportado por Daniel: haciendo zoom out del todo, en algún
+  momento desaparecía TODA la escena. Causa: camera.far quedó fijo en 20000
+  al crear la cámara, ANTES de calcular "extent" (el tamaño real del vuelo) —
+  pero camRadioLibre (qué tan lejos se puede alejar la cámara) puede crecer
+  hasta extent*6. Con un vuelo de más de ~3.3km de extent, extent*6 ya supera
+  20000: la cámara termina más lejos del centro que su propio far plane, y
+  three.js recorta (culling) toda la geometría por estar más allá del plano
+  de corte lejano — de ahí que "desapareciera todo" recién en vuelos largos y
+  solo alejando bastante, no siempre. camera.far ahora se recalcula después
+  de conocer el extent real (Math.max(20000, extent*8), con margen sobre el
+  máximo alcanzable por el zoom out).
+
   v1.32 · FIX reportado por Daniel: después de mover/rotar la cámara, la
   imagen del recorrido (el tubo) terminaba recortada contra el piso y/o el
   fondo. Causa: el material del tubo tiene transparent:true pero no tenía
@@ -536,7 +548,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.32</span>
+    <span class="badge" id="ver-badge">v1.33</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -912,6 +924,18 @@ for(const p of track){
 }
 const centro = new THREE.Vector3((bb.minX+bb.maxX)/2, 0, (bb.minZ+bb.maxZ)/2);
 const extent = Math.max(bb.maxX-bb.minX, bb.maxZ-bb.minZ);
+
+// v1.33 — FIX reportado por Daniel: haciendo zoom out del todo, en algún
+// momento desaparecía TODA la escena. Causa: camera.far quedó fijo en 20000
+// al crear la cámara (arriba, antes de conocer "extent"), pero camRadioLibre
+// (más abajo) puede crecer hasta extent*6 — con un vuelo de más de ~3.3km de
+// extent, extent*6 ya supera esos 20000, la cámara termina más lejos del
+// centro que su propio far plane, y three.js recorta (culling) TODA la
+// geometría por estar más allá del plano de corte lejano. Ahora far se
+// recalcula en función del extent real de ESTE vuelo, con margen sobre el
+// máximo alcanzable por el zoom out (extent*6) para no volver a quedar corto.
+camera.far = Math.max(20000, extent*8);
+camera.updateProjectionMatrix();
 
 // --- Suelo: textura de pasto/tierra generada por canvas (parches grandes de
 // color + speckle fino, tileable) — pedido de Daniel para que deje de verse
