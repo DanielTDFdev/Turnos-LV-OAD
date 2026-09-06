@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.26 · Pedido de Daniel: la grilla de referencia también se apaga junto
+  con el pasto cuando se activa el mapa satelital (mismo criterio que v1.23
+  con el suelo — compite visualmente y no aporta nada mientras hay imagen
+  real debajo).
+
   v1.25 · Dos pedidos de Daniel tras confirmar que v1.24 dejó todo bien
   orientado: (1) las LETRAS de la rosa quedaron espejadas (el
   transform:scaleX(-1) del canvas en v1.24 corrige las posiciones, pero
@@ -441,7 +446,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.25</span>
+    <span class="badge" id="ver-badge">v1.26</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -1141,6 +1146,8 @@ mapaSatChk.onchange = async ()=>{
   // directamente se apaga el pasto entero mientras el mapa está activo — no
   // hay forma de que compitan si uno de los dos ni siquiera se dibuja.
   suelo.visible = !mapaSatChk.checked;
+  grid.visible = !mapaSatChk.checked; // pedido de Daniel: la grilla también
+    // compite visualmente con el mapa satelital — se apaga junto con el pasto.
 };
 
 // --- Escala de color ---
