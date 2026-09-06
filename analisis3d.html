@@ -2,6 +2,33 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.47 · Pedido de Daniel: rosa de rumbos tipo "estrella de 8 puntas" con
+  efecto 3D, siguiendo una imagen de referencia (4 puntas cardinales rojas +
+  4 intercardinales azules más cortas, cada punta partida al medio en dos
+  tonos, con contorno oscuro).
+  Cómo se hace el efecto 3D sin luces: estos materiales son MeshBasicMaterial
+  a propósito (la rosa tiene que leerse igual sin importar la iluminación de
+  la escena ni la altura de cámara), así que el sombreado se calcula a mano.
+  Cada punta se parte longitudinalmente en dos triángulos y a cada mitad se le
+  asigna un tono. El cálculo del tono (tonoDe) MULTIPLICA dos factores:
+    - BISEL, fijo por lado (0.98 / 0.62): una mitad clara y otra oscura
+      siempre — es lo que hace ver el quiebre en cada punta.
+    - ORIENTACIÓN de la punta respecto de una luz fija: modula la punta
+      ENTERA, para que las del lado iluminado se vean más claras que las
+      opuestas (coherencia global, como un objeto real).
+  Los dos primeros intentos sumaban los factores en vez de multiplicarlos, y
+  fallaban por lo mismo: en las puntas donde los componentes se oponían, se
+  cancelaban y esa punta quedaba plana (verificado con Node: contraste de
+  0.039 en 45° con el segundo intento, 0.08 en 135° con el primero).
+  Multiplicando, la orientación escala ambas mitades por igual y no puede
+  anular el bisel. Verificado con Node sobre las 8 puntas: contraste mínimo
+  entre mitades 0.26 (bisel visible en todas), brillo máximo 0.997 (no quema
+  el color) y mínimo 0.448 (la cara oscura del rojo sigue siendo rojo, no
+  negro).
+  El aro exterior no está en la imagen de referencia, pero se conserva bien
+  tenue (opacidad 0.35): acá la rosa se lee sobre un mapa satelital y sirve
+  de marco para estimar rumbos intermedios a ojo.
+
   v1.46 · Pedido de Daniel: reemplazar los "postes" por una CORTINA continua, y
   renombrar el toggle a "Cortina de altura".
   Origen: Daniel notó que en este vuelo los postes ya se veían como una pared
@@ -907,7 +934,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.46</span>
+    <span class="badge" id="ver-badge">v1.47</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -1474,56 +1501,107 @@ function construirRosaRumbos(){
   const radio = Math.max(60, extent*0.12);
   const y = 0.12; // apenas por encima de la grilla (0.05)
 
-  // Aro exterior
+  // v1.47 — pedido de Daniel: rosa tipo "estrella de 8 puntas" con efecto 3D,
+  // siguiendo la referencia que mandó (4 puntas cardinales rojas + 4
+  // intercardinales azules, cada punta partida al medio en dos tonos).
+  // Cómo se logra el efecto 3D sin luces: estos materiales son
+  // MeshBasicMaterial (no reaccionan a la iluminación de la escena, a
+  // propósito — la rosa tiene que verse igual de nítida sin importar la hora
+  // del día del sol de la escena ni la altura de cámara). Así que el
+  // sombreado se calcula A MANO: cada punta se divide longitudinalmente en
+  // dos triángulos, y a cada mitad se le asigna un tono según cuánto "mira"
+  // hacia una dirección de luz fija. Eso es exactamente lo que hace ver el
+  // bisel: dos caras del mismo color base con brillo distinto según su
+  // orientación. Al ser una dirección FIJA en el mundo (no relativa a cada
+  // punta), la iluminación queda coherente en toda la rosa — las puntas del
+  // lado iluminado se ven claras de un lado y las del lado opuesto al revés,
+  // igual que un objeto real.
+  const LUZ_X = -0.55, LUZ_Z = 0.83; // dirección de la que "viene" la luz, normalizada abajo
+  const lm = Math.hypot(LUZ_X, LUZ_Z);
+  const luzX = LUZ_X/lm, luzZ = LUZ_Z/lm;
+
+  function tonoDe(colorBase, dirX, dirZ, lado){
+    // Dos factores que se MULTIPLICAN, no se suman — y esa es la clave:
+    //  - BISEL (por lado, fijo): una mitad clara y otra oscura, siempre. Es lo
+    //    que hace ver el quiebre 3D en cada punta.
+    //  - ORIENTACIÓN (según hacia dónde apunta la PUNTA respecto de la luz):
+    //    modula la punta ENTERA, dando coherencia global — las puntas del lado
+    //    iluminado se ven más claras que las del lado opuesto.
+    // Sumarlos (primer intento) fue un error: en las puntas donde los dos
+    // componentes se oponían, se cancelaban y esa punta quedaba plana
+    // (verificado con Node: contraste de 0.039 en 45°). Multiplicando, la
+    // orientación escala ambas mitades por igual y NUNCA puede anular el
+    // bisel, que queda garantizado en toda la rosa.
+    const orient = (dirX*luzX + dirZ*luzZ)*0.5 + 0.5;  // 0..1 según a dónde apunta
+    const bisel  = lado > 0 ? 0.98 : 0.62;
+    const modula = 0.72 + 0.30*orient;                  // 0.72..1.02
+    return new THREE.Color(colorBase).multiplyScalar(bisel*modula);
+  }
+
+  // Una punta = dos triángulos (mitad izquierda y mitad derecha) que comparten
+  // el eje centro→punta. Devuelve también los 4 vértices del contorno para
+  // dibujar el perfil oscuro por fuera, como en la referencia.
+  function agregarPunta(hdgDeg, largo, semiAncho, colorBase, orden){
+    const a = hdgDeg*Math.PI/180;
+    const dirX=Math.sin(a), dirZ=Math.cos(a);      // radial hacia afuera (a=0 → +Z = Norte)
+    const perpX=Math.cos(a), perpZ=-Math.sin(a);   // perpendicular, define el ancho de la base
+    const cx=centro.x, cz=centro.z;
+    const P  = [cx+dirX*largo,          y, cz+dirZ*largo];
+    const C  = [cx,                      y, cz];
+    const BI = [cx+perpX*semiAncho,      y, cz+perpZ*semiAncho];
+    const BD = [cx-perpX*semiAncho,      y, cz-perpZ*semiAncho];
+    // Cada mitad se pinta según su LADO (bisel garantizado) modulado por hacia
+    // dónde apunta la punta entera respecto de la luz (ver tonoDe).
+    const caras = [
+      {v:[C,BI,P], lado: 1},
+      {v:[C,BD,P], lado:-1},
+    ];
+    for(const cara of caras){
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cara.v.flat()),3));
+      const mat = new THREE.MeshBasicMaterial({
+        color: tonoDe(colorBase, dirX, dirZ, cara.lado),
+        side: THREE.DoubleSide, depthTest:false, transparent:true, opacity:0.95
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = orden;
+      g.add(mesh);
+    }
+    // Contorno oscuro del perfil de la punta (BI→P→BD→C), como en la
+    // referencia: separa la estrella del fondo y marca el quiebre del bisel.
+    const contorno = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(...BI), new THREE.Vector3(...P),
+        new THREE.Vector3(...BD), new THREE.Vector3(...C),
+      ]),
+      new THREE.LineBasicMaterial({color:0x11161f, transparent:true, opacity:0.55, depthTest:false})
+    );
+    contorno.renderOrder = orden+1;
+    g.add(contorno);
+  }
+
+  // Intercardinales primero (más cortas y finas, quedan "debajo"), después las
+  // cardinales encima — mismo apilado que la referencia.
+  const ROJO = 0xd8342b, AZUL = 0x8fadd8;
+  for(const hdg of [45,135,225,315]) agregarPunta(hdg, radio*0.66, radio*0.075, AZUL, 4);
+  for(const hdg of [0,90,180,270])   agregarPunta(hdg, radio,      radio*0.13,  ROJO, 6);
+
+  // Aro exterior: no está en la referencia, pero acá la rosa se lee sobre un
+  // mapa satelital y sirve de marco para estimar rumbos intermedios a ojo. Se
+  // deja bien tenue para no competir con la estrella.
   const puntosAro = [];
   for(let i=0; i<=64; i++){
     const a = (i/64)*Math.PI*2;
-    puntosAro.push(new THREE.Vector3(centro.x+radio*Math.sin(a), y, centro.z+radio*Math.cos(a)));
+    puntosAro.push(new THREE.Vector3(centro.x+radio*1.12*Math.sin(a), y, centro.z+radio*1.12*Math.cos(a)));
       // sin/cos así (no cos/sin) porque acá el ángulo "a" ya se usa como rumbo:
       // a=0 → (0,·,radio) = +Z = Norte; a=90° → (radio,·,0) = +X = Este.
   }
   const aro = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(puntosAro),
-    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.75, depthTest:false})
+    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.35, depthTest:false})
   );
-  aro.renderOrder = 5;
+  aro.renderOrder = 3;
   g.add(aro);
-
-  // Marcas radiales cada 30°, más largas en los 4 cardinales
-  const marcas = [];
-  for(let i=0; i<12; i++){
-    const a = (i/12)*Math.PI*2;
-    const esCardinal = i%3===0;
-    const rInt = radio*(esCardinal ? 0.80 : 0.90);
-    marcas.push(new THREE.Vector3(centro.x+rInt*Math.sin(a), y, centro.z+rInt*Math.cos(a)));
-    marcas.push(new THREE.Vector3(centro.x+radio*Math.sin(a), y, centro.z+radio*Math.cos(a)));
-  }
-  const marcasLine = new THREE.LineSegments(
-    new THREE.BufferGeometry().setFromPoints(marcas),
-    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.75, depthTest:false})
-  );
-  marcasLine.renderOrder = 5;
-  g.add(marcasLine);
-
-  // Triángulos indicadores en N (rojo) y S (blanco), como en una rosa de
-  // rumbos/VOR real — apuntan HACIA AFUERA (la punta más lejos del centro
-  // que la base), pedido de Daniel.
-  function construirTriangulo(hdgDeg, color){
-    const a = hdgDeg*Math.PI/180;
-    const dirX=Math.sin(a), dirZ=Math.cos(a);       // radial, hacia afuera
-    const perpX=Math.cos(a), perpZ=-Math.sin(a);    // perpendicular, para la base
-    const rPunta = radio*1.05, rBase = radio*0.75, semiAncho = radio*0.11;
-    const punta     = new THREE.Vector3(centro.x+dirX*rPunta, y, centro.z+dirZ*rPunta);
-    const baseIzq   = new THREE.Vector3(centro.x+dirX*rBase+perpX*semiAncho, y, centro.z+dirZ*rBase+perpZ*semiAncho);
-    const baseDer   = new THREE.Vector3(centro.x+dirX*rBase-perpX*semiAncho, y, centro.z+dirZ*rBase-perpZ*semiAncho);
-    const geo = new THREE.BufferGeometry().setFromPoints([punta, baseIzq, baseDer]);
-    const mat = new THREE.MeshBasicMaterial({color, side:THREE.DoubleSide, depthTest:false});
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.renderOrder = 5;
-    return mesh;
-  }
-  g.add(construirTriangulo(0, 0xd0342c));   // Norte, rojo
-  g.add(construirTriangulo(180, 0xf2f2f2)); // Sur, blanco
 
   // Letras N/E/S/O como sprites (encaran siempre a cámara, no hace falta
   // orientarlas) ubicadas un poco afuera del aro, en su rumbo correspondiente.
@@ -1533,9 +1611,9 @@ function construirRosaRumbos(){
     const a = hdgDeg*Math.PI/180;
     const mat = new THREE.SpriteMaterial({map:_crearTexturaLetra(letra), transparent:true, depthWrite:false, depthTest:false});
     const sprite = new THREE.Sprite(mat);
-    sprite.renderOrder = 6;
+    sprite.renderOrder = 8;
     sprite.scale.setScalar(tamLetra);
-    sprite.position.set(centro.x+radio*1.18*Math.sin(a), y+tamLetra*0.3, centro.z+radio*1.18*Math.cos(a));
+    sprite.position.set(centro.x+radio*1.30*Math.sin(a), y+tamLetra*0.3, centro.z+radio*1.30*Math.cos(a));
     g.add(sprite);
   }
   return g;
