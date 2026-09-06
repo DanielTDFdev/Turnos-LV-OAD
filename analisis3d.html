@@ -2,6 +2,27 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.21 · Dos pedidos de Daniel sobre el mapa satelital (v1.20 confirmó por
+  consola que los 16 tiles cargaron OK — no era CORS): (1) Offset de varias
+  millas al SE pese a que la orientación es correcta. Repasé la matemática
+  entera (ENU -> lat/lng -> tile -> lat/lng -> ENU) con un test aislado y da
+  resultados consistentes, así que no encontré un bug de fórmula — mi mejor
+  hipótesis ahora es que a zoom bajo (12, porque el presupuesto de tiles
+  anterior obligaba a bajar zoom para una cobertura chica) cada tile mide
+  ~5-6km en esta latitud, y el redondeo a tiles enteros puede correr el
+  CENTRO del mosaico hasta medio tile en cada eje — varias millas de offset
+  total es compatible con eso. Subí el presupuesto de tiles (36->100) para
+  poder mantener mejor zoom (tiles más chicos, menos margen de error de
+  redondeo) aun con más cobertura. Además agregué logs en consola (origen
+  lat0/lng0, esquinas reales del mosaico, URL del tile central) para separar
+  con certeza un eventual error de GPS/origen de un error mío de cálculo, por
+  si esto no alcanza a resolverlo del todo. (2) El mapa se veía como un
+  cuadrado chico y limitado — no puede ser literalmente infinito como el
+  pasto (son tiles reales, hay que pedirlos), pero se subió el margen de
+  cobertura de 15% a 75% del extent del vuelo, para que el borde no se note
+  salvo que la cámara libre se aleje mucho (ahí sigue apareciendo el pasto
+  de fondo).
+
   v1.20 · Dos fixes reportados por Daniel sobre el mapa satelital (v1.19):
   (1) Competía con el suelo de pasto (rayado/parpadeo tipo z-fighting) — a la
   escala de esta escena (kilómetros desde el origen) la precisión del depth
@@ -334,7 +355,7 @@
   </div>
   <header>
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.20</span>
+    <span class="badge" id="ver-badge">v1.21</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
   </header>
@@ -877,7 +898,9 @@ function _tileEsquinaLngLat(tx, ty, zoom){ // esquina noroeste del tile (tx,ty)
   return {lat: latRad*180/Math.PI, lng};
 }
 function _elegirZoomYTiles(latMin, latMax, lngMin, lngMax){
-  const TOPE_TILES = 36; // 6x6 — cuidar cantidad de pedidos de red
+  const TOPE_TILES = 100; // subido de 36 — con más cobertura (ver margen en
+    // construirMapaSatelital) hacen falta más tiles para mantener buen zoom;
+    // el costo es más pedidos de red al activar el toggle.
   let zoom = 17; // maxNativeZoom de World_Imagery en el resto de la app
   for(; zoom>=10; zoom--){
     const no = _lngLatATileFrac(lngMin, latMax, zoom);
@@ -891,8 +914,13 @@ function _elegirZoomYTiles(latMin, latMax, lngMin, lngMax){
   return {zoom:zoom+1, txMin:Math.floor(no.x), txMax:Math.floor(se.x), tyMin:Math.floor(no.y), tyMax:Math.floor(se.y)};
 }
 async function construirMapaSatelital(){
-  // bbox lat/lng del vuelo, con 15% de margen, invirtiendo la proyección ENU
-  const margen = extent*0.15;
+  // bbox lat/lng del vuelo, invirtiendo la proyección ENU. Margen subido de
+  // 15% a 75% (pedido de Daniel: que no se vea como un cuadrado chico y
+  // limitado) — cubre un área bastante más allá de la traza en sí, para que
+  // no se note el borde salvo que la cámara libre se aleje mucho. No puede
+  // ser realmente "infinito" como el pasto (son tiles reales, hay que
+  // pedirlos), así que el pasto se ve más allá de este radio.
+  const margen = extent*0.75;
   const xMin=bb.minX-margen, xMax=bb.maxX+margen, zMin=bb.minZ-margen, zMax=bb.maxZ+margen;
   const lngDe = x => lng0 + x/(R*Math.cos(lat0Rad))*180/Math.PI;
   const latDe = z => lat0 + z/R*180/Math.PI;
@@ -941,6 +969,19 @@ async function construirMapaSatelital(){
   const xEste  = R*(se.lng-lng0)*Math.PI/180*Math.cos(lat0Rad);
   const zNorte = R*(no.lat-lat0)*Math.PI/180;
   const zSur   = R*(se.lat-lat0)*Math.PI/180;
+
+  // DEBUG (Daniel reportó offset de varias millas al SE) — con esto en
+  // consola se puede: (1) pegar lat0/lng0 en Google Maps y confirmar si el
+  // ORIGEN del vuelo (primer punto GPS crudo) está realmente donde debería,
+  // y (2) abrir la URL del tile central directo en el navegador para
+  // confirmar si ArcGIS está devolviendo la imagen de la zona correcta —
+  // separa un posible error de GPS/origen de un posible error mío de cálculo
+  // de qué tile pedir.
+  console.log('[mapaSat] origen del vuelo (lat0,lng0):', lat0, lng0);
+  console.log('[mapaSat] esquina NO real:', no, '/ esquina SE real:', se);
+  const tyMedio = Math.round((tyMin+tyMax)/2), txMedio = Math.round((txMin+txMax)/2);
+  console.log('[mapaSat] tile central (abrir para ver qué zona muestra):',
+    `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${tyMedio}/${txMedio}`);
 
   const tex = new THREE.CanvasTexture(canvas);
   // La malla rota -90° en X igual que el suelo/grilla/rosa: con flipY por
