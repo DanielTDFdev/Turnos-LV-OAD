@@ -2,6 +2,34 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.46 · Pedido de Daniel: reemplazar los "postes" por una CORTINA continua, y
+  renombrar el toggle a "Cortina de altura".
+  Origen: Daniel notó que en este vuelo los postes ya se veían como una pared
+  continua y le gustó, pero preguntó por qué. Era accidental: el ancho de cada
+  cinta escalaba con extent (extent*0.01488) mientras la separación entre
+  postes quedaba fija en ~80m, así que a partir de ~5.4km de extent el ancho
+  superaba la separación y las cintas se solapaban. Ese solapamiento no
+  buscado traía tres defectos: la opacidad se ACUMULABA (la pared quedaba más
+  densa donde se pisaban más capas, no pareja), el borde superior quedaba
+  dentado (cada cinta aproximaba la pendiente con su propia inclinación, en
+  vez de seguir el tubo), y se dibujaban cientos de meshes con material propio.
+  Ahora es UNA superficie continua (construirCortina): dos vértices por cada
+  punto del track (borde superior sobre el tubo, borde inferior en el suelo) y
+  dos triángulos por cada par de puntos consecutivos. Resultado: opacidad
+  uniforme, borde superior que sigue EXACTAMENTE el tubo (comparte los mismos
+  puntos, sin aproximar), y un solo draw call.
+  Detalles: color por vértice con el mismo criterio de siempre
+  (Altitud/Velocidad), con el borde inferior oscurecido al 50% para dar
+  profundidad contra el suelo; el umbral de 3m que evitaba postes falsos por
+  ruido de GPS en rodaje ahora colapsa la altura a 0 en vez de saltear el
+  punto (saltearlo abriría un hueco en una malla continua); índices Uint32
+  cuando el track supera los 32767 puntos (Uint16 no alcanzaría); y el modo
+  progresivo pasa a cortarse con setDrawRange como el tubo, en vez de
+  prender/apagar objetos uno por uno — los índices siguen el orden del track,
+  así que el corte cae en el mismo punto que el del tubo. Verificado con Node
+  que los índices quedan en rango, que cada quad usa 4 vértices distintos y
+  que el corte progresivo no desborda.
+
   v1.45 · Pedido de Daniel: "el color del avión es muy flat, ¿se puede generar
   un shader que contenga más luces y sombras?". No hizo falta un shader
   custom (frágil de mantener y difícil de integrar con el sistema de luces de
@@ -879,7 +907,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.45</span>
+    <span class="badge" id="ver-badge">v1.46</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -910,7 +938,7 @@
         </div>
         <div class="config-seccion toggles">
           <label class="toggle"><input type="checkbox" id="seguir" checked><span class="track"></span>Seguir avión</label>
-          <label class="toggle"><input type="checkbox" id="postes" checked><span class="track"></span>Postes verticales</label>
+          <label class="toggle"><input type="checkbox" id="cortina" checked><span class="track"></span>Cortina de altura</label>
           <label class="toggle"><input type="checkbox" id="progresivo" checked><span class="track"></span>Dibujar a medida que avanza</label>
           <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
           <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
@@ -2144,62 +2172,72 @@ const lineaVertGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3
 const lineaVert = new THREE.Line(lineaVertGeo, new THREE.LineDashedMaterial({color:0x3a2c1e, dashSize:6, gapSize:4}));
 scene.add(lineaVert);
 
-// --- Postes verticales (opcionales), ahora como CINTAS semitransparentes con
-// ancho (antes eran líneas de 1px, casi invisibles) — cada una toma el color
-// que tendría el tubo en ese punto (según el modo Altitud/Velocidad activo), y
-// se orienta ("billboard") hacia la cámara en cada frame para que siempre se
-// vean de frente en vez de a veces de canto. ---
-let postesGroup = null;
-function construirPostes(){
-  const g = new THREE.Group();
-  const numPostes = Math.max(30, Math.round(extent/80)); // FIX: antes 50 fijo
-    // sin importar el largo del vuelo — con un vuelo real más largo que el
-    // track sintético, quedaban muy espaciados. Ahora la cantidad escala con
-    // extent, la densidad se mantiene pareja sin importar la duración.
-  const espaciado = Math.max(1, Math.round(track.length/numPostes));
-  const ancho = Math.max(20, extent*0.01488); // +55% más que el valor anterior (13 / 0.0096)
+// --- Cortina de altura (opcional): UNA sola superficie continua que baja desde
+// la traza hasta el suelo, coloreada por vértice con el mismo criterio que el
+// tubo (Altitud/Velocidad).
+// v1.46 — reemplaza los "postes" individuales (cintas sueltas, una por punto
+// muestreado). Daniel notó que en vuelos largos esas cintas ya se veían como
+// una pared continua y le gustó el efecto, pero era accidental: el ancho de
+// cada cinta escalaba con extent (extent*0.01488) mientras la separación
+// entre postes quedaba fija en ~80m, así que a partir de ~5.4km de extent el
+// ancho superaba la separación y las cintas se solapaban. Eso traía tres
+// defectos propios de un solapamiento no buscado: la opacidad se ACUMULABA
+// (la "pared" quedaba más densa donde se pisaban más capas, en vez de
+// pareja), el borde superior quedaba dentado (cada cinta con su propia
+// inclinación, aproximando la pendiente en vez de seguirla), y se dibujaban
+// cientos de meshes con su propio material cada uno.
+// Como superficie única: opacidad uniforme (una sola capa en cada punto), el
+// borde superior sigue EXACTAMENTE el tubo (comparte los mismos puntos del
+// track, sin aproximar pendiente), y es un solo draw call en vez de cientos.
+let cortinaMesh = null, cortinaGeo = null;
+function construirCortina(){
+  const N = track.length;
   const [min,max] = rangoColor();
-  for(let i=0;i<track.length;i+=espaciado){
-    const p=track[i];
-    // Umbral sobre la altitud REAL (no ry(), que la exagera 4x) — con el
-    // ruido normal del GPS en rodaje (unos pocos metros de variación falsa),
-    // un umbral chico sobre la altura YA exagerada dejaba pasar postes en el
-    // piso. 3m (~10ft) es un piso razonable para considerar "en el aire" y de
-    // paso evita gastar recursos dibujando postes en rodaje/recién aterrizado.
-    if(p.y < 3) continue;
-    const alturaRender = ry(p.y);
-    // Trapecio en vez de rectángulo: el borde superior sigue la inclinación
-    // real del tubo en ESE punto (mismo criterio que el pitch renderizado del
-    // avión — EXAG_VERT exagera la pendiente igual que exagera la altura),
-    // en vez de un corte plano a 90° que no acompaña la subida/bajada del
-    // tubo. El ancho de la cinta ya está alineado con la dirección de avance
-    // (ver rotation.y más abajo) — el lado derecho (+ancho/2) es "adelante",
-    // el izquierdo "atrás", por eso la inclinación se reparte con signos
-    // opuestos a cada lado.
-    const pitchLocal = Math.atan(EXAG_VERT*Math.tan(p.pitch));
-    const inclinacion = Math.tan(pitchLocal)*(ancho/2);
-    const alturaDer = alturaRender+inclinacion, alturaIzq = alturaRender-inclinacion;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-      -ancho/2, 0,         0,
-       ancho/2, 0,         0,
-       ancho/2, alturaDer, 0,
-      -ancho/2, alturaIzq, 0,
-    ]), 3));
-    geo.setIndex([0,1,2, 0,2,3]);
-    const color = colorPara(valorColor(p), min, max);
-    const mat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.32, side:THREE.DoubleSide, depthWrite:false});
-    const cinta = new THREE.Mesh(geo, mat);
-    cinta.position.set(p.x, 0, p.z);
-    cinta.rotation.y = (p.hdgDeg-90)*Math.PI/180; // v13 FIX: usar el mismo ángulo
-      // que el yaw del avión alineaba la NORMAL de la cinta con la traza (por eso
-      // se veía de canto, transversal) — lo que hay que alinear es su eje de
-      // ANCHO, que en una PlaneGeometry es el eje X local, 90° rotado respecto
-      // de la normal (Z local). De ahí el -90 extra.
-    cinta.userData.idx = i; // v1.30: índice de punto real de este poste, para el modo progresivo
-    g.add(cinta);
+  const posiciones = new Float32Array(N*2*3);
+  const colores    = new Float32Array(N*2*3);
+  for(let i=0;i<N;i++){
+    const p = track[i];
+    // Mismo umbral de 3m que usaban los postes: con el ruido normal del GPS en
+    // rodaje, sin esto la cortina levantaría unos metros de "pared" falsa a lo
+    // largo de todo el carreteo. Acá, en vez de saltear el punto (que en una
+    // superficie continua abriría un hueco), se colapsa la altura a 0: la
+    // cortina simplemente desaparece contra el piso, sin cortar la malla.
+    const alturaRender = p.y < 3 ? 0 : ry(p.y);
+    const c = colorPara(valorColor(p), min, max);
+    const vTop = i*6, vBot = i*6+3;
+    posiciones[vTop]   = p.x; posiciones[vTop+1] = alturaRender; posiciones[vTop+2] = p.z;
+    posiciones[vBot]   = p.x; posiciones[vBot+1] = 0;            posiciones[vBot+2] = p.z;
+    colores[vTop]   = c.r;      colores[vTop+1] = c.g;      colores[vTop+2] = c.b;
+    // El borde inferior va más oscuro: da sensación de profundidad/sombra
+    // contra el suelo y evita que la cortina se lea como una mancha plana de
+    // color. Se oscurece el color en vez de bajar el alpha por vértice porque
+    // el alpha por vértice necesitaría un attribute de 4 componentes, que no
+    // todos los materiales básicos interpretan igual.
+    colores[vBot]   = c.r*0.5;  colores[vBot+1] = c.g*0.5;  colores[vBot+2] = c.b*0.5;
   }
-  return g;
+  // Dos triángulos por cada par de puntos consecutivos. El orden de los
+  // índices sigue el avance del track, que es lo que permite el corte
+  // progresivo por setDrawRange (ver aplicarRevelado).
+  const totalIdx = (N-1)*6;
+  const usarUint32 = N*2 > 65535; // Uint16 no alcanza para tracks largos
+  const indices = usarUint32 ? new Uint32Array(totalIdx) : new Uint16Array(totalIdx);
+  for(let i=0;i<N-1;i++){
+    const a=i*2, b=i*2+1, c=(i+1)*2, d=(i+1)*2+1; // a,c = borde superior; b,d = borde inferior
+    const o=i*6;
+    indices[o]=a; indices[o+1]=b; indices[o+2]=d;
+    indices[o+3]=a; indices[o+4]=d; indices[o+5]=c;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(posiciones,3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(colores,3));
+  geo.setIndex(new THREE.BufferAttribute(indices,1));
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors:true, transparent:true, opacity:0.34,
+    side:THREE.DoubleSide, // se ve desde los dos lados: la cámara puede quedar de cualquier lado de la traza
+    depthWrite:false       // mismo criterio que el tubo (v1.32): material transparente que no escribe profundidad
+  });
+  cortinaGeo = geo;
+  return new THREE.Mesh(geo, mat);
 }
 // v1.39 — botón ⚙: abre/cierra el bottom-sheet de ajustes (toggles + leyenda
 // de color, antes clavados en el HUD permanentemente — ver nota de CSS en
@@ -2215,18 +2253,18 @@ btnConfig.onclick = abrirConfig;
 document.getElementById('btn-config-cerrar').onclick = cerrarConfig;
 configBackdrop.onclick = cerrarConfig; // tocar afuera del panel también cierra
 
-const postesChk = document.getElementById('postes');
+const cortinaChk = document.getElementById('cortina');
 const humoChk = document.getElementById('humo');
 const progresivoChk = document.getElementById('progresivo');
-postesChk.onchange = ()=>{
-  if(postesChk.checked){
-    if(!postesGroup){ postesGroup=construirPostes(); scene.add(postesGroup); }
-    postesGroup.visible=true;
-  } else if(postesGroup){
-    postesGroup.visible=false;
+cortinaChk.onchange = ()=>{
+  if(cortinaChk.checked){
+    if(!cortinaMesh){ cortinaMesh=construirCortina(); scene.add(cortinaMesh); }
+    cortinaMesh.visible=true;
+  } else if(cortinaMesh){
+    cortinaMesh.visible=false;
   }
 };
-if(postesChk.checked){ postesGroup=construirPostes(); scene.add(postesGroup); } // arranca activado
+if(cortinaChk.checked){ cortinaMesh=construirCortina(); scene.add(cortinaMesh); } // arranca activado
 
 // v1.30 — aplica el corte de "dibujar a medida que avanza": recibe el índice
 // de punto (fraccional, por TIEMPO real — ver idxFraccEnTiempo) alcanzado en
@@ -2240,10 +2278,14 @@ function aplicarRevelado(idxF){
     const u = cvTaU(cvT);
     const segmentosAMostrar = Math.min(TUBULAR_SEGMENTS, Math.max(0, Math.round(u*TUBULAR_SEGMENTS)));
     if(tuboGeoActual) tuboGeoActual.setDrawRange(0, segmentosAMostrar*RADIAL_SEGMENTS*6);
-    if(postesGroup) postesGroup.children.forEach(c=>{ c.visible = c.userData.idx <= idxF; });
+    // v1.46: la cortina es un solo mesh — se corta con setDrawRange igual que
+    // el tubo, en vez de prender/apagar cientos de objetos. Sus índices siguen
+    // el orden del track (6 por cada par de puntos consecutivos), así que el
+    // corte cae exactamente en el mismo punto que el del tubo.
+    if(cortinaGeo) cortinaGeo.setDrawRange(0, Math.max(0, Math.floor(idxF))*6);
   } else {
     if(tuboGeoActual) tuboGeoActual.setDrawRange(0, Infinity);
-    if(postesGroup) postesGroup.children.forEach(c=>{ c.visible = true; });
+    if(cortinaGeo) cortinaGeo.setDrawRange(0, Infinity);
   }
 }
 
@@ -2359,7 +2401,7 @@ playBtn.onclick = ()=>{ playing=!playing; playBtn.textContent = playing?'❚❚'
 velSel.onchange = ()=> speed=parseFloat(velSel.value);
 colorSel.onchange = ()=>{
   modoColor=colorSel.value; reconstruirTubo(); actualizarLeyenda();
-  if(postesGroup){ scene.remove(postesGroup); postesGroup=construirPostes(); postesGroup.visible=postesChk.checked; scene.add(postesGroup); }
+  if(cortinaMesh){ scene.remove(cortinaMesh); cortinaMesh=construirCortina(); cortinaMesh.visible=cortinaChk.checked; scene.add(cortinaMesh); }
 };
 slider.oninput = ()=>{ playing=false; playBtn.textContent='▶'; currentT = (slider.value/1000)*DUR; };
 
