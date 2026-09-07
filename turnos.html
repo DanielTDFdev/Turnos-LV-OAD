@@ -1,5 +1,22 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.63
+  CAMBIOS : FIX en "Mi Disponibilidad" reportado por Daniel (mismo bug ya
+            corregido antes en vuelo.html v5.80): el chequeo de turnos
+            aprobados en renderDisponibilidad()/dispToggle() no filtraba por
+            instructor — reservasPorFechaHora y el conflicto de dispToggle
+            contaban CUALQUIER turno aprobado en LV-OAD ese horario, sin
+            importar qué instructor lo aprobó. Un instructor podía ver el ✈
+            de un alumno que no era suyo y, peor, si desmarcaba ese slot,
+            terminaba cancelando el vuelo de OTRO instructor sin darse
+            cuenta (con su propio nombre pisando el de "quien canceló").
+            Fix: ambas funciones ahora exigen (r.aprobado_por||r.instructor)
+            ===session.nombre. Mensaje de confirmación en dispToggle
+            actualizado a "Tenés un turno TUYO aprobado..." para que quede
+            explícito. No se tocó el indicador visual (color de fondo del
+            checkbox) — eso quedó solo del lado de vuelo.html (aro +✓
+            separado del color), acá no se pidió.
+
   VERSION : 8.62
   CAMBIOS : FIX reportado por Daniel: en "Mis Turnos" los botones de filtro
             (TODOS/PENDIENTE/APROBADO/CANCELADO/VENCIDO/VOLADO) y el de orden
@@ -4295,7 +4312,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.62</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.63</div>
   </div>
 
 </div>
@@ -12203,7 +12220,13 @@ async function renderDisponibilidad(){
   const reservasPorFechaHora={};
   if(todasReservas){
     Object.values(todasReservas).forEach(r=>{
-      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&fechas.includes(r.fecha)){
+      // v8.63 FIX (reportado por Daniel, mismo bug ya corregido en vuelo.html v5.80):
+      // antes no filtraba por instructor — mostraba (y dispToggle podía cancelar)
+      // el turno aprobado por CUALQUIER instructor en LV-OAD ese horario, no solo
+      // el propio. Ahora solo cuenta como "hay reserva" acá si la aprobó ESTE
+      // instructor (aprobado_por||instructor === session.user real, comparado
+      // contra session.nombre porque así se guarda ese campo en /reservas).
+      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&fechas.includes(r.fecha)&&(r.aprobado_por||r.instructor)===session.nombre){
         const k=r.fecha+'|'+r.hora;
         if(!reservasPorFechaHora[k]) reservasPorFechaHora[k]=[];
         reservasPorFechaHora[k].push(r);
@@ -12331,12 +12354,14 @@ window.dispToggle=async function(cb){
   // Si se está desmarcando, verificar conflictos con turnos aprobados
   if(!cb.checked){
     const todasReservas=await fbGet('reservas');
+    // v8.63 FIX: mismo filtro por instructor propio que arriba — antes
+    // encontraba (y ofrecía cancelar) el turno de CUALQUIER instructor.
     const conflicto=todasReservas&&Object.entries(todasReservas).find(([,r])=>
-      r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===ds&&r.hora===h
+      r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===ds&&r.hora===h&&(r.aprobado_por||r.instructor)===session.nombre
     );
     if(conflicto){
       const [rk,r]=conflicto;
-      const ok=confirm(`⚠ Hay un turno aprobado en este horario:\n  ${r.fecha} ${r.hora}hs — ${r.nombre}\n\n¿Cancelarlo y quitar tu disponibilidad?`);
+      const ok=confirm(`⚠ Tenés un turno TUYO aprobado en este horario:\n  ${r.fecha} ${r.hora}hs — ${r.nombre}\n\n¿Cancelarlo y quitar tu disponibilidad?`);
       if(!ok){cb.checked=true;return;}
       await fbUpdate('reservas/'+rk,{estado:'cancelado',instructor:session.nombre,cancelado_por:session.nombre,cancelado_rol:'instructor',ts_cancelacion:serverTimestamp(),obs_cancelacion:'Instructor sin disponibilidad en este horario'});
       mailCancel(r);
