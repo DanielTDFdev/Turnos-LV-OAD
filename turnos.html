@@ -1,5 +1,16 @@
 <!--
   ARCHIVO : turnos.html
+  VERSION : 8.64
+  CAMBIOS : FIX al fix v8.63 (mismo caso ya corregido en vuelo.html v5.81):
+            el filtro por instructor propio quedó en el lugar equivocado —
+            en renderDisponibilidad(), la parte INFORMATIVA (✈+alumno). Eso
+            hacía desaparecer del todo los turnos aprobados por OTRO
+            instructor, cuando ese dato sigue siendo útil (hay una sola
+            LV-OAD, importa igual quién vuela). Se vuelve a mostrar sin
+            filtrar en renderDisponibilidad(); el filtro por instructor queda
+            solo en dispToggle() (ya estaba bien puesto ahí desde v8.63), que
+            es donde real importa: decidir si ofrecer cancelar.
+
   VERSION : 8.63
   CAMBIOS : FIX en "Mi Disponibilidad" reportado por Daniel (mismo bug ya
             corregido antes en vuelo.html v5.80): el chequeo de turnos
@@ -4312,7 +4323,7 @@ input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--cy
   <div class="hero-text">
     <div class="hero-aeroclub">Aeroclub Río Grande</div>
     <div class="hero-callsign" id="hero-callsign">TURNOS</div>
-    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.63</div>
+    <div class="hero-sub">▸ RESERVA DE AERONAVES v8.64</div>
   </div>
 
 </div>
@@ -12220,13 +12231,13 @@ async function renderDisponibilidad(){
   const reservasPorFechaHora={};
   if(todasReservas){
     Object.values(todasReservas).forEach(r=>{
-      // v8.63 FIX (reportado por Daniel, mismo bug ya corregido en vuelo.html v5.80):
-      // antes no filtraba por instructor — mostraba (y dispToggle podía cancelar)
-      // el turno aprobado por CUALQUIER instructor en LV-OAD ese horario, no solo
-      // el propio. Ahora solo cuenta como "hay reserva" acá si la aprobó ESTE
-      // instructor (aprobado_por||instructor === session.user real, comparado
-      // contra session.nombre porque así se guarda ese campo en /reservas).
-      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&fechas.includes(r.fecha)&&(r.aprobado_por||r.instructor)===session.nombre){
+      // v8.64 FIX al fix v8.63: el filtro por instructor propio quedó en el
+      // lugar equivocado (acá, la parte INFORMATIVA). Eso hacía desaparecer
+      // el ✈+alumno de turnos aprobados por OTRO instructor, cuando ese dato
+      // sigue siendo útil (hay una sola LV-OAD). Se vuelve a mostrar sin
+      // filtrar; el filtro por instructor se movió a dispToggle(), que es
+      // donde realmente importa (ahí sí hay riesgo de cancelar algo ajeno).
+      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&fechas.includes(r.fecha)){
         const k=r.fecha+'|'+r.hora;
         if(!reservasPorFechaHora[k]) reservasPorFechaHora[k]=[];
         reservasPorFechaHora[k].push(r);
@@ -12354,8 +12365,8 @@ window.dispToggle=async function(cb){
   // Si se está desmarcando, verificar conflictos con turnos aprobados
   if(!cb.checked){
     const todasReservas=await fbGet('reservas');
-    // v8.63 FIX: mismo filtro por instructor propio que arriba — antes
-    // encontraba (y ofrecía cancelar) el turno de CUALQUIER instructor.
+    // v8.63/v8.64: filtro por instructor propio — ACÁ es donde corresponde
+    // (decide si ofrecer cancelar), no en la parte informativa de arriba.
     const conflicto=todasReservas&&Object.entries(todasReservas).find(([,r])=>
       r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===ds&&r.hora===h&&(r.aprobado_por||r.instructor)===session.nombre
     );

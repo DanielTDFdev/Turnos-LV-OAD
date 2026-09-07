@@ -2,6 +2,19 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.81 · 2026-09-07
+  FIX al fix v5.80 (Daniel probó y notó que se perdía el nombre del alumno en
+  los slots con turno de otro instructor). v5.80 filtró por instructor propio
+  en el lugar equivocado: en renderDisp(), que es la parte INFORMATIVA (mostrar
+  ✈+nombre). Eso hizo desaparecer del todo los turnos ajenos, cuando el dato
+  sigue siendo útil (hay una sola LV-OAD — importa igual quién vuela). El
+  filtro por instructor se mueve a dispToggleVuelo(): ahí sí importa, porque
+  es donde se decide si ofrecer cancelar. Resultado: el chip vuelve a mostrar
+  CUALQUIER turno aprobado ahí (info completa), pero al desmarcar tu
+  disponibilidad solo se ofrece cancelar (con aviso y mail) si el turno es
+  tuyo — si es de otro instructor, se quita tu disponibilidad sin tocar esa
+  reserva, sin preguntar nada.
+
   v5.80 · 2026-09-07
   Dos fixes a "Mi Disponibilidad" (v5.79) reportados por Daniel al probarla:
   1) El chip de un horario con vuelo aprobado no dejaba claro si ADEMÁS
@@ -2024,7 +2037,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.80'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.81'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -4624,11 +4637,14 @@ async function renderDisp(){
   try{
     const todas=(await get(ref(db,'reservas'))).val()||{};
     Object.entries(todas).forEach(([k,r])=>{
-      // v5.80 FIX: filtrar por instructor propio (aprobado_por||instructor===
-      // session.nombre). Antes mostraba/afectaba turnos aprobados por CUALQUIER
-      // instructor en LV-OAD ese horario — un instructor podía terminar viendo
-      // ✈ y, peor, cancelando el vuelo de otro instructor sin darse cuenta.
-      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===fecha&&(r.aprobado_por||r.instructor)===session.nombre) reservasHoy[r.hora]={...r,key:k};
+      // v5.81 FIX (Daniel: "perdimos el nombre del alumno"): v5.80 filtraba
+      // por instructor propio ACÁ, en la parte informativa — de más. El dato
+      // de "hay un vuelo aprobado a esta hora" es útil sea de quien sea (hay
+      // UNA sola LV-OAD, así que importa igual si el que vuela es otro
+      // instructor). Se vuelve a mostrar sin filtrar; el filtro por
+      // instructor se movió a dispToggleVuelo(), que es donde realmente
+      // importa (ahí sí hay riesgo de cancelar un turno ajeno).
+      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===fecha) reservasHoy[r.hora]={...r,key:k};
     });
   }catch{}
 
@@ -4668,7 +4684,11 @@ async function dispToggleVuelo(btn,reservasHoy){
 
   if(estabaMarcado){
     const conflicto=reservasHoy?.[h];
-    if(conflicto){
+    // v5.81: el filtro por instructor propio vive ACÁ (no en el render) —
+    // si el turno es de otro instructor, no se ofrece cancelarlo ni se avisa
+    // nada: se quita tu disponibilidad y listo, sin tocar esa reserva.
+    const esPropio=conflicto&&(conflicto.aprobado_por||conflicto.instructor)===session.nombre;
+    if(esPropio){
       const ok=confirm(`⚠ Tenés un turno TUYO aprobado en este horario:\n  ${fmtFecha(fecha)} ${h}hs — ${conflicto.nombre}\n\n¿Cancelarlo y quitar tu disponibilidad?`);
       if(!ok) return;
       try{
