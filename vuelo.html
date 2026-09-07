@@ -2,6 +2,26 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.79 · 2026-09-07
+  Nueva pestaña "Disp." — pedido de Daniel: "Mi Disponibilidad" (la que ya
+  existe en turnos.html) también accesible desde la app que usan solo los
+  instructores, "bien celular friendly". Mismo modelo de datos que
+  turnos.html (/disponibilidad/{fecha}/{instructorKey}, array de horas;
+  /instructores/{instKey}.vacaciones para el toggle de vacaciones) — misma
+  data, cero duplicación de datos. Lo que SÍ es nuevo es la UI: en vez de la
+  tabla-semana de turnos.html (7 columnas, scroll horizontal, celdas chicas —
+  mal en celular), acá es un día a la vez con <input type=date> nativo y
+  chips grandes tocables por horario. Decisión explícita, discutida con
+  Daniel: no reusar el motor de calendario/disponibilidad de turnos.html
+  (evaluado y descartado — ver arquitectura de turnos.html, "no separar el
+  motor de turnos"), sino una implementación propia y chica acá, leyendo/
+  escribiendo los mismos nodos de Firebase. Al desmarcar un slot con turno
+  aprobado en conflicto, mismo comportamiento que turnos.html: confirma,
+  cancela la reserva y avisa al alumno por mail (Cuenta A EmailJS, agregada a
+  este archivo por primera vez solo para este caso — antes vuelo.html no
+  mandaba mails). Solo para LV-OAD (única aeronave de instrucción), mismo
+  alcance que la pantalla equivalente en turnos.html.
+
   v5.78 · 2026-09-06
   Revisión pedida por Daniel: "¿qué pasa si el alumno empieza su vuelo desde
   vuelo-piloto.html con GPS y dos segundos después el instructor hace lo
@@ -1173,6 +1193,7 @@
      touchRotate) en el L.map(...) más abajo — nada de eso cambia. -->
 <script src="leaflet-rotate.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
 
@@ -1260,6 +1281,19 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 .tab-btn.active[data-tab="pendientes"]{color:var(--amber);text-shadow:0 0 8px rgba(240,165,0,.9);}
 .tab-btn.active[data-tab="libro"]{color:var(--green);text-shadow:0 0 8px rgba(34,197,94,.9);}
 .tab-btn.active[data-tab="reporte"]{color:var(--blue);text-shadow:0 0 8px rgba(77,159,255,.9);}
+.tab-btn.active[data-tab="disp"]{color:var(--red);text-shadow:0 0 8px rgba(239,68,68,.9);}
+
+/* v5.79: "Mi Disponibilidad" — grilla de horas como chips táctiles en vez de la
+   tabla-semana de turnos.html (esa tabla exige scroll horizontal y celdas chicas,
+   mal en celular). Un día a la vez con <input type=date> nativo + chips grandes
+   apilables en columnas de a 2/3 según ancho — pedido explícito de Daniel: "bien
+   celular friendly". */
+.disp-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
+.disp-chip{border:1px solid rgba(0,200,212,.15);border-radius:10px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;transition:all .15s;font-family:var(--mono);min-height:56px}
+.disp-chip:active{transform:scale(.96)}
+.disp-chip-hora{font-size:15px;font-weight:700;color:var(--white)}
+.disp-chip-vuelo{font-size:9px;color:var(--green);letter-spacing:.03em;text-align:center;line-height:1.2}
+.disp-chip.pasado,.disp-chip.sin-slot{opacity:.3;pointer-events:none}
 
 /* v5.18: links a fpl.html/peso-balance.html — pedido de Daniel: poder gestionar todo
    (vuelo + plan de vuelo + peso y balance) sin salir de esta app. Mismo nombre de
@@ -1695,6 +1729,7 @@ select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,
     <button class="tab-btn avnc-btn" data-tab="pendientes"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.17a2 2 0 0 0-.59-1.42L12 12l-4.41 4.41a2 2 0 0 0-.59 1.42V22"/><path d="M7 2v4.17a2 2 0 0 0 .59 1.42L12 12l4.41-4.41A2 2 0 0 0 17 6.17V2"/></svg><span>Pendientes</span></button>
     <button class="tab-btn avnc-btn" data-tab="libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg><span>Libro</span></button>
     <button class="tab-btn avnc-btn" data-tab="reporte"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg><span>Reporte</span></button>
+    <button class="tab-btn avnc-btn" data-tab="disp"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span>Disp.</span></button>
     </span>
   </div>
 
@@ -1864,6 +1899,29 @@ select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,
     <button class="btn btn-ghost" id="btn-rep-excel" style="display:none;border-color:var(--green);color:var(--green)">⬇ Descargar Excel</button>
   </div>
 
+  <!-- Tab: DISPONIBILIDAD (v5.79) -->
+  <div id="tab-disp" class="tab-content">
+    <span class="label">Mi disponibilidad — LV-OAD</span>
+    <div class="card" id="disp-vac-card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer">
+      <div>
+        <div id="disp-vac-label" style="font-family:var(--mono);font-size:13px;color:var(--green);letter-spacing:.08em">✓ DISPONIBLE</div>
+        <div id="disp-vac-sub" style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-top:3px">Tu disponibilidad está activa</div>
+      </div>
+      <div id="disp-vac-track" style="width:44px;height:24px;border-radius:12px;background:var(--green);position:relative;transition:background .2s;flex:none">
+        <div id="disp-vac-thumb" style="width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:16px 0 6px">
+      <span class="label" style="margin:0;flex:none">Día</span>
+      <input id="disp-fecha" type="date" style="flex:1;font-size:16px;padding:10px 12px">
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:14px">
+      Tocá un horario para marcarlo o quitarlo. ✈ = ya hay un turno aprobado ahí.
+    </div>
+    <div id="disp-grid" class="disp-chips"></div>
+  </div>
+
 </div><!-- /app-shell -->
 
 <div class="toast" id="toast"></div>
@@ -1881,6 +1939,19 @@ const app = initializeApp({
   appId:'1:855020455192:web:4b6d18f1b2efbb52faca6d',
 });
 const db = getDatabase(app);
+
+// EmailJS — Cuenta A (browser-side), misma que turnos.html. Solo se usa acá
+// para avisarle al alumno si, al desmarcar un slot de "Mi Disponibilidad",
+// había un turno aprobado que queda cancelado (mismo caso que turnos.html
+// dispToggle/mailCancel — un alumno nunca debe quedar con un turno cancelado
+// sin aviso, sea cual sea la app desde la que se lo cancelaron).
+const EJS_SVC='service_8yqlptz', EJS_KEY='0IoRm88tZQepkHAdK', EJS_TMPL_CANCEL='template_v4qu4x6';
+function mailCancelDisp(r,motivo){
+  if(typeof emailjs==='undefined'||!r?.email) return;
+  emailjs.init(EJS_KEY);
+  const horaTxt=r.horaInicio&&r.horaFin?r.horaInicio+' a '+r.horaFin:(r.hora||'');
+  emailjs.send(EJS_SVC,EJS_TMPL_CANCEL,{to_email:r.email,alumno_nombre:r.nombre,fecha:fmtFecha(r.fecha),hora:horaTxt,avion:r.avion||'LV-OAD',motivo:motivo||'Sin especificar'}).catch(e=>console.warn(e));
+}
 
 // ── Helpers ───────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -1928,7 +1999,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.78'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.79'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -2155,6 +2226,10 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
       const h=hoy();
       $('rep-hasta').value=h;
       $('rep-desde').value=h.slice(0,8)+'01'; // primer día del mes actual
+    }
+    else if(btn.dataset.tab==='disp'){
+      if(!$('disp-fecha').value) $('disp-fecha').value=hoy();
+      renderDisp();
     }
   });
 });
@@ -4440,6 +4515,150 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('/sw.js',{scope:'/vuelo.html'}).catch(err=>console.warn('SW error:',err));
   });
+}
+
+// ── TAB DISPONIBILIDAD (v5.79) ──────────────────────────────
+// Mismo modelo de datos que turnos.html (instructor-disponibilidad): un
+// array de horas por /disponibilidad/{fecha}/{instructorKey}, y el toggle
+// de vacaciones en /instructores/{instKey}.vacaciones. Solo para LV-OAD
+// (única aeronave de instrucción — mismo alcance que la pantalla equivalente
+// en turnos.html). UI propia, sin reusar el motor de calendario de
+// turnos.html: acá es un día a la vez con chips grandes, no la tabla-semana
+// (que exige scroll horizontal en celular).
+const HORAS_DEFAULT_DISP=['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'];
+let _dispConfigLVOAD=null;        // cache de config/LV-OAD (horariosDia) — se pide una sola vez
+let _dispFecha=null;              // fecha actualmente mostrada en el tab
+let _dispHorasMarcadas=new Set(); // horas marcadas para _dispFecha
+
+async function cargarConfigLVOAD(){
+  if(_dispConfigLVOAD) return _dispConfigLVOAD;
+  try{ _dispConfigLVOAD=(await get(ref(db,'config/LV-OAD'))).val()||{}; }
+  catch{ _dispConfigLVOAD={}; }
+  return _dispConfigLVOAD;
+}
+
+function horasParaDiaDisp(dateStr,cfg){
+  const dow=new Date(dateStr+'T12:00:00').getDay();
+  const hd=cfg?.horariosDia;
+  const h=hd&&hd[dow];
+  return Array.isArray(h)&&h.length?[...h].sort():HORAS_DEFAULT_DISP;
+}
+
+async function renderToggleVacacionesVuelo(){
+  const instKey=session?.user;
+  if(!instKey) return false;
+  let inst={};
+  try{ inst=(await get(ref(db,'instructores/'+instKey))).val()||{}; }catch{}
+  const enVac=inst.vacaciones===true;
+  $('disp-vac-track').style.background=enVac?'rgba(239,68,68,.5)':'var(--green)';
+  $('disp-vac-thumb').style.left=enVac?'22px':'2px';
+  $('disp-vac-label').textContent=enVac?'🏖 DE VACACIONES':'✓ DISPONIBLE';
+  $('disp-vac-label').style.color=enVac?'var(--red)':'var(--green)';
+  $('disp-vac-sub').textContent=enVac?'Tu disponibilidad está suspendida — los alumnos no ven tus horarios':'Tu disponibilidad está activa';
+  const grid=$('disp-grid');
+  if(grid) grid.style.opacity=enVac?'.35':'1';
+  $('disp-fecha').disabled=enVac;
+  return enVac;
+}
+
+$('disp-vac-card').addEventListener('click',async ()=>{
+  const instKey=session?.user;
+  if(!instKey) return;
+  let inst={};
+  try{ inst=(await get(ref(db,'instructores/'+instKey))).val()||{}; }catch{}
+  const nuevo=!(inst.vacaciones===true);
+  if(nuevo&&!confirm('¿Activar modo vacaciones? Tu disponibilidad quedará suspendida hasta que lo desactives.')) return;
+  try{ await update(ref(db,'instructores/'+instKey),{vacaciones:nuevo}); }
+  catch{ toast('Error al guardar. Probá de nuevo.'); return; }
+  await renderToggleVacacionesVuelo();
+  toast(nuevo?'Modo vacaciones activado':'Disponibilidad reactivada');
+});
+
+$('disp-fecha').addEventListener('change',renderDisp);
+
+async function renderDisp(){
+  const grid=$('disp-grid');
+  if(!grid) return;
+  const instKey=session?.user;
+  if(!instKey) return;
+
+  const fecha=$('disp-fecha').value||hoy();
+  _dispFecha=fecha;
+  grid.innerHTML='<div class="spinner" style="margin:20px auto"></div>';
+
+  const enVac=await renderToggleVacacionesVuelo();
+
+  const cfg=await cargarConfigLVOAD();
+  const horas=horasParaDiaDisp(fecha,cfg);
+
+  let marcadas=[];
+  try{ marcadas=(await get(ref(db,'disponibilidad/'+fecha+'/'+instKey))).val()||[]; }catch{}
+  _dispHorasMarcadas=new Set(Array.isArray(marcadas)?marcadas:[]);
+
+  let reservasHoy={};
+  try{
+    const todas=(await get(ref(db,'reservas'))).val()||{};
+    Object.entries(todas).forEach(([k,r])=>{
+      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===fecha) reservasHoy[r.hora]={...r,key:k};
+    });
+  }catch{}
+
+  if(!horas.length){
+    grid.innerHTML='<div class="empty-libro">No hay horarios configurados para LV-OAD ese día.</div>';
+    return;
+  }
+
+  const esPasado=fecha<hoy();
+
+  grid.innerHTML=horas.map(h=>{
+    const marcado=_dispHorasMarcadas.has(h);
+    const res=reservasHoy[h];
+    const bg=marcado?(res?'rgba(34,197,94,.18)':'rgba(0,200,212,.12)'):'var(--bg3)';
+    const bd=marcado?(res?'var(--green)':'var(--cyan)'):'rgba(0,200,212,.15)';
+    const cls=esPasado?' pasado':'';
+    return `<button type="button" class="disp-chip${cls}" data-hora="${h}" style="background:${bg};border-color:${bd}">
+      <span class="disp-chip-hora">${h}</span>
+      ${res?`<span class="disp-chip-vuelo">✈ ${(res.nombre||'').split(' ')[0]}</span>`:''}
+    </button>`;
+  }).join('');
+
+  if(!esPasado){
+    grid.querySelectorAll('.disp-chip').forEach(btn=>{
+      btn.addEventListener('click',()=>dispToggleVuelo(btn,reservasHoy));
+    });
+  }
+}
+
+async function dispToggleVuelo(btn,reservasHoy){
+  const h=btn.dataset.hora;
+  const fecha=_dispFecha;
+  const instKey=session?.user;
+  if(!instKey) return;
+  const estabaMarcado=_dispHorasMarcadas.has(h);
+
+  if(estabaMarcado){
+    const conflicto=reservasHoy?.[h];
+    if(conflicto){
+      const ok=confirm(`⚠ Hay un turno aprobado en este horario:\n  ${fmtFecha(fecha)} ${h}hs — ${conflicto.nombre}\n\n¿Cancelarlo y quitar tu disponibilidad?`);
+      if(!ok) return;
+      try{
+        await update(ref(db,'reservas/'+conflicto.key),{estado:'cancelado',instructor:session.nombre,cancelado_por:session.nombre,cancelado_rol:'instructor',ts_cancelacion:new Date().toISOString(),obs_cancelacion:'Instructor sin disponibilidad en este horario'});
+      }catch{ toast('Error al cancelar el turno.'); return; }
+      mailCancelDisp(conflicto);
+    }
+  }
+
+  estabaMarcado?_dispHorasMarcadas.delete(h):_dispHorasMarcadas.add(h);
+  try{
+    const arr=[..._dispHorasMarcadas].sort();
+    await set(ref(db,'disponibilidad/'+fecha+'/'+instKey),arr.length?arr:null);
+    toast(estabaMarcado?'Horario liberado':'Marcado como disponible');
+  }catch{
+    estabaMarcado?_dispHorasMarcadas.add(h):_dispHorasMarcadas.delete(h); // revertir
+    toast('Error al guardar. Probá de nuevo.');
+    return;
+  }
+  renderDisp();
 }
 </script>
 <!-- Modal mapa GPS -->
