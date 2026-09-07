@@ -2,6 +2,17 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.52 · Pedido de Daniel: sacar el tubo de la visualización, y que el avión
+  quede más pegado al borde superior de la cortina. El tubo se saca sin
+  borrar su código (reconstruirTubo/aplicarRevelado siguen intactos, solo se
+  dejó de agregar tuboGroup a la escena — cero costo, nada de eso se
+  renderiza). El offset vertical del avión se recalibra: antes se apoyaba
+  sobre la superficie del tubo (RADIO_TUBO*1.3+4, porque el tubo sobresalía
+  RADIO_TUBO respecto del centro de la curva); la cortina no tiene ese radio
+  — su borde superior está exactamente en ry(m.y) — así que ahora es un
+  offset chico y fijo (AVION_OFFSET_Y=1.5) solo para evitar z-fighting entre
+  el tren de aterrizaje y la cortina.
+
   v1.51 · Pedido de Daniel: dos ajustes al slider de estela (v1.50). 1) Pasa
   a estar SIEMPRE visible, en su propia barra fija arriba de play/pause —
   antes vivía dentro del panel de config, que se puede cerrar. 2) El valor
@@ -991,7 +1002,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.51</span>
+    <span class="badge" id="ver-badge">v1.52</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -1970,7 +1981,12 @@ function rangoColor(){ return modoColor==='alt' ? [altMin,altMax] : [gsMin,gsMax
 // solo color en vez de leerse como un tubo redondo; con luz ahora tiene sombreado
 // que sugiere el volumen. ---
 let tuboGroup = new THREE.Group();
-scene.add(tuboGroup);
+// v1.52 — pedido de Daniel: sacar el tubo de la visualización. Se deja el
+// resto de la maquinaria intacta (reconstruirTubo/tuboGeoActual/setDrawRange
+// en aplicarRevelado) por si se quiere volver a mostrar más adelante — el
+// costo de mantenerlo vivo sin agregarlo a la escena es nulo (no se renderiza
+// nada que no esté en `scene`). Simplemente no se agrega: scene.add(tuboGroup) queda comentado.
+// scene.add(tuboGroup);
 let RADIO_TUBO = Math.max(1.5, extent*0.0016); // -50% que antes (3 / 0.0032)
 
 // v5: antes se armaba un cilindro CORTO por cada par de puntos consecutivos —
@@ -2716,8 +2732,15 @@ function loop(now){
   const m = muestraEn(currentT);
   _chequearMapaSeguimiento(now, m); // v1.43: repide el mosaico si el avión salió del área cubierta
   aplicarRevelado(idxFraccEnTiempo(currentT).idxF, currentT); // v1.30: modo "dibujar a medida que avanza" / v1.50: + ventana de sobrevida
-  const pos = new THREE.Vector3(m.x, ry(m.y) + RADIO_TUBO*1.3 + 4, m.z); // offset: se posa
-    // ENCIMA del tubo en vez de quedar centrado en su eje (más pegado que antes).
+  // v1.52: sin tubo, el offset se recalibra contra el borde superior de la
+  // CORTINA — que está exactamente en ry(m.y), sin ningún radio de por medio
+  // (a diferencia del tubo, que sobresalía RADIO_TUBO respecto del centro de
+  // la curva). Antes el avión se apoyaba sobre la superficie del tubo
+  // (RADIO_TUBO*1.3+4); ahora alcanza con una separación chica y fija para
+  // que no queden solapados los polígonos (z-fighting) entre el tren de
+  // aterrizaje (Y=0 del modelo, ver recentrado del GLB) y la cortina.
+  const AVION_OFFSET_Y = 1.5;
+  const pos = new THREE.Vector3(m.x, ry(m.y) + AVION_OFFSET_Y, m.z); // pegado al borde superior de la cortina
   avion.position.copy(pos);
   // v1.45: el sol acompaña al avión manteniendo dirección y distancia fijas —
   // así su shadow camera (dimensionada al tamaño del modelo) lo encuadra
