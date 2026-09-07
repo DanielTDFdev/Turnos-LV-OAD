@@ -2,6 +2,20 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.50 · Pedido de Daniel: slider de "estela" (sobrevida) para el tubo y la
+  cortina en modo progresivo, al estilo Snake — en vez de revelarse siempre
+  desde el punto 0, el inicio de lo visible tambien avanza, dejando solo los
+  ultimos N segundos. Anexo al toggle "Dibujar a medida que avanza": si esta
+  en OFF, el slider no hace nada (mismo comportamiento de siempre, sin
+  recorte). Rango: 2s (default al abrir) hasta la duracion total del vuelo
+  (a tope = sin recorte, tubo/cortina quedan para siempre). Curva
+  EXPONENCIAL por tramos con ancla fija en 20s al punto medio del slider,
+  sea cual sea la duracion del vuelo (una escala lineal de 2 a, por ejemplo,
+  1200s dejaria 20s pegado contra el extremo izquierdo). El calculo del
+  inicio de la ventana se recalcula por TIEMPO en cada frame (no
+  incrementalmente), asi que responde bien a saltos hacia atras en la
+  linea de tiempo, no solo a reproduccion hacia adelante.
+
   v1.49 · Pedido de Daniel: "la rosa de rumbos es muy invasiva" - 40% mas
   chica (ROSA_ESCALA=0.6, multiplica el radio del que se derivan puntas, aro
   y posicion de las letras N/E/S/O) y mas transparente (ROSA_ALPHA=0.55,
@@ -964,7 +978,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.49</span>
+    <span class="badge" id="ver-badge">v1.50</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -997,6 +1011,10 @@
           <label class="toggle"><input type="checkbox" id="seguir" checked><span class="track"></span>Seguir avión</label>
           <label class="toggle"><input type="checkbox" id="cortina" checked><span class="track"></span>Cortina de altura</label>
           <label class="toggle"><input type="checkbox" id="progresivo" checked><span class="track"></span>Dibujar a medida que avanza</label>
+          <div id="sobrevida-wrap" style="display:flex;flex-direction:column;gap:3px;margin:2px 0 2px 20px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--cyan);opacity:.8"><span>Estela (sobrevida)</span><span id="sobrevida-val">2 s</span></div>
+            <input type="range" id="sobrevida" min="0" max="1000" value="0" style="accent-color:var(--cyan);width:100%">
+          </div>
           <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
           <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
           <label class="toggle"><input type="checkbox" id="mapaSat" checked><span class="track"></span>Mapa satelital (suelo)</label>
@@ -2382,23 +2400,84 @@ cortinaChk.onchange = ()=>{
 };
 if(cortinaChk.checked){ cortinaMesh=construirCortina(); scene.add(cortinaMesh); } // arranca activado
 
+// v1.50 — pedido de Daniel: "estela"/sobrevida para tubo y cortina en modo
+// progresivo, al estilo Snake. Anclas fijas para la curva del slider:
+//   p=0   -> 2s   (arranca así al abrir el visor)
+//   p=0.5 -> 20s  (siempre, sea cual sea la duración del vuelo)
+//   p=1   -> DUR  (dura todo el vuelo -> tubo/cortina quedan para siempre,
+//                  igual que el modo progresivo sin ningún recorte)
+// Curva EXPONENCIAL por tramos, no lineal: un circuito de 20min son 1200s, y
+// un slider lineal de 2 a 1200 dejaría "20s" pegado contra el extremo
+// izquierdo, inusable. Con dos tramos exponenciales (2→20 y 20→DUR) el punto
+// medio del control cae siempre en 20s, sea el vuelo largo o corto.
+const SOBREVIDA_MIN=2, SOBREVIDA_MED=20;
+function pASobrevida(p){
+  if(DUR<=SOBREVIDA_MED){
+    // vuelo cortísimo (<=20s de traza real): no hay lugar para el ancla del
+    // medio — se interpola directo de MIN a DUR en todo el recorrido.
+    const tope=Math.max(DUR, SOBREVIDA_MIN+0.5);
+    return SOBREVIDA_MIN*Math.pow(tope/SOBREVIDA_MIN, p);
+  }
+  if(p<=0.5) return SOBREVIDA_MIN*Math.pow(SOBREVIDA_MED/SOBREVIDA_MIN, p/0.5);
+  return SOBREVIDA_MED*Math.pow(DUR/SOBREVIDA_MED, (p-0.5)/0.5);
+}
+const sobrevidaSlider=document.getElementById('sobrevida');
+const sobrevidaVal=document.getElementById('sobrevida-val');
+const sobrevidaWrap=document.getElementById('sobrevida-wrap');
+let sobrevidaSeg=SOBREVIDA_MIN; // arranca en 2s (slider en p=0)
+function actualizarSobrevidaLabel(){
+  sobrevidaVal.textContent = sobrevidaSeg>=DUR-0.05 ? 'Todo el vuelo'
+    : sobrevidaSeg>=60 ? (sobrevidaSeg/60).toFixed(1)+' min'
+    : Math.round(sobrevidaSeg)+' s';
+}
+sobrevidaSlider.oninput=()=>{
+  const p=sobrevidaSlider.value/1000;
+  sobrevidaSeg = p>=0.999 ? DUR : pASobrevida(p);
+  actualizarSobrevidaLabel();
+};
+function actualizarEstadoSobrevida(){
+  const activo=progresivoChk.checked;
+  sobrevidaSlider.disabled=!activo;
+  sobrevidaWrap.style.opacity=activo?'1':'.35';
+  sobrevidaWrap.style.pointerEvents=activo?'auto':'none';
+}
+progresivoChk.addEventListener('change', actualizarEstadoSobrevida);
+actualizarEstadoSobrevida();
+actualizarSobrevidaLabel();
+
 // v1.30 — aplica el corte de "dibujar a medida que avanza": recibe el índice
 // de punto (fraccional, por TIEMPO real — ver idxFraccEnTiempo) alcanzado en
 // el frame actual. Si el toggle está apagado, restaura todo (tubo completo,
 // todos los postes visibles) — se llama en cada frame del loop, así que
 // prender/apagar el toggle se refleja al toque sin lógica aparte en su
 // onchange.
-function aplicarRevelado(idxF){
+function aplicarRevelado(idxF, tActual){
   if(progresivoChk.checked){
     const cvT = idxF/(track.length-1);
     const u = cvTaU(cvT);
     const segmentosAMostrar = Math.min(TUBULAR_SEGMENTS, Math.max(0, Math.round(u*TUBULAR_SEGMENTS)));
-    if(tuboGeoActual) tuboGeoActual.setDrawRange(0, segmentosAMostrar*RADIAL_SEGMENTS*6);
+
+    // v1.50: ventana de sobrevida — el INICIO de lo revelado también avanza
+    // (antes siempre arrancaba en 0). Se recalcula por TIEMPO en cada frame
+    // (no incrementalmente), así que responde bien a saltos/scrubbing hacia
+    // atrás en la línea de tiempo, no solo a reproducción hacia adelante.
+    // Si sobrevidaSeg cubre todo el vuelo (slider a tope), sin recorte —
+    // mismo comportamiento de siempre (arranca en 0, queda para siempre).
+    let segmentoInicio = 0, idxInicioEntero = 0;
+    if(sobrevidaSeg < DUR-0.01){
+      const tInicio = Math.max(0, tActual-sobrevidaSeg);
+      const idxInicioF = idxFraccEnTiempo(tInicio).idxF;
+      const uInicio = cvTaU(idxInicioF/(track.length-1));
+      segmentoInicio = Math.min(segmentosAMostrar, Math.max(0, Math.round(uInicio*TUBULAR_SEGMENTS)));
+      idxInicioEntero = Math.min(Math.max(0,Math.floor(idxF)), Math.max(0, Math.floor(idxInicioF)));
+    }
+    if(tuboGeoActual) tuboGeoActual.setDrawRange(segmentoInicio*RADIAL_SEGMENTS*6, (segmentosAMostrar-segmentoInicio)*RADIAL_SEGMENTS*6);
     // v1.46: la cortina es un solo mesh — se corta con setDrawRange igual que
     // el tubo, en vez de prender/apagar cientos de objetos. Sus índices siguen
     // el orden del track (6 por cada par de puntos consecutivos), así que el
     // corte cae exactamente en el mismo punto que el del tubo.
-    if(cortinaGeo) cortinaGeo.setDrawRange(0, Math.max(0, Math.floor(idxF))*6);
+    const idxFinEntero = Math.max(0, Math.floor(idxF));
+    if(cortinaGeo) cortinaGeo.setDrawRange(idxInicioEntero*6, Math.max(0, idxFinEntero-idxInicioEntero)*6);
   } else {
     if(tuboGeoActual) tuboGeoActual.setDrawRange(0, Infinity);
     if(cortinaGeo) cortinaGeo.setDrawRange(0, Infinity);
@@ -2615,7 +2694,7 @@ function loop(now){
   if(_heliceRef && playing){ _heliceRef.rotation.y += dt*22; } // gira mientras reproduce, de yapa
   const m = muestraEn(currentT);
   _chequearMapaSeguimiento(now, m); // v1.43: repide el mosaico si el avión salió del área cubierta
-  aplicarRevelado(idxFraccEnTiempo(currentT).idxF); // v1.30: modo "dibujar a medida que avanza"
+  aplicarRevelado(idxFraccEnTiempo(currentT).idxF, currentT); // v1.30: modo "dibujar a medida que avanza" / v1.50: + ventana de sobrevida
   const pos = new THREE.Vector3(m.x, ry(m.y) + RADIO_TUBO*1.3 + 4, m.z); // offset: se posa
     // ENCIMA del tubo en vez de quedar centrado en su eje (más pegado que antes).
   avion.position.copy(pos);
