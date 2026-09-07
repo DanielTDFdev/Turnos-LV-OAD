@@ -2,6 +2,22 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.55 · CAMBIO DE CONCEPTO, pedido de Daniel: la sobrevida deja de medirse
+  en tiempo y pasa a medirse en DISTANCIA, con el largo del avión como unidad
+  (reusa AVION_LARGO_MUNDO, la misma unidad que ya usaba la estela de humo).
+  Resuelve de raíz el reporte de v1.54 ("no se nota nada hasta los 20s"): con
+  tiempo, la MISMA sobrevida se veía como un recorte larguísimo en un tramo
+  rápido y casi invisible en uno lento (viraje cerrado, espera) — dependía de
+  la velocidad del avión en ese tramo, no de la sobrevida elegida. Por
+  distancia, la estela mide siempre lo mismo en el mundo 3D sin importar la
+  velocidad real. Rango lineal simple, 4 a 30 "aviones" (a diferencia de la
+  versión por tiempo, que necesitaba una curva exponencial por el rango
+  enorme de 2s a horas de vuelo). Al tope del slider, recorrido completo sin
+  importar el número de aviones que representaría esa distancia. Internamente
+  usa curvaTrack.getLength() + getUtoTmapping() (arco→índice), la misma
+  maquinaria de u/cvT que ya usa el corte progresivo normal — no una lógica
+  paralela por tiempo como antes.
+
   v1.54 · Pedido de Daniel: "no me gusta la cortina con cuerpo" — vuelve a la
   versión plana de antes de v1.53 (2 vértices por punto, sin pared
   izq/der/tapa). IDX_POR_PUNTO_CORTINA vuelve a 6.
@@ -1019,7 +1035,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.54</span>
+    <span class="badge" id="ver-badge">v1.55</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -1067,7 +1083,7 @@
   <div id="estela-bar">
     <span id="estela-label">Estela</span>
     <input type="range" id="sobrevida" min="0" max="1000" value="0">
-    <span id="sobrevida-val">10 s</span>
+    <span id="sobrevida-val">4 aviones</span>
   </div>
   <footer>
     <button id="play" title="Reproducir / pausar">▶</button>
@@ -2457,40 +2473,39 @@ cortinaChk.onchange = ()=>{
 if(cortinaChk.checked){ cortinaMesh=construirCortina(); scene.add(cortinaMesh); } // arranca activado
 
 // v1.50 — pedido de Daniel: "estela"/sobrevida para tubo y cortina en modo
-// progresivo, al estilo Snake. Anclas fijas para la curva del slider:
-//   p=0   -> 2s   (arranca así al abrir el visor)
-//   p=0.5 -> 20s  (siempre, sea cual sea la duración del vuelo)
-//   p=1   -> DUR  (dura todo el vuelo -> tubo/cortina quedan para siempre,
-//                  igual que el modo progresivo sin ningún recorte)
-// Curva EXPONENCIAL por tramos, no lineal: un circuito de 20min son 1200s, y
-// un slider lineal de 2 a 1200 dejaría "20s" pegado contra el extremo
-// izquierdo, inusable. Con dos tramos exponenciales (2→20 y 20→DUR) el punto
-// medio del control cae siempre en 20s, sea el vuelo largo o corto.
-// v1.53 — pedido de Daniel: mínimo de sobrevida sube de 4s a 10s (sigue
-// siendo el ancla izquierda de la curva Y el valor de arranque, p=0).
-const SOBREVIDA_MIN=10, SOBREVIDA_MED=20;
-function pASobrevida(p){
-  if(DUR<=SOBREVIDA_MED){
-    // vuelo cortísimo (<=20s de traza real): no hay lugar para el ancla del
-    // medio — se interpola directo de MIN a DUR en todo el recorrido.
-    const tope=Math.max(DUR, SOBREVIDA_MIN+0.5);
-    return SOBREVIDA_MIN*Math.pow(tope/SOBREVIDA_MIN, p);
-  }
-  if(p<=0.5) return SOBREVIDA_MIN*Math.pow(SOBREVIDA_MED/SOBREVIDA_MIN, p/0.5);
-  return SOBREVIDA_MED*Math.pow(DUR/SOBREVIDA_MED, (p-0.5)/0.5);
-}
+// progresivo, al estilo Snake (dejar de mostrar todo el recorrido desde el
+// punto 0, y solo la parte reciente). v1.55 cambió la unidad de tiempo a
+// distancia — ver comentario grande más abajo, junto a SOBREVIDA_AVIONES_MIN.
+// v1.55 — CAMBIO DE CONCEPTO, pedido de Daniel: la sobrevida deja de medirse
+// en TIEMPO y pasa a medirse en DISTANCIA, con el largo del avión como
+// unidad — exactamente la misma unidad que ya usa este archivo para la
+// estela de humo (ver AVION_LARGO_MUNDO, definida al cargar el GLB). Esto
+// resuelve de raíz el problema reportado de la versión por tiempo ("no se
+// nota nada hasta los 20s"): con tiempo, la MISMA sobrevida se ve como un
+// recorte larguísimo en un tramo rápido y casi invisible en uno lento (viraje
+// cerrado, patrón de espera) — la sensación visual dependía de la velocidad
+// del avión en cada tramo, no de la sobrevida elegida. Por distancia, la
+// estela mide siempre lo mismo en el mundo 3D sin importar qué tan rápido
+// volaba el avión en ese tramo.
+// Rango simple y LINEAL (a diferencia de la versión por tiempo, que necesitó
+// una curva exponencial porque el rango era enorme — de 2s a horas de vuelo):
+// acá el rango de 4 a 30 "aviones" es chico y parejo, no hace falta curva.
+// Al tope del slider, sin importar el número de aviones que representaría la
+// distancia total, se muestra el recorrido COMPLETO (sobrevidaCompleta=true).
+const SOBREVIDA_AVIONES_MIN=4, SOBREVIDA_AVIONES_MAX=30;
 const sobrevidaSlider=document.getElementById('sobrevida');
 const sobrevidaVal=document.getElementById('sobrevida-val');
 const estelaBar=document.getElementById('estela-bar');
-let sobrevidaSeg=SOBREVIDA_MIN; // arranca en 10s (slider en p=0)
+let sobrevidaAviones=SOBREVIDA_AVIONES_MIN; // arranca en 4 "aviones" (slider en p=0)
+let sobrevidaCompleta=false;                // true = slider a tope = recorrido completo
 function actualizarSobrevidaLabel(){
-  sobrevidaVal.textContent = sobrevidaSeg>=DUR-0.05 ? 'Todo el vuelo'
-    : sobrevidaSeg>=60 ? (sobrevidaSeg/60).toFixed(1)+' min'
-    : Math.round(sobrevidaSeg)+' s';
+  sobrevidaVal.textContent = sobrevidaCompleta ? 'Todo el recorrido'
+    : Math.round(sobrevidaAviones)+(Math.round(sobrevidaAviones)===1?' avión':' aviones');
 }
 sobrevidaSlider.oninput=()=>{
   const p=sobrevidaSlider.value/1000;
-  sobrevidaSeg = p>=0.999 ? DUR : pASobrevida(p);
+  sobrevidaCompleta = p>=0.999;
+  sobrevidaAviones = SOBREVIDA_AVIONES_MIN + p*(SOBREVIDA_AVIONES_MAX-SOBREVIDA_AVIONES_MIN);
   actualizarSobrevidaLabel();
 };
 function actualizarEstadoSobrevida(){
@@ -2504,28 +2519,34 @@ actualizarEstadoSobrevida();
 actualizarSobrevidaLabel();
 
 // v1.30 — aplica el corte de "dibujar a medida que avanza": recibe el índice
-// de punto (fraccional, por TIEMPO real — ver idxFraccEnTiempo) alcanzado en
-// el frame actual. Si el toggle está apagado, restaura todo (tubo completo,
-// todos los postes visibles) — se llama en cada frame del loop, así que
-// prender/apagar el toggle se refleja al toque sin lógica aparte en su
-// onchange.
-function aplicarRevelado(idxF, tActual){
+// de punto (fraccional, por ARCO — ver más abajo) alcanzado en el frame
+// actual. Si el toggle está apagado, restaura todo — se llama en cada frame
+// del loop, así que prender/apagar el toggle se refleja al toque sin lógica
+// aparte en su onchange.
+// v1.55: el parámetro tActual ya no se usa (la sobrevida dejó de ser por
+// tiempo) — se mantiene en la firma solo porque el call site todavía lo
+// pasa; no rompe nada, simplemente queda sin leer.
+function aplicarRevelado(idxF){
   if(progresivoChk.checked){
     const cvT = idxF/(track.length-1);
-    const u = cvTaU(cvT);
+    const u = cvTaU(cvT); // posición actual como fracción del LARGO TOTAL del recorrido (0..1)
     const segmentosAMostrar = Math.min(TUBULAR_SEGMENTS, Math.max(0, Math.round(u*TUBULAR_SEGMENTS)));
 
-    // v1.50: ventana de sobrevida — el INICIO de lo revelado también avanza
-    // (antes siempre arrancaba en 0). Se recalcula por TIEMPO en cada frame
-    // (no incrementalmente), así que responde bien a saltos/scrubbing hacia
-    // atrás en la línea de tiempo, no solo a reproducción hacia adelante.
-    // Si sobrevidaSeg cubre todo el vuelo (slider a tope), sin recorte —
-    // mismo comportamiento de siempre (arranca en 0, queda para siempre).
+    // v1.55: ventana de sobrevida por DISTANCIA. totalArco es el largo real
+    // del recorrido en metros (curvaTrack.getLength()); distanciaSobrevida
+    // se recalcula cada frame con el AVION_LARGO_MUNDO vigente (que arranca
+    // en un valor aproximado y se corrige solo cuando termina de cargar el
+    // GLB — ver declaración de AVION_LARGO_MUNDO). getUtoTmapping(u) hace el
+    // camino inverso a cvTaU: de "posición en el arco" a "parámetro de curva
+    // por índice", que es lo que necesitamos para volver a un índice de
+    // punto del track.
     let segmentoInicio = 0, idxInicioEntero = 0;
-    if(sobrevidaSeg < DUR-0.01){
-      const tInicio = Math.max(0, tActual-sobrevidaSeg);
-      const idxInicioF = idxFraccEnTiempo(tInicio).idxF;
-      const uInicio = cvTaU(idxInicioF/(track.length-1));
+    if(!sobrevidaCompleta){
+      const totalArco = curvaTrack.getLength();
+      const distanciaSobrevida = sobrevidaAviones*AVION_LARGO_MUNDO;
+      const uInicio = Math.max(0, u - distanciaSobrevida/totalArco);
+      const cvTInicio = curvaTrack.getUtoTmapping(uInicio);
+      const idxInicioF = cvTInicio*(track.length-1);
       segmentoInicio = Math.min(segmentosAMostrar, Math.max(0, Math.round(uInicio*TUBULAR_SEGMENTS)));
       idxInicioEntero = Math.min(Math.max(0,Math.floor(idxF)), Math.max(0, Math.floor(idxInicioF)));
     }
@@ -2752,7 +2773,7 @@ function loop(now){
   if(_heliceRef && playing){ _heliceRef.rotation.y += dt*22; } // gira mientras reproduce, de yapa
   const m = muestraEn(currentT);
   _chequearMapaSeguimiento(now, m); // v1.43: repide el mosaico si el avión salió del área cubierta
-  aplicarRevelado(idxFraccEnTiempo(currentT).idxF, currentT); // v1.30: modo "dibujar a medida que avanza" / v1.50: + ventana de sobrevida
+  aplicarRevelado(idxFraccEnTiempo(currentT).idxF); // v1.30: modo "dibujar a medida que avanza" / v1.55: + ventana de sobrevida por DISTANCIA
   // v1.52: sin tubo, el offset se recalibra contra el borde superior de la
   // CORTINA — que está exactamente en ry(m.y), sin ningún radio de por medio
   // (a diferencia del tubo, que sobresalía RADIO_TUBO respecto del centro de
