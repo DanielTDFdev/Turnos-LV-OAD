@@ -2,6 +2,14 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.49 · Pedido de Daniel: "la rosa de rumbos es muy invasiva" - 40% mas
+  chica (ROSA_ESCALA=0.6, multiplica el radio del que se derivan puntas, aro
+  y posicion de las letras N/E/S/O) y mas transparente (ROSA_ALPHA=0.55,
+  multiplica cada opacity ya existente: puntas 0.95, contornos 0.55, aro
+  0.35, y ahora tambien las letras que antes no tenian opacity seteada).
+  Colores y bisel intactos, solo tamano y cuanto compite visualmente con el
+  mapa satelital de fondo.
+
   v1.48 · FIX reportado por Daniel: "ocasionalmente el avión hace un giro loco
   sobre su eje vertical de 360°, bien rapidito, y continúa normalmente".
   No era la data del GPS ni el trazado: era la INTERPOLACIÓN. En muestraEn,
@@ -956,7 +964,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.48</span>
+    <span class="badge" id="ver-badge">v1.49</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -1520,7 +1528,15 @@ function construirRosaRumbos(){
   // el multiplicador y agrego un piso absoluto para vuelos cortos (patrones/
   // circuitos), y fuerzo depthTest:false + renderOrder alto para que nunca
   // quede tapada por el suelo/grilla/tubo por z-fighting.
-  const radio = Math.max(60, extent*0.12);
+  // v1.49 — pedido de Daniel: "es muy invasiva" — 40% más chica y más
+  // transparente. ROSA_ESCALA multiplica el radio entero (y por lo tanto
+  // ancho de puntas, aro, y distancia de las letras N/E/S/O, que se derivan
+  // todas de `radio`); ROSA_ALPHA multiplica CADA opacity ya existente más
+  // abajo (puntas, contornos, aro, letras) — no se tocan los colores/bisel,
+  // solo cuánto se nota el conjunto.
+  const ROSA_ESCALA = 0.6;
+  const ROSA_ALPHA  = 0.55;
+  const radio = Math.max(60, extent*0.12) * ROSA_ESCALA;
   const y = 0.12; // apenas por encima de la grilla (0.05)
 
   // v1.47 — pedido de Daniel: rosa tipo "estrella de 8 puntas" con efecto 3D,
@@ -1583,7 +1599,7 @@ function construirRosaRumbos(){
       geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cara.v.flat()),3));
       const mat = new THREE.MeshBasicMaterial({
         color: tonoDe(colorBase, dirX, dirZ, cara.lado),
-        side: THREE.DoubleSide, depthTest:false, transparent:true, opacity:0.95
+        side: THREE.DoubleSide, depthTest:false, transparent:true, opacity:0.95*ROSA_ALPHA
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.renderOrder = orden;
@@ -1596,7 +1612,7 @@ function construirRosaRumbos(){
         new THREE.Vector3(...BI), new THREE.Vector3(...P),
         new THREE.Vector3(...BD), new THREE.Vector3(...C),
       ]),
-      new THREE.LineBasicMaterial({color:0x11161f, transparent:true, opacity:0.55, depthTest:false})
+      new THREE.LineBasicMaterial({color:0x11161f, transparent:true, opacity:0.55*ROSA_ALPHA, depthTest:false})
     );
     contorno.renderOrder = orden+1;
     g.add(contorno);
@@ -1620,7 +1636,7 @@ function construirRosaRumbos(){
   }
   const aro = new THREE.LineLoop(
     new THREE.BufferGeometry().setFromPoints(puntosAro),
-    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.35, depthTest:false})
+    new THREE.LineBasicMaterial({color:0xd9c19a, transparent:true, opacity:0.35*ROSA_ALPHA, depthTest:false})
   );
   aro.renderOrder = 3;
   g.add(aro);
@@ -1631,7 +1647,7 @@ function construirRosaRumbos(){
   const tamLetra = radio*0.32;
   for(const [letra, hdgDeg] of cardinales){
     const a = hdgDeg*Math.PI/180;
-    const mat = new THREE.SpriteMaterial({map:_crearTexturaLetra(letra), transparent:true, depthWrite:false, depthTest:false});
+    const mat = new THREE.SpriteMaterial({map:_crearTexturaLetra(letra), transparent:true, depthWrite:false, depthTest:false, opacity:ROSA_ALPHA});
     const sprite = new THREE.Sprite(mat);
     sprite.renderOrder = 8;
     sprite.scale.setScalar(tamLetra);
