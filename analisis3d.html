@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.56 · Pedido de Daniel: el label del slider deja de decir "aviones" y
+  pasa a decir "unidades" (la unidad de medida sigue siendo AVION_LARGO_MUNDO
+  por dentro, solo cambia el texto que ve el usuario).
+
   v1.55 · CAMBIO DE CONCEPTO, pedido de Daniel: la sobrevida deja de medirse
   en tiempo y pasa a medirse en DISTANCIA, con el largo del avión como unidad
   (reusa AVION_LARGO_MUNDO, la misma unidad que ya usaba la estela de humo).
@@ -1035,7 +1039,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.55</span>
+    <span class="badge" id="ver-badge">v1.56</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -1083,7 +1087,7 @@
   <div id="estela-bar">
     <span id="estela-label">Estela</span>
     <input type="range" id="sobrevida" min="0" max="1000" value="0">
-    <span id="sobrevida-val">4 aviones</span>
+    <span id="sobrevida-val">4 unidades</span>
   </div>
   <footer>
     <button id="play" title="Reproducir / pausar">▶</button>
@@ -2500,7 +2504,7 @@ let sobrevidaAviones=SOBREVIDA_AVIONES_MIN; // arranca en 4 "aviones" (slider en
 let sobrevidaCompleta=false;                // true = slider a tope = recorrido completo
 function actualizarSobrevidaLabel(){
   sobrevidaVal.textContent = sobrevidaCompleta ? 'Todo el recorrido'
-    : Math.round(sobrevidaAviones)+(Math.round(sobrevidaAviones)===1?' avión':' aviones');
+    : Math.round(sobrevidaAviones)+(Math.round(sobrevidaAviones)===1?' unidad':' unidades');
 }
 sobrevidaSlider.oninput=()=>{
   const p=sobrevidaSlider.value/1000;
