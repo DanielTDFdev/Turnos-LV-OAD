@@ -2,6 +2,27 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.63 · 2026-09-06
+  Contraparte del fix de vuelo.html v5.78 (revisión pedida por Daniel sobre
+  qué pasa si el alumno y el instructor arrancan el GPS del mismo vuelo con
+  segundos de diferencia). Dos cambios, ambos contra pérdida de trazas:
+  1) CANDADO NO ATÓMICO: tomar gps_tracker_activo era get() -> decidir ->
+     update(), tres pasos. Si el instructor arrancaba en la ventana entre el
+     get y el update (con red lenta puede pasar de dos segundos), los dos
+     veían el candado libre y los dos trackeaban el mismo vuelo. Al cerrar,
+     cada uno hacía set(vuelo_tracks/{key}) — que reemplaza el nodo ENTERO —
+     así que el segundo en guardar borraba la traza del primero en silencio.
+     Ahora se toma con runTransaction: el servidor resuelve el conflicto y
+     solo uno gana. El vencimiento del candado huérfano (4hs) se evalúa
+     afuera del callback vía _lockVencido(), porque adentro de la transacción
+     solo se ve el nodo gps_tracker_activo y no su timestamp hermano.
+  2) TRAZA PISADA POR OTROS CAMINOS: aun con el candado atómico quedan casos
+     (candado vencido que se retoma mientras el otro seguía grabando en
+     background; cola de pendientes que sincroniza mucho después). Nuevo
+     guardarTrazaSinPisar(): lee antes de escribir y, si ya hay traza con
+     puntos para esa reserva, guarda la nueva al lado (vuelo_tracks/{key}_2)
+     en vez de encima. Los 2 set() directos de este archivo pasan por ahí.
+
   v4.62 · 2026-09-05
   Pedido de Daniel: botón "🧊 Ver en 3D" en el modal de mapa GPS, mismo patrón
   que turnos.html (v8.57) y vuelo.html (v5.77) — abre analisis3d.html?key=...
@@ -1656,7 +1677,7 @@ select:disabled{opacity:.55}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getDatabase, ref, get, update, set, push, onValue } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+import { getDatabase, ref, get, update, set, push, onValue, runTransaction } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
 const app = initializeApp({
   apiKey:'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
@@ -1715,7 +1736,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.62';
+const APP_VERSION = '4.63';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -2435,6 +2456,52 @@ document.addEventListener('visibilitychange', () => {
 // si el candado quedó huérfano (celular apagado sin soltar) se considera
 // vencido pasadas GPS_LOCK_STALE_MS y se puede volver a tomar.
 const GPS_LOCK_STALE_MS = 4*60*60*1000; // 4 horas
+// v4.63 — RED DE SEGURIDAD contra el pisado de trazas. Aunque el candado
+// ahora sea atómico (runTransaction), quedan caminos por los que dos trazas
+// pueden terminar apuntando a la misma reserva: un candado vencido por
+// huérfano que se retoma mientras el primero seguía grabando en background, o
+// una cola de pendientes que sincroniza mucho después (offline / app cerrada)
+// cuando el otro ya guardó la suya. set() reemplaza el nodo ENTERO, así que
+// en esos casos la traza vieja se perdía en silencio.
+// Acá se lee primero: si ya hay una traza guardada con puntos, la nueva se
+// guarda al lado (misma key + sufijo) en vez de encima. Nunca se descarta
+// nada: que sobre un nodo es recuperable, que falte no.
+async function guardarTrazaSinPisar(key, payload){
+  let destino = `vuelo_tracks/${key}`;
+  try{
+    const prev = await get(ref(db, destino));
+    const val = prev.val();
+    if(val && val.puntos && val.puntos.length){
+      // Ya hay traza de este vuelo cargada por la otra app. Se busca el primer
+      // sufijo libre en vez de pisarla.
+      let i = 2;
+      while(i < 10){
+        const alt = `vuelo_tracks/${key}_${i}`;
+        const s = await get(ref(db, alt));
+        if(!s.exists()){ destino = alt; break; }
+        i++;
+      }
+      if(destino === `vuelo_tracks/${key}`) destino = `vuelo_tracks/${key}_${Date.now()}`; // fallback improbable
+      console.warn('[traza] ya existía una traza para', key, '— esta se guarda en', destino);
+    }
+  }catch(e){
+    // Si no se puede leer (permisos/red), se sigue con el destino original:
+    // mejor guardar la traza que perderla por un chequeo que falló.
+    console.warn('[traza] no se pudo verificar traza previa, se guarda en el destino normal:', e);
+  }
+  await conTimeout(set(ref(db, destino), payload));
+  return destino;
+}
+
+
+// v4.63: ¿el candado que figura en esta reserva ya venció por huérfano? Se
+// evalúa con el snapshot leído ANTES de la transacción, porque adentro del
+// callback de runTransaction solo se ve el nodo gps_tracker_activo y no su
+// timestamp hermano.
+function _lockVencido(reservaSnap){
+  const ts = reservaSnap?.gps_tracker_ts ? new Date(reservaSnap.gps_tracker_ts).getTime() : 0;
+  return (Date.now()-ts) >= GPS_LOCK_STALE_MS;
+}
 
 let shaTurno=null;       // {key,...datos de /reservas} del turno de hoy
 let shaTrackeando=false;
@@ -2518,14 +2585,27 @@ $('sha-btn-iniciar').addEventListener('click', async ()=>{
     const snap=await conTimeout(get(ref(db,'reservas/'+shaTurno.key)));
     const actual=snap.val();
     if(!actual){ $('sha-err').textContent='El turno ya no existe. Recargá la app.'; return; }
-    const lock=actual.gps_tracker_activo;
-    const lockTs=actual.gps_tracker_ts?new Date(actual.gps_tracker_ts).getTime():0;
-    const lockVigente=lock&&(Date.now()-lockTs)<GPS_LOCK_STALE_MS;
-    if(lockVigente&&lock!=='alumno'){
+    // v4.63 — el chequeo del candado pasa a ser ATÓMICO (runTransaction).
+    // Antes era get() -> decidir -> update(), tres pasos separados: si el
+    // instructor arrancaba en la ventana entre el get y el update (con red
+    // lenta puede ser más de un par de segundos), los DOS leían el candado
+    // libre, los dos lo tomaban, y los dos trackeaban el mismo vuelo. Al
+    // cerrar, cada uno hace set(vuelo_tracks/{key}) — que reemplaza el nodo
+    // entero — así que el segundo en guardar BORRABA la traza del primero,
+    // en silencio. runTransaction resuelve el conflicto del lado del
+    // servidor: reintenta si el valor cambió, así que solo uno gana.
+    const trRes = await conTimeout(runTransaction(ref(db,'reservas/'+shaTurno.key+'/gps_tracker_activo'), (valActual)=>{
+      // Ojo: acá adentro NO se puede leer gps_tracker_ts (la transacción es
+      // sobre este nodo puntual). El vencimiento por candado huérfano se
+      // evalúa afuera, con el snapshot ya leído, y se pasa por esta bandera.
+      if(valActual && valActual!=='alumno' && !_lockVencido(actual)) return; // undefined = abortar, otro lo tiene
+      return 'alumno';
+    }));
+    if(!trRes.committed || trRes.snapshot.val()!=='alumno'){
       $('sha-err').textContent='⚠ Ya se está trackeando este vuelo desde la app del instructor.';
       return;
     }
-    await conTimeout(update(ref(db,'reservas/'+shaTurno.key),{gps_tracker_activo:'alumno',gps_tracker_ts:new Date().toISOString()}));
+    await conTimeout(update(ref(db,'reservas/'+shaTurno.key),{gps_tracker_ts:new Date().toISOString()}));
     gpsPoints=[];gpsGaps=[];gpsUltimoPunto=0;
     _wakeLockWarnMostrado=false; // v4.5: nuevo tracking, el aviso puede repetirse si vuelve a fallar
     shaTrackeando=true;
@@ -2554,12 +2634,12 @@ $('sha-btn-detener').addEventListener('click', async ()=>{
   $('sha-gps-warning').style.display='none';
   try{
     if(gpsPoints.length>1){
-      await conTimeout(set(ref(db,'vuelo_tracks/'+shaTurno.key),{
+      await guardarTrazaSinPisar(shaTurno.key,{
         puntos:gpsPoints,
         ...(gpsGaps.length?{huecos:gpsGaps}:{}),
         origen:'alumno',
         ts_guardado:new Date().toISOString()
-      }));
+      });
       await conTimeout(update(ref(db,'reservas/'+shaTurno.key),{tiene_traza_gps:true,gps_tracker_activo:null}));
       toast('✓ Traza GPS guardada — '+gpsPoints.length+' puntos');
     } else {
@@ -3143,12 +3223,12 @@ async function escribirPendiente(item){
   }
 
   if(item.gpsPoints&&item.gpsPoints.length>1){
-    await conTimeout(set(ref(db,`vuelo_tracks/${key}`),{
+    await guardarTrazaSinPisar(key,{
       puntos: item.gpsPoints,
       ...(item.gpsGaps&&item.gpsGaps.length?{huecos:item.gpsGaps}:{}),
       autor: item.nombre,
       ts_guardado: new Date().toISOString()
-    }));
+    });
   }
 }
 

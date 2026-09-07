@@ -2,6 +2,41 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.78 · 2026-09-06
+  Revisión pedida por Daniel: "¿qué pasa si el alumno empieza su vuelo desde
+  vuelo-piloto.html con GPS y dos segundos después el instructor hace lo
+  mismo?". El caso puntual YA funcionaba (el candado gps_tracker_activo se
+  lee fresco y el segundo en arrancar ve el candado del primero), pero la
+  revisión encontró dos agujeros con pérdida de datos:
+  1) CANDADO NO ATÓMICO: era get() -> decidir -> update(), tres pasos. Si los
+     dos leían en la ventana entre el get y el update del otro (con red lenta
+     en la pista puede pasar de dos segundos), ambos veían el candado libre y
+     ambos trackeaban. Al cerrar, cada uno hacía set(vuelo_tracks/{key}) —
+     que reemplaza el nodo ENTERO — así que el segundo en guardar borraba la
+     traza del primero en silencio. Ahora se toma con runTransaction, que
+     resuelve el conflicto del lado del servidor: solo uno gana.
+     Como el callback de una transacción solo ve el nodo sobre el que corre,
+     el vencimiento del candado huérfano (4hs) se evalúa afuera con el
+     snapshot ya leído y se pasa vía _lockVencido().
+  2) TRAZA PISADA POR OTROS CAMINOS: aun con el candado atómico quedan casos
+     (candado vencido que se retoma mientras el primero seguía grabando en
+     background; cola de pendientes que sincroniza mucho después, offline o
+     app cerrada). Nuevo guardarTrazaSinPisar(): lee antes de escribir y, si
+     ya hay una traza con puntos para esa reserva, guarda la nueva al lado
+     (vuelo_tracks/{key}_2) en vez de encima. Nunca descarta nada — que sobre
+     un nodo es recuperable, que falte no. Los 2 set() directos de este
+     archivo pasan por ahí.
+  3) TURNO DUPLICADO IN SITU: el candado vive en reservas/{key}, así que solo
+     protege si las dos apps apuntan a la MISMA reserva. Si el alumno arrancó
+     con su turno y el instructor carga uno in situ, se crean DOS reservas
+     para el mismo vuelo: dos trazas y horas contadas dos veces. Y el
+     instructor no lo ve venir, porque la opción in situ aparece justamente
+     cuando no tiene turnos propios vigentes — que es el caso en que el turno
+     del alumno no está en su lista. crearTurnoInSitu() ahora chequea si esa
+     persona ya tiene un turno hoy sin cancelar y avisa (no bloquea: puede
+     ser legítimamente un segundo vuelo del día). Pasó a async, así que su
+     listener la espera y tiene guard de doble toque.
+
   v5.77 · 2026-09-05
   Pedido de Daniel: botón "🧊 Ver en 3D" en el modal de mapa GPS, mismo patrón
   que turnos.html (v8.57) — abre analisis3d.html?key=... en una pestaña
@@ -1835,7 +1870,7 @@ select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getDatabase, ref, get, update, set, push } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+import { getDatabase, ref, get, update, set, push, runTransaction } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
 const app = initializeApp({
   apiKey:'AIzaSyATPSaoOV_wKLaJR_dc1jgTzEF2L5p0tHk',
@@ -1893,7 +1928,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.77'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.78'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -1917,6 +1952,52 @@ let gpsUltimoPunto = 0;      // Date.now() del último punto guardado, para el m
 // el instructor no lo toca (para no pisarle el track a mitad de vuelo).
 const GPS_LOCK_STALE_MS = 4*60*60*1000; // 4 horas — candado huérfano se considera vencido
 let gpsLockTomadoPorMi = false;
+// v5.78 — RED DE SEGURIDAD contra el pisado de trazas. Aunque el candado
+// ahora sea atómico (runTransaction), quedan caminos por los que dos trazas
+// pueden terminar apuntando a la misma reserva: un candado vencido por
+// huérfano que se retoma mientras el primero seguía grabando en background, o
+// una cola de pendientes que sincroniza mucho después (offline / app cerrada)
+// cuando el otro ya guardó la suya. set() reemplaza el nodo ENTERO, así que
+// en esos casos la traza vieja se perdía en silencio.
+// Acá se lee primero: si ya hay una traza guardada con puntos, la nueva se
+// guarda al lado (misma key + sufijo) en vez de encima. Nunca se descarta
+// nada: que sobre un nodo es recuperable, que falte no.
+async function guardarTrazaSinPisar(key, payload){
+  let destino = `vuelo_tracks/${key}`;
+  try{
+    const prev = await get(ref(db, destino));
+    const val = prev.val();
+    if(val && val.puntos && val.puntos.length){
+      // Ya hay traza de este vuelo cargada por la otra app. Se busca el primer
+      // sufijo libre en vez de pisarla.
+      let i = 2;
+      while(i < 10){
+        const alt = `vuelo_tracks/${key}_${i}`;
+        const s = await get(ref(db, alt));
+        if(!s.exists()){ destino = alt; break; }
+        i++;
+      }
+      if(destino === `vuelo_tracks/${key}`) destino = `vuelo_tracks/${key}_${Date.now()}`; // fallback improbable
+      console.warn('[traza] ya existía una traza para', key, '— esta se guarda en', destino);
+    }
+  }catch(e){
+    // Si no se puede leer (permisos/red), se sigue con el destino original:
+    // mejor guardar la traza que perderla por un chequeo que falló.
+    console.warn('[traza] no se pudo verificar traza previa, se guarda en el destino normal:', e);
+  }
+  await conTimeout(set(ref(db, destino), payload));
+  return destino;
+}
+
+
+// v5.78: ¿el candado que figura en esta reserva ya venció por huérfano? Se
+// evalúa con el snapshot leído ANTES de la transacción, porque adentro del
+// callback de runTransaction solo se ve el nodo gps_tracker_activo y no su
+// timestamp hermano.
+function _lockVencido(reservaSnap){
+  const ts = reservaSnap?.gps_tracker_ts ? new Date(reservaSnap.gps_tracker_ts).getTime() : 0;
+  return (Date.now()-ts) >= GPS_LOCK_STALE_MS;
+}
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // v5.36 FIX: estas 4 variables vivían más abajo, junto al resto del código
@@ -2328,11 +2409,16 @@ $('nt-buscar').addEventListener('input',async ()=>{
     }).join('')
     : '<div class="empty-libro" style="padding:16px 0">Sin resultados.</div>';
   cont.querySelectorAll('.turno-item').forEach(el=>{
-    el.addEventListener('click',()=>{
+    el.addEventListener('click',async ()=>{
       const p=match.find(x=>x.key===el.dataset.key);
       if(!p) return;
       if(pintarEstadoNtAvion()){ toast('⚠ Elegí el avión antes de continuar'); return; }
-      crearTurnoInSitu(p);
+      // v5.78: crearTurnoInSitu ahora es async (consulta si ya hay un turno
+      // de esa persona hoy antes de crear otro) — el listener la espera para
+      // que un doble toque no dispare dos altas en paralelo.
+      if(el.dataset.cargando==='1') return;
+      el.dataset.cargando='1';
+      try{ await crearTurnoInSitu(p); } finally { el.dataset.cargando=''; }
     });
   });
 });
@@ -2344,7 +2430,45 @@ $('nt-buscar').addEventListener('input',async ()=>{
 // crea en Firebase dentro de guardar(), en el mismo momento en que se confirma
 // el vuelo — así, si te equivocás de persona o cancelás en el medio (botón
 // "Cancelar", ver más abajo), no queda absolutamente nada escrito.
-function crearTurnoInSitu(persona){
+// v5.78 — chequeo de DUPLICADO antes de crear un turno in situ.
+// El candado gps_tracker_activo vive en reservas/{key}, así que solo protege
+// cuando las dos apps apuntan a la MISMA reserva. Si el alumno arrancó su
+// vuelo desde vuelo-piloto.html con su propio turno y el instructor carga uno
+// in situ, se crean DOS reservas para el mismo vuelo físico: dos trazas, y
+// las horas contadas dos veces en el log del alumno. El instructor no lo ve
+// venir porque la lista de "sus" turnos no incluye los del alumno con otro
+// instructor (o sin instructor asignado), que es justo cuando aparece la
+// opción de cargar in situ.
+// Acá se busca si esa persona ya tiene un turno hoy sin cancelar y se avisa,
+// dejando decidir (no se bloquea: puede ser legítimamente un segundo vuelo
+// del día).
+async function _turnoDuplicadoHoy(persona){
+  try{
+    const snap=await get(ref(db,'reservas'));
+    const todas=snap.val()||{};
+    const hoyStr=hoy();
+    for(const [k,r] of Object.entries(todas)){
+      if(!r || r.fecha!==hoyStr) continue;
+      if(r.estado==='cancelado') continue;
+      if((r.email||'').toLowerCase()!==(persona.email||'').toLowerCase()) continue;
+      return {key:k, ...r};
+    }
+  }catch(e){ console.warn('No se pudo chequear turnos duplicados (se sigue igual):',e); }
+  return null;
+}
+
+async function crearTurnoInSitu(persona){
+  const yaExiste=await _turnoDuplicadoHoy(persona);
+  if(yaExiste){
+    const detalle=`${yaExiste.avion||'—'} ${yaExiste.hora||''} hs${yaExiste.gps_tracker_activo?' · GPS activo ahora mismo':''}`;
+    const seguir=confirm(
+      `⚠ ${persona.nombre} ya tiene un turno hoy (${detalle}).\n\n`+
+      `Si es el MISMO vuelo, cancelá acá y usá ese turno (botón "Cambiar turno"): `+
+      `cargarlo de nuevo crearía un registro duplicado y contaría las horas dos veces.\n\n`+
+      `¿Crear igual un turno nuevo?`
+    );
+    if(!seguir) return;
+  }
   const avion=$('nt-avion').value;
   const ahora=new Date();
   const hora=String(ahora.getHours()).padStart(2,'0')+':'+String(ahora.getMinutes()).padStart(2,'0');
@@ -2709,24 +2833,35 @@ $('btn-start-stop').addEventListener('click', async ()=>{
       // los dos). Esto NO bloquea el resto de "Iniciar Vuelo" — el instructor
       // sigue registrando el vuelo (tiempo, aterrizajes) igual; solo se salta
       // el GPS de este lado.
+      // v5.78 — el candado pasa a tomarse de forma ATÓMICA (runTransaction).
+      // Antes era get() -> decidir -> update(), tres pasos separados: si el
+      // alumno arrancaba en la ventana entre el get y el update (con red
+      // lenta puede ser más de un par de segundos), los DOS leían el candado
+      // libre, los dos lo tomaban, y los dos trackeaban el mismo vuelo. Al
+      // cerrar, cada uno hace set(vuelo_tracks/{key}) — que reemplaza el
+      // nodo entero — así que el segundo en guardar BORRABA la traza del
+      // primero, en silencio. runTransaction resuelve el conflicto del lado
+      // del servidor: reintenta si el valor cambió, así que solo uno gana.
       let bloqueadoPorAlumno=false;
       if(turnoActual?.key){
         try{
           const snap=await get(ref(db,'reservas/'+turnoActual.key));
           const actual=snap.val();
-          const lock=actual?.gps_tracker_activo;
-          const lockTs=actual?.gps_tracker_ts?new Date(actual.gps_tracker_ts).getTime():0;
-          if(lock==='alumno'&&(Date.now()-lockTs)<GPS_LOCK_STALE_MS) bloqueadoPorAlumno=true;
+          const trRes=await runTransaction(ref(db,'reservas/'+turnoActual.key+'/gps_tracker_activo'), (valActual)=>{
+            if(valActual && valActual!=='instructor' && !_lockVencido(actual)) return; // undefined = abortar
+            return 'instructor';
+          });
+          if(!trRes.committed || trRes.snapshot.val()!=='instructor') bloqueadoPorAlumno=true;
+          else {
+            gpsLockTomadoPorMi=true;
+            update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_ts:new Date().toISOString()}).catch(e=>console.warn('No se pudo sellar la hora del candado GPS:',e));
+          }
         }catch(e){ console.warn('No se pudo chequear candado GPS (sigue igual sin bloquear):',e); }
       }
       if(bloqueadoPorAlumno){
         toast('📍 El alumno ya está trackeando el GPS de este vuelo desde su app — no hace falta activarlo también acá.',4500);
       } else {
         gpsPoints=[]; gpsGaps=[]; gpsUltimoPunto=0; _wakeLockWarnMostrado=false; iniciarTrackGPS(); adquirirWakeLock();
-        if(turnoActual?.key){
-          gpsLockTomadoPorMi=true;
-          update(ref(db,'reservas/'+turnoActual.key),{gps_tracker_activo:'instructor',gps_tracker_ts:new Date().toISOString()}).catch(e=>console.warn('No se pudo tomar el candado GPS:',e));
-        }
       }
     }
     persistir();
@@ -3041,12 +3176,12 @@ async function escribirPendiente(item){
       marcarKeyPendiente(item.id,key); // recién acá — la reserva ya quedó escrita
     }
     if(tieneTraza){
-      await conTimeout(set(ref(db,`vuelo_tracks/${key}`),{
+      await guardarTrazaSinPisar(key,{
         puntos: item.gpsPoints,
         ...(item.gpsGaps&&item.gpsGaps.length?{huecos:item.gpsGaps}:{}),
         autor: item.instructorNombre,
         ts_guardado: new Date().toISOString()
-      }));
+      });
     }
     // La auditoría se reintenta en cada pasada mientras esInSitu — en el caso
     // raro de un fallo justo entre crear la reserva y llegar acá, el costo
@@ -3061,12 +3196,12 @@ async function escribirPendiente(item){
     }));
   } else if(item.key){
     if(tieneTraza){
-      await conTimeout(set(ref(db,`vuelo_tracks/${item.key}`),{
+      await guardarTrazaSinPisar(item.key,{
         puntos: item.gpsPoints,
         ...(item.gpsGaps&&item.gpsGaps.length?{huecos:item.gpsGaps}:{}),
         autor: item.instructorNombre,
         ts_guardado: new Date().toISOString()
-      }));
+      });
       datos.tiene_traza_gps=true;
     }
     // v5.71: se están grabando datos de vuelo → 'volado'. PERO nunca se pisa un
