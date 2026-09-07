@@ -2,6 +2,23 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.80 · 2026-09-07
+  Dos fixes a "Mi Disponibilidad" (v5.79) reportados por Daniel al probarla:
+  1) El chip de un horario con vuelo aprobado no dejaba claro si ADEMÁS
+     estaba marcado como disponible, o si el color venía solo del vuelo.
+     Ahora el "marcado" tiene su propio aro de 2px (cyan/verde) + un ✓ en la
+     esquina, separado del color de fondo (que sigue indicando si hay vuelo
+     aprobado ahí).
+  2) BUG real, no solo visual: el chequeo de conflicto al desmarcar un slot
+     (reservasHoy) NO filtraba por instructor — mostraba/afectaba el turno
+     aprobado por CUALQUIER instructor en LV-OAD ese horario. Un instructor
+     podía terminar cancelando el vuelo de OTRO instructor sin darse cuenta,
+     con su propio nombre pisando el de "quien canceló". Ahora solo se
+     considera un turno "propio" si aprobado_por||instructor===session.nombre.
+     Mismo bug preexistente en turnos.html (instructor-disponibilidad no
+     filtra por instructor tampoco) — no tocado ahí, pendiente si Daniel lo
+     pide.
+
   v5.79 · 2026-09-07
   Nueva pestaña "Disp." — pedido de Daniel: "Mi Disponibilidad" (la que ya
   existe en turnos.html) también accesible desde la app que usan solo los
@@ -1289,11 +1306,19 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
    apilables en columnas de a 2/3 según ancho — pedido explícito de Daniel: "bien
    celular friendly". */
 .disp-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px}
-.disp-chip{border:1px solid rgba(0,200,212,.15);border-radius:10px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;transition:all .15s;font-family:var(--mono);min-height:56px}
+.disp-chip{border:1px solid rgba(0,200,212,.15);border-radius:10px;padding:12px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;transition:all .15s;font-family:var(--mono);min-height:56px;position:relative}
 .disp-chip:active{transform:scale(.96)}
 .disp-chip-hora{font-size:15px;font-weight:700;color:var(--white)}
 .disp-chip-vuelo{font-size:9px;color:var(--green);letter-spacing:.03em;text-align:center;line-height:1.2}
 .disp-chip.pasado,.disp-chip.sin-slot{opacity:.3;pointer-events:none}
+/* v5.80: outline propio para "marcado como disponible", independiente del color
+   de fondo — pedido de Daniel: antes un chip en verde (hay vuelo aprobado ahí)
+   no dejaba en claro si ADEMÁS estaba marcado como disponible, o si el verde
+   era solo por el vuelo. Ahora el aro cyan/verde de 2px SOLO aparece si el
+   instructor se marcó disponible ahí; el color de fondo (cyan=disponible,
+   verde=disponible+volás vos) queda como señal secundaria. */
+.disp-chip.marcado{border-width:2px}
+.disp-chip-check{position:absolute;top:4px;right:6px;font-size:10px;color:inherit;opacity:.85}
 
 /* v5.18: links a fpl.html/peso-balance.html — pedido de Daniel: poder gestionar todo
    (vuelo + plan de vuelo + peso y balance) sin salir de esta app. Mismo nombre de
@@ -1999,7 +2024,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.79'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.80'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -4599,7 +4624,11 @@ async function renderDisp(){
   try{
     const todas=(await get(ref(db,'reservas'))).val()||{};
     Object.entries(todas).forEach(([k,r])=>{
-      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===fecha) reservasHoy[r.hora]={...r,key:k};
+      // v5.80 FIX: filtrar por instructor propio (aprobado_por||instructor===
+      // session.nombre). Antes mostraba/afectaba turnos aprobados por CUALQUIER
+      // instructor en LV-OAD ese horario — un instructor podía terminar viendo
+      // ✈ y, peor, cancelando el vuelo de otro instructor sin darse cuenta.
+      if(r.estado==='aprobado'&&(r.avion||'LV-OAD')==='LV-OAD'&&r.fecha===fecha&&(r.aprobado_por||r.instructor)===session.nombre) reservasHoy[r.hora]={...r,key:k};
     });
   }catch{}
 
@@ -4615,8 +4644,9 @@ async function renderDisp(){
     const res=reservasHoy[h];
     const bg=marcado?(res?'rgba(34,197,94,.18)':'rgba(0,200,212,.12)'):'var(--bg3)';
     const bd=marcado?(res?'var(--green)':'var(--cyan)'):'rgba(0,200,212,.15)';
-    const cls=esPasado?' pasado':'';
+    const cls=(esPasado?' pasado':'')+(marcado?' marcado':'');
     return `<button type="button" class="disp-chip${cls}" data-hora="${h}" style="background:${bg};border-color:${bd}">
+      ${marcado?'<span class="disp-chip-check" style="color:'+(res?'var(--green)':'var(--cyan)')+'">✓</span>':''}
       <span class="disp-chip-hora">${h}</span>
       ${res?`<span class="disp-chip-vuelo">✈ ${(res.nombre||'').split(' ')[0]}</span>`:''}
     </button>`;
@@ -4639,7 +4669,7 @@ async function dispToggleVuelo(btn,reservasHoy){
   if(estabaMarcado){
     const conflicto=reservasHoy?.[h];
     if(conflicto){
-      const ok=confirm(`⚠ Hay un turno aprobado en este horario:\n  ${fmtFecha(fecha)} ${h}hs — ${conflicto.nombre}\n\n¿Cancelarlo y quitar tu disponibilidad?`);
+      const ok=confirm(`⚠ Tenés un turno TUYO aprobado en este horario:\n  ${fmtFecha(fecha)} ${h}hs — ${conflicto.nombre}\n\n¿Cancelarlo y quitar tu disponibilidad?`);
       if(!ok) return;
       try{
         await update(ref(db,'reservas/'+conflicto.key),{estado:'cancelado',instructor:session.nombre,cancelado_por:session.nombre,cancelado_rol:'instructor',ts_cancelacion:new Date().toISOString(),obs_cancelacion:'Instructor sin disponibilidad en este horario'});
