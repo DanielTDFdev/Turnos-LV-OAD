@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.51 · Pedido de Daniel: dos ajustes al slider de estela (v1.50). 1) Pasa
+  a estar SIEMPRE visible, en su propia barra fija arriba de play/pause —
+  antes vivía dentro del panel de config, que se puede cerrar. 2) El valor
+  de arranque (y el ancla izquierda de la curva, p=0) pasa de 2s a 4s.
+
   v1.50 · Pedido de Daniel: slider de "estela" (sobrevida) para el tubo y la
   cortina en modo progresivo, al estilo Snake — en vez de revelarse siempre
   desde el punto 0, el inicio de lo visible tambien avanza, dejando solo los
@@ -939,6 +944,14 @@
   #play{width:40px;text-align:center}
   #slider{flex:1;min-width:120px;accent-color:var(--cyan)}
   footer label{display:flex;align-items:center;gap:5px;color:var(--text2);white-space:nowrap}
+  /* v1.51: barra de estela — siempre visible, arriba del footer, mismo estilo
+     visual de fondo/borde que footer pero una sola fila fija. */
+  #estela-bar{flex-shrink:0;background:var(--bg3);border-top:1px solid var(--border);
+    padding:8px 16px;display:flex;align-items:center;gap:10px;
+    font-family:var(--font-mono);font-size:12px;transition:opacity .15s}
+  #estela-label{color:var(--text2);white-space:nowrap}
+  #sobrevida{flex:1;min-width:80px;accent-color:var(--cyan)}
+  #sobrevida-val{color:var(--cyan);min-width:66px;text-align:right;white-space:nowrap}
   /* Toggle tipo switch en vez del checkbox nativo del navegador */
   .toggle{display:flex;align-items:center;gap:8px;color:var(--text2);white-space:normal;cursor:pointer;user-select:none}
   .toggle input{display:none}
@@ -978,7 +991,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.50</span>
+    <span class="badge" id="ver-badge">v1.51</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -1011,16 +1024,22 @@
           <label class="toggle"><input type="checkbox" id="seguir" checked><span class="track"></span>Seguir avión</label>
           <label class="toggle"><input type="checkbox" id="cortina" checked><span class="track"></span>Cortina de altura</label>
           <label class="toggle"><input type="checkbox" id="progresivo" checked><span class="track"></span>Dibujar a medida que avanza</label>
-          <div id="sobrevida-wrap" style="display:flex;flex-direction:column;gap:3px;margin:2px 0 2px 20px">
-            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--cyan);opacity:.8"><span>Estela (sobrevida)</span><span id="sobrevida-val">2 s</span></div>
-            <input type="range" id="sobrevida" min="0" max="1000" value="0" style="accent-color:var(--cyan);width:100%">
-          </div>
           <label class="toggle"><input type="checkbox" id="humo" checked><span class="track"></span>Humo</label>
           <label class="toggle"><input type="checkbox" id="rosa" checked><span class="track"></span>Rosa de rumbos</label>
           <label class="toggle"><input type="checkbox" id="mapaSat" checked><span class="track"></span>Mapa satelital (suelo)</label>
         </div>
       </div>
     </div>
+  </div>
+  <!-- v1.51: pedido de Daniel — el slider de estela pasa a estar SIEMPRE en
+       pantalla (antes vivía adentro del panel de config, que se puede
+       cerrar), arriba de la barra de play/pause. Fuera del <footer> porque
+       tiene su propio layout/estilo (footer es flex-wrap con botones y
+       selects; esto es una sola fila fija). -->
+  <div id="estela-bar">
+    <span id="estela-label">Estela</span>
+    <input type="range" id="sobrevida" min="0" max="1000" value="0">
+    <span id="sobrevida-val">4 s</span>
   </div>
   <footer>
     <button id="play" title="Reproducir / pausar">▶</button>
@@ -2410,7 +2429,9 @@ if(cortinaChk.checked){ cortinaMesh=construirCortina(); scene.add(cortinaMesh); 
 // un slider lineal de 2 a 1200 dejaría "20s" pegado contra el extremo
 // izquierdo, inusable. Con dos tramos exponenciales (2→20 y 20→DUR) el punto
 // medio del control cae siempre en 20s, sea el vuelo largo o corto.
-const SOBREVIDA_MIN=2, SOBREVIDA_MED=20;
+// v1.51 — pedido de Daniel: arranca en 4s (antes 2s). Sigue siendo el ancla
+// izquierda de la curva (p=0), no solo el valor inicial.
+const SOBREVIDA_MIN=4, SOBREVIDA_MED=20;
 function pASobrevida(p){
   if(DUR<=SOBREVIDA_MED){
     // vuelo cortísimo (<=20s de traza real): no hay lugar para el ancla del
@@ -2423,8 +2444,8 @@ function pASobrevida(p){
 }
 const sobrevidaSlider=document.getElementById('sobrevida');
 const sobrevidaVal=document.getElementById('sobrevida-val');
-const sobrevidaWrap=document.getElementById('sobrevida-wrap');
-let sobrevidaSeg=SOBREVIDA_MIN; // arranca en 2s (slider en p=0)
+const estelaBar=document.getElementById('estela-bar');
+let sobrevidaSeg=SOBREVIDA_MIN; // arranca en 4s (slider en p=0)
 function actualizarSobrevidaLabel(){
   sobrevidaVal.textContent = sobrevidaSeg>=DUR-0.05 ? 'Todo el vuelo'
     : sobrevidaSeg>=60 ? (sobrevidaSeg/60).toFixed(1)+' min'
@@ -2438,8 +2459,8 @@ sobrevidaSlider.oninput=()=>{
 function actualizarEstadoSobrevida(){
   const activo=progresivoChk.checked;
   sobrevidaSlider.disabled=!activo;
-  sobrevidaWrap.style.opacity=activo?'1':'.35';
-  sobrevidaWrap.style.pointerEvents=activo?'auto':'none';
+  estelaBar.style.opacity=activo?'1':'.35';
+  estelaBar.style.pointerEvents=activo?'auto':'none';
 }
 progresivoChk.addEventListener('change', actualizarEstadoSobrevida);
 actualizarEstadoSobrevida();
