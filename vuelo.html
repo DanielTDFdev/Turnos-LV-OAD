@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.82 · 2026-09-07
+  Pedido de Daniel: debajo del nombre del alumno en el chip de "Mi
+  Disponibilidad", mostrar las iniciales del instructor que aprobó ese
+  turno (aprobado_por||instructor) — mismo helper iniciales() que ya usa
+  turnos.html, copiado acá porque vuelo.html no lo tenía.
+
   v5.81 · 2026-09-07
   FIX al fix v5.80 (Daniel probó y notó que se perdía el nombre del alumno en
   los slots con turno de otro instructor). v5.80 filtró por instructor propio
@@ -1323,6 +1329,7 @@ body{background:var(--bg);color:var(--white);font-family:var(--ui)}
 .disp-chip:active{transform:scale(.96)}
 .disp-chip-hora{font-size:15px;font-weight:700;color:var(--white)}
 .disp-chip-vuelo{font-size:9px;color:var(--green);letter-spacing:.03em;text-align:center;line-height:1.2}
+.disp-chip-inst{font-size:8px;color:var(--gray);letter-spacing:.08em;text-align:center;line-height:1.1}
 .disp-chip.pasado,.disp-chip.sin-slot{opacity:.3;pointer-events:none}
 /* v5.80: outline propio para "marcado como disponible", independiente del color
    de fondo — pedido de Daniel: antes un chip en verde (hay vuelo aprobado ahí)
@@ -1999,6 +2006,7 @@ const fmtFecha = s => s ? s.split('-').reverse().join('/') : '—';
 const fmtUTC = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone:'UTC',hour12:false})+'Z'; };
 const fmtLocalFull = iso => { if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC',hour12:false})+'Z'; };
 const calcHorasDecimal = (ini,fin) => { const ms=new Date(fin)-new Date(ini); return Math.round((ms/3600000)*10)/10; };
+function iniciales(nombre){ if(!nombre) return ''; return nombre.trim().split(/\s+/).map(p=>p[0].toUpperCase()).join(''); } // v5.82, mismo helper que turnos.html
 
 function toast(msg,dur=2800){ const t=$('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),dur); }
 
@@ -2037,7 +2045,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.81'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.82'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -4664,7 +4672,7 @@ async function renderDisp(){
     return `<button type="button" class="disp-chip${cls}" data-hora="${h}" style="background:${bg};border-color:${bd}">
       ${marcado?'<span class="disp-chip-check" style="color:'+(res?'var(--green)':'var(--cyan)')+'">✓</span>':''}
       <span class="disp-chip-hora">${h}</span>
-      ${res?`<span class="disp-chip-vuelo">✈ ${(res.nombre||'').split(' ')[0]}</span>`:''}
+      ${res?`<span class="disp-chip-vuelo">✈ ${(res.nombre||'').split(' ')[0]}</span><span class="disp-chip-inst">${iniciales(res.aprobado_por||res.instructor)}</span>`:''}
     </button>`;
   }).join('');
 
