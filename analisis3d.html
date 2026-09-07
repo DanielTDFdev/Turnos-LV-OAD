@@ -2,6 +2,10 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.54 · Pedido de Daniel: "no me gusta la cortina con cuerpo" — vuelve a la
+  versión plana de antes de v1.53 (2 vértices por punto, sin pared
+  izq/der/tapa). IDX_POR_PUNTO_CORTINA vuelve a 6.
+
   v1.53 · Tres pedidos de Daniel:
   1) Avión 10% más cerca de la cortina (AVION_OFFSET_Y: 1.5 -> 1.35).
   2) Cortina "con cuerpo": pasa de ser un plano de espesor cero (2 vértices
@@ -1015,7 +1019,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.53</span>
+    <span class="badge" id="ver-badge">v1.54</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -2372,38 +2376,17 @@ scene.add(lineaVert);
 // borde superior sigue EXACTAMENTE el tubo (comparte los mismos puntos del
 // track, sin aproximar pendiente), y es un solo draw call en vez de cientos.
 let cortinaMesh = null, cortinaGeo = null;
-// v1.53 — pedido de Daniel: "la cortina, ¿la podemos hacer con cuerpo?". Antes
-// era una tira plana de espesor CERO (un solo triángulo de ancho, visible
-// desde los dos lados por DoubleSide) — a ciertos ángulos se leía como una
-// línea de color sin volumen. Ahora cada punto del track genera 4 vértices
-// (no 2): arriba-izquierda/derecha y abajo-izquierda/derecha, separados
-// perpendicularmente a la dirección de vuelo por ESPESOR_CORTINA (reusa la
-// misma escala que tenía el radio del tubo — RADIO_TUBO — así que el "grosor"
-// de la cortina queda proporcionado al tamaño del vuelo, igual que antes). Con
-// eso arma tres caras por segmento en vez de una: pared izquierda, pared
-// derecha y una tapa superior que las une — un prisma delgado en vez de un
-// plano, que sí se lee como un objeto con cuerpo desde cualquier ángulo.
-const IDX_POR_PUNTO_CORTINA = 18; // 3 caras (izq/der/tapa) × 2 triángulos × 3 índices — usado también en aplicarRevelado
+// v1.54 — Daniel probó "con cuerpo" (v1.53) y no le gustó: vuelve a la
+// cortina plana original (2 vértices por punto, sin espesor lateral).
+// IDX_POR_PUNTO_CORTINA vuelve a 6 (1 sola cara por segmento, 2 triángulos).
+const IDX_POR_PUNTO_CORTINA = 6; // usado también en aplicarRevelado
 function construirCortina(){
   const N = track.length;
   const [min,max] = rangoColor();
-  const semiEsp = RADIO_TUBO; // mismo radio que tenía el tubo -> mismo "grosor" visual
-  const posiciones = new Float32Array(N*4*3);
-  const colores    = new Float32Array(N*4*3);
+  const posiciones = new Float32Array(N*2*3);
+  const colores    = new Float32Array(N*2*3);
   for(let i=0;i<N;i++){
     const p = track[i];
-    // Tangente XZ (diferencia con el vecino anterior/siguiente) para saber
-    // hacia dónde va el vuelo en ese punto, y así calcular la perpendicular
-    // que define el ancho de la cortina. Con vecinos casi coincidentes
-    // (avión detenido en rodaje) se cae al valor por defecto (1,0): no
-    // importa la orientación exacta ahí porque semiEsp ya colapsa a 0 más
-    // abajo por el mismo umbral de 3m que usaban los postes.
-    const pa = track[Math.max(0,i-1)], pb = track[Math.min(N-1,i+1)];
-    let tx=pb.x-pa.x, tz=pb.z-pa.z;
-    const tl=Math.hypot(tx,tz);
-    if(tl>1e-6){ tx/=tl; tz/=tl; } else { tx=1; tz=0; }
-    const perpX=-tz, perpZ=tx;
-
     // Mismo umbral de 3m que usaban los postes: con el ruido normal del GPS en
     // rodaje, sin esto la cortina levantaría unos metros de "pared" falsa a lo
     // largo de todo el carreteo. Acá, en vez de saltear el punto (que en una
@@ -2411,42 +2394,28 @@ function construirCortina(){
     // cortina simplemente desaparece contra el piso, sin cortar la malla.
     const alturaRender = p.y < 3 ? 0 : ry(p.y);
     const c = colorPara(valorColor(p), min, max);
-    const o=i*12;
-    // TL, TR, BL, BR (arriba-izq, arriba-der, abajo-izq, abajo-der)
-    posiciones[o+0]=p.x+perpX*semiEsp; posiciones[o+1]=alturaRender; posiciones[o+2]=p.z+perpZ*semiEsp;
-    posiciones[o+3]=p.x-perpX*semiEsp; posiciones[o+4]=alturaRender; posiciones[o+5]=p.z-perpZ*semiEsp;
-    posiciones[o+6]=p.x+perpX*semiEsp; posiciones[o+7]=0;            posiciones[o+8]=p.z+perpZ*semiEsp;
-    posiciones[o+9]=p.x-perpX*semiEsp; posiciones[o+10]=0;           posiciones[o+11]=p.z-perpZ*semiEsp;
+    const vTop = i*6, vBot = i*6+3;
+    posiciones[vTop]   = p.x; posiciones[vTop+1] = alturaRender; posiciones[vTop+2] = p.z;
+    posiciones[vBot]   = p.x; posiciones[vBot+1] = 0;            posiciones[vBot+2] = p.z;
+    colores[vTop]   = c.r;      colores[vTop+1] = c.g;      colores[vTop+2] = c.b;
     // El borde inferior va más oscuro: da sensación de profundidad/sombra
     // contra el suelo y evita que la cortina se lea como una mancha plana de
     // color. Se oscurece el color en vez de bajar el alpha por vértice porque
     // el alpha por vértice necesitaría un attribute de 4 componentes, que no
     // todos los materiales básicos interpretan igual.
-    colores[o+0]=c.r;     colores[o+1]=c.g;     colores[o+2]=c.b;     // TL
-    colores[o+3]=c.r;     colores[o+4]=c.g;     colores[o+5]=c.b;     // TR
-    colores[o+6]=c.r*0.5; colores[o+7]=c.g*0.5; colores[o+8]=c.b*0.5; // BL
-    colores[o+9]=c.r*0.5; colores[o+10]=c.g*0.5;colores[o+11]=c.b*0.5;// BR
+    colores[vBot]   = c.r*0.5;  colores[vBot+1] = c.g*0.5;  colores[vBot+2] = c.b*0.5;
   }
-  // Tres caras por cada par de puntos consecutivos (pared izq, pared der,
-  // tapa superior) — 6 índices cada una. El orden sigue el avance del track,
-  // igual que antes, para que el corte progresivo por setDrawRange caiga
-  // en el mismo punto (ver IDX_POR_PUNTO_CORTINA y aplicarRevelado).
+  // Dos triángulos por cada par de puntos consecutivos. El orden de los
+  // índices sigue el avance del track, que es lo que permite el corte
+  // progresivo por setDrawRange (ver aplicarRevelado).
   const totalIdx = (N-1)*IDX_POR_PUNTO_CORTINA;
-  const usarUint32 = N*4 > 65535; // Uint16 no alcanza para tracks largos
+  const usarUint32 = N*2 > 65535; // Uint16 no alcanza para tracks largos
   const indices = usarUint32 ? new Uint32Array(totalIdx) : new Uint16Array(totalIdx);
   for(let i=0;i<N-1;i++){
-    const tl=i*4, tr=i*4+1, bl=i*4+2, br=i*4+3;
-    const tl2=(i+1)*4, tr2=(i+1)*4+1, bl2=(i+1)*4+2, br2=(i+1)*4+3;
+    const a=i*2, b=i*2+1, c=(i+1)*2, d=(i+1)*2+1; // a,c = borde superior; b,d = borde inferior
     const o=i*IDX_POR_PUNTO_CORTINA;
-    // pared izquierda (TL,BL)
-    indices[o+0]=tl; indices[o+1]=bl; indices[o+2]=bl2;
-    indices[o+3]=tl; indices[o+4]=bl2; indices[o+5]=tl2;
-    // pared derecha (TR,BR)
-    indices[o+6]=tr; indices[o+7]=br; indices[o+8]=br2;
-    indices[o+9]=tr; indices[o+10]=br2; indices[o+11]=tr2;
-    // tapa superior (TL,TR)
-    indices[o+12]=tl; indices[o+13]=tr; indices[o+14]=tr2;
-    indices[o+15]=tl; indices[o+16]=tr2; indices[o+17]=tl2;
+    indices[o]=a; indices[o+1]=b; indices[o+2]=d;
+    indices[o+3]=a; indices[o+4]=d; indices[o+5]=c;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(posiciones,3));
