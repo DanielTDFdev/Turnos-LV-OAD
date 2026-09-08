@@ -2,6 +2,13 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.83 · 2026-09-07
+  Pedido de Daniel: en "Mi Disponibilidad" mostrar el día de la semana junto
+  a la fecha ("Lunes, 07/09/2026") — el <input type=date> nativo no lo
+  muestra, cada navegador lo renderiza a su manera. Span nuevo debajo del
+  input, actualizado en cada renderDisp() (arranque + cambio de fecha).
+  Mismo array DIAS que ya usa turnos.html para esto.
+
   v5.82 · 2026-09-07
   Pedido de Daniel: debajo del nombre del alumno en el chip de "Mi
   Disponibilidad", mostrar las iniciales del instructor que aprobó ese
@@ -1961,6 +1968,7 @@ select.sin-elegir{border-color:var(--amber);box-shadow:0 0 0 2px rgba(240,165,0,
       <span class="label" style="margin:0;flex:none">Día</span>
       <input id="disp-fecha" type="date" style="flex:1;font-size:16px;padding:10px 12px">
     </div>
+    <div id="disp-fecha-dow" style="font-family:var(--mono);font-size:12px;color:var(--cyan);letter-spacing:.05em;margin-bottom:6px"></div>
     <div style="font-family:var(--mono);font-size:11px;color:var(--gray);margin-bottom:14px">
       Tocá un horario para marcarlo o quitarlo. ✈ = ya hay un turno aprobado ahí.
     </div>
@@ -2045,7 +2053,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.82'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.83'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -4630,6 +4638,13 @@ async function renderDisp(){
 
   const fecha=$('disp-fecha').value||hoy();
   _dispFecha=fecha;
+  // v5.83 — pedido de Daniel: mostrar el día de la semana junto a la fecha
+  // (el <input type=date> nativo no lo muestra, cada navegador lo renderiza
+  // a su manera). Mismo array DIAS que usa turnos.html para esto.
+  const DIAS=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const [aa,mm,dd]=fecha.split('-');
+  const dow=DIAS[new Date(fecha+'T12:00:00').getDay()];
+  $('disp-fecha-dow').textContent = `${dow}, ${dd}/${mm}/${aa}`;
   grid.innerHTML='<div class="spinner" style="margin:20px auto"></div>';
 
   const enVac=await renderToggleVacacionesVuelo();
