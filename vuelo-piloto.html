@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO PILOTO — Registro de vuelo para pilotos · Aeroclub Río Grande
+  v4.64 · 2026-09-07
+  Pedido de Daniel: en "Reporte de horas de vuelo", la columna Tiempo (y el
+  total) siempre muestran 1 decimal (1 -> "1.0", 0.5 -> "0.5"). Mismo fix
+  que vuelo.html v5.84 — antes se mostraba el número tal cual venía
+  guardado en Firebase, sin formato fijo.
+
   v4.63 · 2026-09-06
   Contraparte del fix de vuelo.html v5.78 (revisión pedida por Daniel sobre
   qué pasa si el alumno y el instructor arrancan el GPS del mismo vuelo con
@@ -1736,7 +1742,7 @@ const LS_PENDIENTES = 'acrg-piloto-v1-pendientes'; // cola de vuelos guardados l
 // avión "sin arrancar todavía" que sobrevivía indefinidamente en localStorage.
 const RESTAURAR_AVION_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '4.63';
+const APP_VERSION = '4.64';
 document.querySelectorAll('.ver').forEach(el=>el.textContent='v'+APP_VERSION);
 
 // ── Traza GPS (opcional) ─────────────────────────────────
@@ -3656,7 +3662,10 @@ async function cargarReporte(){
     const filas=_repRows.map(r=>{
       const desdeH=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
       const hastaH=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
-      const horas=(r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo)??'—';
+      // v4.64: siempre 1 decimal (1 -> "1.0", 0.5 -> "0.5") — pedido de
+      // Daniel, mismo fix que vuelo.html v5.84.
+      const horasRaw=r.piloto_tiempo_vuelo??r.obs_privada_tiempo_vuelo;
+      const horas = horasRaw!=null&&horasRaw!=='' ? parseFloat(horasRaw).toFixed(1) : '—';
       const aterrizajes=(r.piloto_aterrizajes??r.obs_privada_aterrizajes)??'—';
       return `<tr>
         <td>${fmtFecha(r.fecha)}</td>
@@ -3673,7 +3682,7 @@ async function cargarReporte(){
         <table class="rep-table">
           <thead><tr><th>Fecha</th><th>Matrícula</th><th>Hora desde</th><th>Hora hasta</th><th>Tiempo</th><th>Aterr.</th></tr></thead>
           <tbody>${filas}</tbody>
-          <tfoot><tr><td colspan="4">TOTAL · ${_repRows.length} vuelo${_repRows.length===1?'':'s'}</td><td>${Math.round(totalHoras*10)/10}</td><td>${totalAterr}</td></tr></tfoot>
+          <tfoot><tr><td colspan="4">TOTAL · ${_repRows.length} vuelo${_repRows.length===1?'':'s'}</td><td>${totalHoras.toFixed(1)}</td><td>${totalAterr}</td></tr></tfoot>
         </table>
       </div>`;
     $('btn-rep-excel').style.display='block';

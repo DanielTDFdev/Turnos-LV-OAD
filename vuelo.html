@@ -2,6 +2,12 @@
 <!--
 ==================================================================================
   VUELO — App de registro de vuelo · Aeroclub Río Grande
+  v5.84 · 2026-09-07
+  Pedido de Daniel: en "Reporte de horas de vuelo", la columna Tiempo (y el
+  total) siempre muestran 1 decimal (1 -> "1.0", 0.5 -> "0.5"). Contraparte
+  en vuelo-piloto.html v4.64. Antes se mostraba el número tal cual venía
+  guardado en Firebase, sin formato fijo.
+
   v5.83 · 2026-09-07
   Pedido de Daniel: en "Mi Disponibilidad" mostrar el día de la semana junto
   a la fecha ("Lunes, 07/09/2026") — el <input type=date> nativo no lo
@@ -2053,7 +2059,7 @@ const LS_PENDIENTES = 'acrg-vuelo-v2-pendientes'; // cola de vuelos guardados lo
 // límite de tiempo.
 const RESTAURAR_TURNO_MAX_MS = 3*60*60*1000; // 3 horas
 let _sincronizando = false; // evita que dos intentos de sync corran en paralelo
-const APP_VERSION = '5.83'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
+const APP_VERSION = '5.84'; // ⚠ actualizar acá Y en el comentario header de arriba en cada bump
 
 // ── Traza GPS (opcional, la activa el instructor por vuelo) ────────────
 const LS_GPS_PUNTOS = 'acrg-vuelo-v2-gps-puntos'; // puntos del vuelo en curso (resiliencia ante recarga)
@@ -3744,12 +3750,15 @@ async function cargarReporte(){
     const filas=_repRows.map(r=>{
       const desdeH=r.ts_despegue?fmtUTC(r.ts_despegue):'—';
       const hastaH=r.ts_aterrizaje?fmtUTC(r.ts_aterrizaje):'—';
+      // v5.84: siempre 1 decimal (1 -> "1.0", 0.5 -> "0.5") — pedido de
+      // Daniel, antes se mostraba el número tal cual venía guardado.
+      const tiempoTxt = r.obs_privada_tiempo_vuelo!=null&&r.obs_privada_tiempo_vuelo!=='' ? parseFloat(r.obs_privada_tiempo_vuelo).toFixed(1) : '—';
       return `<tr>
         <td>${fmtFecha(r.fecha)}</td>
         <td>${r.avion||'—'}</td>
         <td>${desdeH}</td>
         <td>${hastaH}</td>
-        <td>${r.obs_privada_tiempo_vuelo||'—'}</td>
+        <td>${tiempoTxt}</td>
         <td>${r.obs_privada_aterrizajes??'—'}</td>
       </tr>`;
     }).join('');
@@ -3759,7 +3768,7 @@ async function cargarReporte(){
         <table class="rep-table">
           <thead><tr><th>Fecha</th><th>Matrícula</th><th>Hora desde</th><th>Hora hasta</th><th>Tiempo</th><th>Aterr.</th></tr></thead>
           <tbody>${filas}</tbody>
-          <tfoot><tr><td colspan="4">TOTAL · ${_repRows.length} vuelo${_repRows.length===1?'':'s'}</td><td>${Math.round(totalHoras*10)/10}</td><td>${totalAterr}</td></tr></tfoot>
+          <tfoot><tr><td colspan="4">TOTAL · ${_repRows.length} vuelo${_repRows.length===1?'':'s'}</td><td>${totalHoras.toFixed(1)}</td><td>${totalAterr}</td></tr></tfoot>
         </table>
       </div>`;
     $('btn-rep-excel').style.display='block';
