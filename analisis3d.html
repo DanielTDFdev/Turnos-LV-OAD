@@ -2,6 +2,11 @@
 <!--
 ==================================================================================
   ANALISIS3D.HTML — Visor 3D de traza GPS · Aeroclub Río Grande
+  v1.58 · Pedido de Daniel: las flechas de sentido (v1.57) dejan de recortarse
+  por la ventana de sobrevida — quedan siempre, aunque la cortina se recorte
+  por detrás del avión. Se siguen revelando progresivamente (aparecen a
+  medida que avanza el vuelo), solo que ya no desaparecen.
+
   v1.57 · Pedido de Daniel: "trail" sobre el piso con flechitas de sentido,
   sutil y con transparencia. Marcadores planos apoyados en el suelo (y=0.08,
   entre la grilla y la rosa de rumbos), espaciados por DISTANCIA real a lo
@@ -1050,7 +1055,7 @@
   <header>
     <img src="logo_aeroclub.png" alt="Aeroclub Río Grande" class="hdr-logo">
     <h1>◈ ANÁLISIS 3D</h1>
-    <span class="badge" id="ver-badge">v1.57</span>
+    <span class="badge" id="ver-badge">v1.58</span>
     <span class="nota" id="nota-vuelo">Cargando…</span>
     <span class="hdr-copy">© 2026 — by DAC</span>
     <a class="volver" href="javascript:history.length>1?history.back():window.close()">‹ volver</a>
@@ -2423,10 +2428,11 @@ const IDX_POR_PUNTO_CORTINA = 6; // usado también en aplicarRevelado
 // hacía falta un EBO para una forma tan simple), orientado con la tangente
 // real de la curva en cada posición (getTangentAt), no con la dirección
 // punto-a-punto (que sería más ruidosa con el jitter normal del GPS).
-// Sigue el mismo esquema de revelado progresivo + ventana de sobrevida que
-// ya tiene la cortina (aplicarRevelado), para que las flechas del tramo
-// visible coincidan siempre con la cortina/estela — nunca aparece una flecha
-// "adelantada" fuera de lo que ya se dibujó.
+// Sigue el mismo revelado progresivo que la cortina (aparecen a medida que
+// avanza el avión), pero v1.58: a diferencia de la cortina, NO se recortan
+// por la ventana de sobrevida — una vez dibujadas, quedan para siempre
+// (pedido explícito de Daniel: "tienen que persistir en el tiempo,
+// independiente de la estela").
 let flechasMesh = null, flechasGeo = null;
 let FLECHAS_ESPACIO = null, FLECHAS_N = 0; // expuestas para que aplicarRevelado calcule el corte sin recorrer el array
 function construirFlechas(){
@@ -2646,10 +2652,15 @@ function aplicarRevelado(idxF){
     if(cortinaGeo) cortinaGeo.setDrawRange(idxInicioEntero*IDX_POR_PUNTO_CORTINA, Math.max(0, idxFinEntero-idxInicioEntero)*IDX_POR_PUNTO_CORTINA);
     // v1.57: mismo criterio de u/uInicio para las flechas de sentido — así el
     // tramo revelado de flechas coincide siempre con el de la cortina/estela.
+    // v1.58: las flechas dejan de recortarse por la ventana de sobrevida —
+    // pedido de Daniel: "tienen que persistir en el tiempo, independiente de
+    // la estela". Se revelan progresivamente igual que antes (flechaIdxFin
+    // avanza con el avión), pero el inicio queda siempre en 0: una vez
+    // dibujada, una flecha no vuelve a desaparecer aunque la cortina se
+    // recorte por delante suyo.
     if(flechasGeo && FLECHAS_ESPACIO){
       const flechaIdxFin = Math.min(FLECHAS_N, Math.max(0, Math.round(u*totalArco/FLECHAS_ESPACIO)));
-      const flechaIdxInicio = sobrevidaCompleta ? 0 : Math.min(flechaIdxFin, Math.max(0, Math.round(uInicio*totalArco/FLECHAS_ESPACIO)));
-      flechasGeo.setDrawRange(flechaIdxInicio*3, Math.max(0, flechaIdxFin-flechaIdxInicio)*3);
+      flechasGeo.setDrawRange(0, flechaIdxFin*3);
     }
   } else {
     if(tuboGeoActual) tuboGeoActual.setDrawRange(0, Infinity);
